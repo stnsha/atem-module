@@ -550,6 +550,60 @@ function createAtemDraft($data, $staff_id)
 }
 
 /**
+ * Persist a whole ATEM card (fields + ARCI + reference links) in one call.
+ * Forwards to the atem-api bulk store (POST /atem). mode=final|draft controls
+ * the resulting record_state.
+ * @param array $data Full card payload
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the new {id, record_state}
+ */
+function saveAtemCard($data, $staff_id)
+{
+    $result = getApiDataWithJWT('atem', $data, 'POST', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200 || $httpCode == 201) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'ATEM saved successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to save ATEM',
+            'errors' => isset($decoded['errors']) ? $decoded['errors'] : null
+        );
+    }
+}
+
+/**
+ * Get the list of ATEM cards for the listing page.
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the atem rows
+ */
+function getAtemList($staff_id)
+{
+    $result = getApiDataWithJWT('atem', null, 'GET', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : array()
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to retrieve ATEM list',
+            'data' => array()
+        );
+    }
+}
+
+/**
  * Get a single ATEM card by ID
  * @param int $id ATEM ID
  * @param int $staff_id Staff ID for authentication
@@ -686,6 +740,263 @@ function removeAtemArciByRole($id, $role, $staff_id)
     }
 }
 
+/**
+ * List the reference links for an ATEM card
+ * @param int $id ATEM ID
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the link collection
+ */
+function getAtemReferenceLinks($id, $staff_id)
+{
+    $result = getApiDataWithJWT('atem/' . (int)$id . '/reference-links', null, 'GET', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : array()
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to retrieve reference links'
+        );
+    }
+}
+
+/**
+ * Add a reference link to an ATEM card
+ * @param int $id ATEM ID
+ * @param array $data Link data (name, url, added_by)
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the updated link collection
+ */
+function addAtemReferenceLink($id, $data, $staff_id)
+{
+    $result = getApiDataWithJWT('atem/' . (int)$id . '/reference-links', $data, 'POST', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200 || $httpCode == 201) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Reference link added successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to add reference link',
+            'errors' => isset($decoded['errors']) ? $decoded['errors'] : null
+        );
+    }
+}
+
+/**
+ * Remove a reference link from an ATEM card
+ * @param int $id ATEM ID
+ * @param int $link_id Reference link ID
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the updated link collection
+ */
+function removeAtemReferenceLink($id, $link_id, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/reference-links/' . (int)$link_id;
+    $result = getApiDataWithJWT($endpoint, null, 'DELETE', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200 || $httpCode == 204) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Reference link removed successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to remove reference link'
+        );
+    }
+}
+
+/**
+ * List the attachments for an ATEM card
+ * @param int $id ATEM ID
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the attachment collection
+ */
+function getAtemAttachments($id, $staff_id)
+{
+    $result = getApiDataWithJWT('atem/' . (int)$id . '/attachments', null, 'GET', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : array()
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to retrieve attachments'
+        );
+    }
+}
+
+/**
+ * Upload a single attachment to an ATEM card.
+ * Uses a dedicated multipart curl call (CURLFile) since getApiDataWithJWT only
+ * forwards JSON payloads.
+ * @param int $id ATEM ID
+ * @param array $file_info A single $_FILES entry (name, type, tmp_name, error, size)
+ * @param int $staff_id Staff ID for authentication
+ * @return array Upload result with the updated attachment collection
+ */
+function uploadAtemAttachment($id, $file_info, $staff_id)
+{
+    if (!isset($file_info['tmp_name']) || $file_info['error'] !== UPLOAD_ERR_OK) {
+        return array('success' => false, 'message' => 'No valid file received for upload');
+    }
+
+    $token = getAuthToken($staff_id);
+    if (!$token) {
+        return array('success' => false, 'message' => 'Authentication failed - could not get JWT token');
+    }
+
+    $host = getApiHost();
+    $url = $host . 'atem/' . (int)$id . '/attachments';
+
+    $cfile = new CURLFile($file_info['tmp_name'], $file_info['type'], $file_info['name']);
+    $postFields = array(
+        'file'        => $cfile,
+        'uploaded_by' => (int)$staff_id
+    );
+
+    // Note: do not set Content-Type; curl adds the multipart boundary itself.
+    $headers = array(
+        'Authorization: Bearer ' . $token,
+        'Accept: application/json'
+    );
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $decoded = json_decode($response, true);
+
+    if ($httpCode == 200 || $httpCode == 201) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'File uploaded successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to upload file',
+            'errors' => isset($decoded['errors']) ? $decoded['errors'] : null
+        );
+    }
+}
+
+/**
+ * Remove an attachment from an ATEM card
+ * @param int $id ATEM ID
+ * @param int $att_id Attachment ID
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the updated attachment collection
+ */
+function removeAtemAttachment($id, $att_id, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/attachments/' . (int)$att_id;
+    $result = getApiDataWithJWT($endpoint, null, 'DELETE', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200 || $httpCode == 204) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Attachment removed successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to remove attachment'
+        );
+    }
+}
+
+/**
+ * Stream an attachment's bytes back to the browser by relaying the API
+ * response (the browser cannot reach the atem-api host directly).
+ * @param int $id ATEM ID
+ * @param int $att_id Attachment ID
+ * @param int $staff_id Staff ID for authentication
+ * @return void Emits the file content and exits via the caller
+ */
+function downloadAtemAttachment($id, $att_id, $staff_id)
+{
+    $token = getAuthToken($staff_id);
+    if (!$token) {
+        header('HTTP/1.1 401 Unauthorized');
+        echo 'Authentication failed';
+        return;
+    }
+
+    $host = getApiHost();
+    $url = $host . 'atem/' . (int)$id . '/attachments/' . (int)$att_id . '/download';
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_HTTPGET, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HEADER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $token, 'Accept: */*'));
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+
+    $raw = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    curl_close($ch);
+
+    if ($raw === false || $httpCode != 200) {
+        header('HTTP/1.1 404 Not Found');
+        echo 'File not found';
+        return;
+    }
+
+    $rawHeaders = substr($raw, 0, $headerSize);
+    $body = substr($raw, $headerSize);
+
+    // Relay only the content headers needed for the browser to save the file.
+    $lines = explode("\r\n", $rawHeaders);
+    foreach ($lines as $line) {
+        if (stripos($line, 'Content-Type:') === 0
+            || stripos($line, 'Content-Disposition:') === 0
+            || stripos($line, 'Content-Length:') === 0
+        ) {
+            header($line);
+        }
+    }
+    echo $body;
+}
+
 // Only run request handler if this file is accessed directly (not included)
 if (!defined('API_JWT_INCLUDED')) {
     // Check if we have a staff ID for authentication
@@ -707,8 +1018,23 @@ if (!defined('API_JWT_INCLUDED')) {
     $jsonData = json_decode($input, true);
     $response = array('success' => false, 'message' => 'Invalid request');
 
-    // Check for action in query parameter or JSON body
-    $action = isset($_GET['action']) ? $_GET['action'] : (isset($jsonData['action']) ? $jsonData['action'] : null);
+    // Check for action in query parameter, multipart POST field, or JSON body.
+    // Multipart uploads (file attachments) carry the action in $_POST because the
+    // raw body is consumed as form-data, so json_decode above returns null.
+    $action = isset($_GET['action'])
+        ? $_GET['action']
+        : (isset($_POST['action'])
+            ? $_POST['action']
+            : (isset($jsonData['action']) ? $jsonData['action'] : null));
+
+    // Attachment download is a plain GET link that streams binary content rather
+    // than JSON, so it is handled before the JSON request switch below.
+    if ($action === 'attachment-download') {
+        $dlId  = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        $dlAtt = isset($_GET['att']) ? (int)$_GET['att'] : 0;
+        downloadAtemAttachment($dlId, $dlAtt, $staff_id);
+        exit;
+    }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action) {
@@ -726,6 +1052,10 @@ if (!defined('API_JWT_INCLUDED')) {
                         'department_name' => $issuer ? $issuer['department_name'] : null
                     );
                     $response = createAtemDraft($draftData, $staff_id);
+                    break;
+
+                case 'list-atems':
+                    $response = getAtemList($staff_id);
                     break;
 
                 case 'get-atem':
@@ -769,6 +1099,101 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = removeAtemArciByRole($jsonData['id'], $jsonData['role'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or role');
+                    }
+                    break;
+
+                case 'reflink-list':
+                    if (isset($jsonData['id'])) {
+                        $response = getAtemReferenceLinks($jsonData['id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID');
+                    }
+                    break;
+
+                case 'reflink-add':
+                    if (isset($jsonData['id']) && isset($jsonData['data'])) {
+                        $data = $jsonData['data'];
+                        $data['added_by'] = $staff_id; // inject server-side
+                        $response = addAtemReferenceLink($jsonData['id'], $data, $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or link data');
+                    }
+                    break;
+
+                case 'reflink-remove':
+                    if (isset($jsonData['id']) && isset($jsonData['link_id'])) {
+                        $response = removeAtemReferenceLink($jsonData['id'], $jsonData['link_id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or link_id');
+                    }
+                    break;
+
+                case 'attachment-list':
+                    if (isset($jsonData['id'])) {
+                        $response = getAtemAttachments($jsonData['id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID');
+                    }
+                    break;
+
+                case 'attachment-upload':
+                    // Multipart request: id arrives in $_POST and the file in $_FILES.
+                    if (isset($_POST['id']) && isset($_FILES['file'])) {
+                        $response = uploadAtemAttachment((int)$_POST['id'], $_FILES['file'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or file');
+                    }
+                    break;
+
+                case 'attachment-remove':
+                    if (isset($jsonData['id']) && isset($jsonData['att_id'])) {
+                        $response = removeAtemAttachment($jsonData['id'], $jsonData['att_id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or att_id');
+                    }
+                    break;
+
+                // --- Session-backed in-progress draft (no DB row until save) ---
+                case 'draft-get':
+                    $response = array(
+                        'success' => true,
+                        'data'    => isset($_SESSION['atem_draft']) ? $_SESSION['atem_draft'] : null
+                    );
+                    break;
+
+                case 'draft-save':
+                    $_SESSION['atem_draft'] = isset($jsonData['data']) ? $jsonData['data'] : null;
+                    $response = array('success' => true);
+                    break;
+
+                // Staged attachments (base64) live in their own session key so the
+                // frequent text draft-save does not re-send the file bytes.
+                case 'draft-files-save':
+                    $_SESSION['atem_draft_files'] = isset($jsonData['data']) ? $jsonData['data'] : array();
+                    $response = array('success' => true);
+                    break;
+
+                case 'draft-clear':
+                    unset($_SESSION['atem_draft']);
+                    unset($_SESSION['atem_draft_files']);
+                    $response = array('success' => true);
+                    break;
+
+                case 'save-atem':
+                    if (isset($jsonData['data'])) {
+                        $issuer = getStaffAuthData($staff_id);
+                        $data = $jsonData['data'];
+                        // Issuer identity and audit fields are injected server-side.
+                        $data['issuer_staff_id'] = $issuer ? $issuer['staff_id'] : $staff_id;
+                        $data['department_id']   = $issuer ? $issuer['department_id'] : null;
+                        $data['created_by']      = $staff_id;
+                        $response = saveAtemCard($data, $staff_id);
+                        if (!empty($response['success'])) {
+                            unset($_SESSION['atem_draft']);
+                            unset($_SESSION['atem_draft_files']);
+                        }
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM data');
                     }
                     break;
             }

@@ -1,17 +1,35 @@
-/* ATEM create form behaviour: lookups, live incentive, ARCI (draft-first AJAX),
-   timeline rules, and final save. Talks to the JWT proxy at atem/api.php. */
+/* ATEM create form behaviour: session-first draft lifecycle.
+   Nothing is written to the DB until the user saves. The in-progress card lives
+   in the PHP session (text/ARCI/links) and the browser (staged files). Talks to
+   the JWT proxy at atem/api.php. */
 (function () {
     'use strict';
 
     var CFG = window.ATEM_CONFIG || {};
+    var quillEditor = null;
+
+    // In-progress state (the source of truth in the browser).
     var arciState = { A: [], R: [], C: [], I: [] };
-    var CLOSING_STATUSES = ['Completed', 'Completed with Excellence', 'Failed'];
+    var reflinks = [];      // [{ name, url }]
+    var stagedFiles = [];   // File objects (client-side only, not session-synced)
+
+    // Leave/save bookkeeping.
+    var dirty = false;
+    var leaving = false;
+    var pendingNavUrl = 'atem/index.php';
+    var _syncTimer = null;
 
     // ----------------------------------------------------------------- helpers
     function $(id) { return document.getElementById(id); }
 
     function money(n) {
         return 'RM' + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
     }
 
     function apiCall(action, payload) {
@@ -28,23 +46,185 @@
         }).then(function (r) { return r.json(); });
     }
 
-    // ------------------------------------------------------------- TinyMCE RTE
+    function readFileAsBase64(file) {
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                var dataUrl = String(e.target.result);
+                var comma = dataUrl.indexOf(',');
+                resolve(comma >= 0 ? dataUrl.substring(comma + 1) : dataUrl);
+            };
+            reader.onerror = function () { reject(new Error('read failed')); };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // Staged files are kept as {name, type, size, content(base64)} objects and
+    // persisted to the session under their own key so they survive a refresh and
+    // are always present at save time. Synced only when files change.
+    function syncAttachments() {
+        apiCall('draft-files-save', { data: stagedFiles });
+    }
+
+    function setError(id, msg) {
+        var el = $(id);
+        if (el) { el.textContent = msg || ''; }
+    }
+
+    function clearFormErrors() {
+        ['atem-title-error', 'atem-level-error', 'atem-rule-error', 'tl-start-error',
+            'tl-end-error', 'arci-error', 'atem-save-error', 'atem-file-error'].forEach(function (id) {
+            setError(id, '');
+        });
+    }
+
+    // Shared confirmation modal for Attachment / Reference Link removals.
+    var _confirmModal = null, _confirmCb = null;
+    function getConfirmModal() {
+        if (!_confirmModal && typeof bootstrap !== 'undefined') {
+            _confirmModal = new bootstrap.Modal($('atem-confirm-modal'));
+            $('atem-confirm-ok').addEventListener('click', function () {
+                var cb = _confirmCb; _confirmCb = null;
+                if (_confirmModal) { _confirmModal.hide(); }
+                if (cb) { cb(); }
+            });
+        }
+        return _confirmModal;
+    }
+    function confirmAction(message, onConfirm) {
+        $('atem-confirm-message').textContent = message;
+        _confirmCb = onConfirm;
+        var m = getConfirmModal();
+        if (m) { m.show(); } else { onConfirm(); }
+    }
+
+    // Inline two-click confirm on a remove control (no JS dialog): first click
+    // arms it (shows a red "confirm?"), a second click runs onConfirm.
+    function armOrConfirm(el, onConfirm) {
+        if (el.getAttribute('data-confirming') === '1') {
+            if (el._t) { clearTimeout(el._t); el._t = null; }
+            onConfirm();
+            return;
+        }
+        el.setAttribute('data-confirming', '1');
+        el._orig = el.innerHTML;
+        el.innerHTML = 'confirm?';
+        el.classList.add('atem-confirm-x');
+        el._t = setTimeout(function () {
+            el.setAttribute('data-confirming', '0');
+            el.innerHTML = el._orig;
+            el.classList.remove('atem-confirm-x');
+            el._t = null;
+        }, 3000);
+    }
+
+    // --------------------------------------------------------- dirty / session
+    function markChanged() {
+        dirty = true;
+        scheduleSync();
+    }
+
+    function buildDraft() {
+        return {
+            title: $('atem-title').value,
+            description: quillEditor ? quillEditor.root.innerHTML : '',
+            level_structure_id: $('atem-level').value || null,
+            incentive_rule_id: $('atem-rule').value || null,
+            start_date: $('tl-start').value || null,
+            end_date: $('tl-end').value || null,
+            arci: arciState,
+            reflinks: reflinks
+        };
+    }
+
+    function scheduleSync() {
+        if (_syncTimer) { clearTimeout(_syncTimer); }
+        _syncTimer = setTimeout(function () {
+            apiCall('draft-save', { data: buildDraft() });
+        }, 500);
+    }
+
+    function hydrate(draft) {
+        if (!draft) { return; }
+        if (typeof draft.title === 'string') { $('atem-title').value = draft.title; }
+        if (draft.level_structure_id) { $('atem-level').value = draft.level_structure_id; }
+        if (draft.incentive_rule_id) { $('atem-rule').value = draft.incentive_rule_id; }
+        if (draft.start_date) { $('tl-start').value = draft.start_date; }
+        if (draft.end_date) { $('tl-end').value = draft.end_date; }
+        if (quillEditor && draft.description) { quillEditor.root.innerHTML = draft.description; }
+        if (draft.arci) {
+            arciState = {
+                A: draft.arci.A || [], R: draft.arci.R || [],
+                C: draft.arci.C || [], I: draft.arci.I || []
+            };
+        }
+        if (draft.reflinks) { reflinks = draft.reflinks; }
+        if (draft.attachments) { stagedFiles = draft.attachments; }
+        // Restored content is unsaved (no DB row), so leaving should still warn.
+        dirty = true;
+    }
+
+    // --------------------------------------------------------------- Quill RTE
+    // Matches the iidas rich text editor (common/rich_text_editor.php): Quill
+    // 1.3.6, full toolbar with custom link (prompt) and image (base64) handlers.
     function initEditor() {
-        if (typeof tinymce === 'undefined') { return; }
-        tinymce.init({
-            selector: 'textarea#atem-description',
-            promotion: false,
-            branding: false,
-            menubar: false,
-            height: 220,
-            plugins: ['lists', 'link', 'searchreplace', 'wordcount', 'fullscreen'],
-            toolbar: 'undo redo | blocks | bold italic underline | bullist numlist | link | removeformat | fullscreen',
-            content_css: 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css'
+        if (typeof Quill === 'undefined') { return; }
+        quillEditor = new Quill('#atem-description-editor', {
+            theme: 'snow',
+            modules: {
+                toolbar: {
+                    container: [
+                        [{ 'header': [1, 2, 3, false] }],
+                        ['bold', 'italic', 'underline', 'strike'],
+                        [{ 'color': [] }, { 'background': [] }],
+                        [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                        [{ 'indent': '-1' }, { 'indent': '+1' }],
+                        [{ 'align': [] }],
+                        ['link', 'image'],
+                        ['clean']
+                    ],
+                    handlers: {
+                        'link': function (value) {
+                            if (value) {
+                                var href = prompt('Enter the URL:');
+                                if (href) { this.quill.format('link', href); }
+                            } else {
+                                this.quill.format('link', false);
+                            }
+                        },
+                        'image': function () {
+                            var input = document.createElement('input');
+                            input.setAttribute('type', 'file');
+                            input.setAttribute('accept', 'image/*');
+                            input.click();
+
+                            var q = this.quill;
+                            input.onchange = function () {
+                                var file = input.files[0];
+                                if (file) {
+                                    var reader = new FileReader();
+                                    reader.onload = function (e) {
+                                        var range = q.getSelection(true);
+                                        q.insertEmbed(range.index, 'image', e.target.result, 'user');
+                                        q.setSelection(range.index + 1);
+                                    };
+                                    reader.readAsDataURL(file);
+                                }
+                            };
+                        }
+                    }
+                }
+            },
+            placeholder: 'Write the ATEM description in details here....'
+        });
+        quillEditor.on('text-change', function (delta, old, source) {
+            if (source === 'user') { markChanged(); }
         });
     }
 
     // --------------------------------------------------------------- dropdowns
     function fillSelect(select, items, valueKey, labelFn, placeholder) {
+        if (!select) { return; }
         select.innerHTML = '';
         var opt = document.createElement('option');
         opt.value = '';
@@ -61,7 +241,6 @@
     function populateLookups() {
         var levels = CFG.levels || [];
         var rules = CFG.rules || [];
-        var statuses = CFG.statuses || [];
 
         fillSelect($('atem-level'), levels, 'id', function (l) {
             return l.level + ' - ' + l.system_name + ' (RM' + Number(l.incentive_value).toFixed(0) + ')';
@@ -70,10 +249,6 @@
         fillSelect($('atem-rule'), rules, 'id', function (r) {
             return r.code + ' - ' + r.system_label;
         }, 'Select rule');
-
-        fillSelect($('tl-status'), statuses, 'id', function (s) {
-            return s.value;
-        }, 'Select status');
     }
 
     function selectedLevel() {
@@ -90,15 +265,6 @@
         var rules = CFG.rules || [];
         for (var i = 0; i < rules.length; i++) {
             if (String(rules[i].id) === String(id)) { return rules[i]; }
-        }
-        return null;
-    }
-
-    function selectedStatusValue() {
-        var id = $('tl-status').value;
-        var statuses = CFG.statuses || [];
-        for (var i = 0; i < statuses.length; i++) {
-            if (String(statuses[i].id) === String(id)) { return statuses[i].value; }
         }
         return null;
     }
@@ -133,58 +299,14 @@
         $('inc-r').textContent = money(r);
         $('inc-total').textContent = money(total);
 
-        var statusValue = selectedStatusValue();
         if (!level) {
             note.textContent = 'Select an ATEM level and rule to calculate incentive. C and I are not incentivised.';
         } else if (base === 0) {
             note.textContent = 'Level 1 carries no incentive payout.';
         } else if (!rule) {
             note.textContent = 'Select an incentive rule (required for Level 2-4).';
-        } else if (statusValue === 'Completed' || statusValue === 'Completed with Excellence') {
-            note.textContent = 'Claimable: incentive is payable on this closure status.';
         } else {
             note.textContent = 'Projected amounts. Claimable only when closed as Complete or Complete with Excellence.';
-        }
-    }
-
-    // --------------------------------------------------------------- timeline
-    function recalcFinalDue() {
-        var end = $('tl-end').value;
-        var ext1 = $('tl-ext1').value;
-        var ext2 = $('tl-ext2').value;
-        var finalDue = end;
-        if (ext1) { finalDue = ext1; }
-        if (ext2) { finalDue = ext2; }
-        $('tl-final-due').value = finalDue || '';
-    }
-
-    function syncExtensionFields() {
-        var on = $('tl-extended').checked;
-        var w1 = $('tl-ext1-wrap');
-        var w2 = $('tl-ext2-wrap');
-        if (!on) {
-            w1.style.display = 'none';
-            w2.style.display = 'none';
-            $('tl-ext1').value = '';
-            $('tl-ext2').value = '';
-        } else {
-            w1.style.display = '';
-            // Reveal the second extension only after the first is set.
-            w2.style.display = $('tl-ext1').value ? '' : 'none';
-            if (!$('tl-ext1').value) { $('tl-ext2').value = ''; }
-        }
-        recalcFinalDue();
-    }
-
-    function syncClosureDate() {
-        var statusValue = selectedStatusValue();
-        var closure = $('tl-closure');
-        if (statusValue && CLOSING_STATUSES.indexOf(statusValue) >= 0) {
-            if (!closure.value) {
-                closure.value = new Date().toISOString().slice(0, 10);
-            }
-        } else {
-            closure.value = '';
         }
     }
 
@@ -195,17 +317,6 @@
             (arciState[role] || []).forEach(function (m) { ids.push(parseInt(m.staff_id, 10)); });
         });
         return ids;
-    }
-
-    function setArciState(grouped) {
-        if (!grouped) { return; }
-        arciState = {
-            A: grouped.A || [],
-            R: grouped.R || [],
-            C: grouped.C || [],
-            I: grouped.I || []
-        };
-        renderArci();
     }
 
     function renderArci() {
@@ -232,12 +343,6 @@
         }
         // refresh staff picker so already-assigned people drop off
         renderStaffList();
-    }
-
-    function escapeHtml(s) {
-        return String(s).replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
     }
 
     function populateDepartments() {
@@ -293,142 +398,392 @@
     }
 
     function addSelectedMembers() {
+        setError('arci-error', '');
         var role = $('arci-role').value;
-        if (!role) { alert('Please select a role first.'); return; }
+        if (!role) { setError('arci-error', 'Please select a role first.'); return; }
 
         var deptId = $('arci-dept-select').value;
         var checks = $('arci-staff-list').querySelectorAll('input[type="checkbox"]:checked');
-        if (checks.length === 0) { alert('Please select at least one staff member.'); return; }
+        if (checks.length === 0) { setError('arci-error', 'Please select at least one staff member.'); return; }
         if (role === 'A' && (checks.length > 1 || (arciState.A && arciState.A.length > 0))) {
-            alert('Role A (Accountable) can only have one person.');
+            setError('arci-error', 'Role A (Accountable) can only have one person.');
             return;
         }
 
-        var queue = [];
-        for (var i = 0; i < checks.length; i++) {
-            queue.push({ id: parseInt(checks[i].value, 10), name: checks[i].getAttribute('data-name') });
-        }
-
         var deptName = departmentName(deptId);
-
-        function next() {
-            if (queue.length === 0) {
-                $('arci-role').value = '';
-                $('arci-dept-select').value = '';
-                $('arci-staff-search').value = '';
-                renderStaffList();
-                return;
-            }
-            var member = queue.shift();
-            apiCall('arci-add', {
-                id: CFG.atemId,
-                data: {
-                    staff_id: member.id,
-                    staff_name: member.name,
-                    department_id: deptId ? parseInt(deptId, 10) : null,
-                    department_name: deptName,
-                    role: role
-                }
-            }).then(function (res) {
-                if (res && res.success) {
-                    setArciState(res.data);
-                } else {
-                    alert(res && res.message ? res.message : 'Failed to add member.');
-                }
-                next();
-            }).catch(function () { alert('Network error while adding member.'); next(); });
+        for (var i = 0; i < checks.length; i++) {
+            arciState[role].push({
+                staff_id: parseInt(checks[i].value, 10),
+                staff_name: checks[i].getAttribute('data-name'),
+                department_id: deptId ? parseInt(deptId, 10) : null,
+                department_name: deptName,
+                role: role
+            });
         }
-        next();
+
+        $('arci-role').value = '';
+        $('arci-dept-select').value = '';
+        $('arci-staff-search').value = '';
+        renderArci();
+        markChanged();
     }
 
     function removeMember(staffId, role) {
-        apiCall('arci-remove', { id: CFG.atemId, staff_id: staffId, role: role }).then(function (res) {
-            if (res && res.success) { setArciState(res.data); }
-            else { alert(res && res.message ? res.message : 'Failed to remove member.'); }
+        var list = arciState[role] || [];
+        for (var i = 0; i < list.length; i++) {
+            if (parseInt(list[i].staff_id, 10) === parseInt(staffId, 10)) {
+                list.splice(i, 1);
+                break;
+            }
+        }
+        renderArci();
+        markChanged();
+    }
+
+    // Two-click inline confirm for clearing a role.
+    var _pendingClear = {};
+    function resetClearBtn(role, btn) {
+        if (_pendingClear[role]) { clearTimeout(_pendingClear[role]); }
+        delete _pendingClear[role];
+        if (btn) {
+            btn.textContent = 'Delete All';
+            btn.classList.remove('atem-arci-clear-confirm');
+        }
+    }
+
+    function clearRole(role, btn) {
+        if (_pendingClear[role]) {
+            resetClearBtn(role, btn);
+            arciState[role] = [];
+            renderArci();
+            markChanged();
+            return;
+        }
+        setError('arci-error', '');
+        if (btn) {
+            btn.textContent = 'Click again to confirm';
+            btn.classList.add('atem-arci-clear-confirm');
+        }
+        _pendingClear[role] = setTimeout(function () { resetClearBtn(role, btn); }, 3000);
+    }
+
+    // ------------------------------------------------------- reference links
+    var _reflinkModal = null;
+    function getReflinkModal() {
+        if (!_reflinkModal && typeof bootstrap !== 'undefined') {
+            _reflinkModal = new bootstrap.Modal($('atem-reflink-modal'));
+        }
+        return _reflinkModal;
+    }
+
+    function renderReferenceLinks() {
+        var wrap = $('atem-reflink-list');
+        if (!reflinks.length) {
+            wrap.innerHTML = '<div class="atem-empty-state">No Reference Link added.</div>';
+            return;
+        }
+        var html = '<ol class="atem-reflink-ol">';
+        for (var i = 0; i < reflinks.length; i++) {
+            html += '<li><div class="atem-reflink-row">'
+                + '<a href="' + escapeHtml(reflinks[i].url) + '" target="_blank" rel="noopener">' + escapeHtml(reflinks[i].name) + '</a>'
+                + '<span class="atem-reflink-remove" data-index="' + i + '" title="Remove">&times;</span>'
+                + '</div></li>';
+        }
+        html += '</ol>';
+        wrap.innerHTML = html;
+    }
+
+    function openReflinkModal() {
+        $('reflink-name').value = '';
+        $('reflink-url').value = '';
+        setError('reflink-error', '');
+        var m = getReflinkModal();
+        if (m) { m.show(); }
+    }
+
+    function saveReferenceLink() {
+        var name = $('reflink-name').value.trim();
+        var url = $('reflink-url').value.trim();
+        if (!name || !url) { setError('reflink-error', 'Please fill in both Name and URL.'); return; }
+        try { new URL(url); } catch (e) { setError('reflink-error', 'Please enter a valid URL (e.g. https://example.com).'); return; }
+        reflinks.push({ name: name, url: url });
+        renderReferenceLinks();
+        markChanged();
+        var m = getReflinkModal();
+        if (m) { m.hide(); }
+    }
+
+    function removeReferenceLink(index) {
+        reflinks.splice(index, 1);
+        renderReferenceLinks();
+        markChanged();
+    }
+
+    // ------------------------------------------------------------ attachments
+    var ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'];
+    var MAX_BYTES = 10 * 1024 * 1024;
+
+    function formatFileSize(bytes) {
+        if (!bytes) { return '0 Bytes'; }
+        var k = 1024;
+        var sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    function fileExt(name) {
+        var idx = name.lastIndexOf('.');
+        return idx >= 0 ? name.substr(idx + 1).toLowerCase() : '';
+    }
+
+    function renderStagedFiles() {
+        var wrap = $('atem-file-list');
+        if (!stagedFiles.length) {
+            wrap.innerHTML = '<div class="atem-empty-state">No files attached.</div>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < stagedFiles.length; i++) {
+            html += '<div class="atem-file-row">'
+                + '<span class="atem-file-name">' + escapeHtml(stagedFiles[i].name) + ' (' + formatFileSize(stagedFiles[i].size) + ')</span>'
+                + '<span class="atem-file-remove" data-index="' + i + '" title="Remove">&times;</span>'
+                + '</div>';
+        }
+        wrap.innerHTML = html;
+    }
+
+    function addStagedFiles(fileList) {
+        setError('atem-file-error', '');
+        var toRead = [];
+        for (var i = 0; i < fileList.length; i++) {
+            var f = fileList[i];
+            if (ALLOWED_EXT.indexOf(fileExt(f.name)) < 0) {
+                setError('atem-file-error', f.name + ': file type not allowed.');
+                continue;
+            }
+            if (f.size > MAX_BYTES) {
+                setError('atem-file-error', f.name + ': exceeds 10MB.');
+                continue;
+            }
+            var dup = false;
+            for (var j = 0; j < stagedFiles.length; j++) {
+                if (stagedFiles[j].name === f.name && stagedFiles[j].size === f.size) { dup = true; break; }
+            }
+            if (!dup) { toRead.push(f); }
+        }
+        if (!toRead.length) { return; }
+
+        // Capture the bytes as base64 now (not lazily at save) so the file is
+        // guaranteed to be in the payload and is persisted to the session.
+        Promise.all(toRead.map(function (file) {
+            return readFileAsBase64(file).then(function (b64) {
+                return { name: file.name, type: file.type, size: file.size, content: b64 };
+            });
+        })).then(function (objs) {
+            for (var k = 0; k < objs.length; k++) { stagedFiles.push(objs[k]); }
+            renderStagedFiles();
+            dirty = true;
+            syncAttachments();
+        }).catch(function () {
+            setError('atem-file-error', 'Could not read the selected file(s).');
         });
     }
 
-    function clearRole(role) {
-        if (!confirm('Remove all members from role ' + role + '?')) { return; }
-        apiCall('arci-remove-role', { id: CFG.atemId, role: role }).then(function (res) {
-            if (res && res.success) { setArciState(res.data); }
-            else { alert(res && res.message ? res.message : 'Failed to clear role.'); }
+    function removeStagedFile(index) {
+        stagedFiles.splice(index, 1);
+        renderStagedFiles();
+        dirty = true;
+        syncAttachments();
+    }
+
+    function bindAttachmentZone() {
+        var dz = $('atem-dropzone');
+        var fi = $('atem-file-input');
+        if (!dz || !fi) { return; }
+
+        $('atem-file-pick').addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            fi.click();
+        });
+        dz.addEventListener('click', function () { fi.click(); });
+        fi.addEventListener('change', function () { addStagedFiles(fi.files); fi.value = ''; });
+
+        ['dragenter', 'dragover'].forEach(function (ev) {
+            dz.addEventListener(ev, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dz.classList.add('atem-dropzone-active');
+            });
+        });
+        ['dragleave', 'drop'].forEach(function (ev) {
+            dz.addEventListener(ev, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dz.classList.remove('atem-dropzone-active');
+            });
+        });
+        dz.addEventListener('drop', function (e) {
+            if (e.dataTransfer && e.dataTransfer.files) { addStagedFiles(e.dataTransfer.files); }
+        });
+
+        $('atem-file-list').addEventListener('click', function (e) {
+            if (e.target.classList.contains('atem-file-remove')) {
+                var idx = parseInt(e.target.getAttribute('data-index'), 10);
+                confirmAction('Remove this attachment?', function () { removeStagedFile(idx); });
+            }
         });
     }
 
     // ------------------------------------------------------------------- save
-    function saveAtem() {
+    function flattenArci() {
+        return arciState.A.concat(arciState.R, arciState.C, arciState.I);
+    }
+
+    function validateFinal() {
+        clearFormErrors();
         var title = $('atem-title').value.trim();
-        var googleLink = $('atem-google-link').value.trim();
         var levelId = $('atem-level').value;
         var ruleId = $('atem-rule').value;
         var startDate = $('tl-start').value;
         var endDate = $('tl-end').value;
         var level = selectedLevel();
 
-        if (!title) { alert('ATEM Title is required.'); return; }
-        if (!googleLink) { alert('ATEM Google Link is required.'); return; }
-        if (!levelId) { alert('ATEM Level is required.'); return; }
-        if (!startDate) { alert('Start Date is required.'); return; }
-        if (!endDate) { alert('End Date is required.'); return; }
+        if (!title) { setError('atem-title-error', 'ATEM Title is required.'); $('atem-title').focus(); return false; }
+        if (!levelId) { setError('atem-level-error', 'ATEM Level is required.'); $('atem-level').focus(); return false; }
+        if (!startDate) { setError('tl-start-error', 'Start Date is required.'); $('tl-start').focus(); return false; }
+        if (!endDate) { setError('tl-end-error', 'End Date is required.'); $('tl-end').focus(); return false; }
         if (level && Number(level.incentive_value) > 0 && !ruleId) {
-            alert('Incentive Rule is required for Level 2-4.');
-            return;
+            setError('atem-rule-error', 'Incentive Rule is required for Level 2-4.');
+            $('atem-rule').focus();
+            return false;
         }
         if (!arciState.A || arciState.A.length === 0) {
-            alert('An Accountable (A) member is mandatory.');
-            return;
+            setError('arci-error', 'An Accountable (A) member is mandatory.');
+            return false;
         }
+        return true;
+    }
 
-        var description = (typeof tinymce !== 'undefined' && tinymce.get('atem-description'))
-            ? tinymce.get('atem-description').getContent()
-            : $('atem-description').value;
-
-        var data = {
-            title: title,
+    function collectPayload(mode) {
+        var levelId = $('atem-level').value;
+        var ruleId = $('atem-rule').value;
+        var description = '';
+        if (quillEditor) {
+            description = (quillEditor.getText().trim() === '') ? '' : quillEditor.root.innerHTML;
+        }
+        return {
+            title: $('atem-title').value.trim(),
             description: description,
-            google_link: googleLink,
             level_structure_id: levelId ? parseInt(levelId, 10) : null,
             incentive_rule_id: ruleId ? parseInt(ruleId, 10) : null,
-            start_date: startDate,
-            end_date: endDate,
-            is_extended: $('tl-extended').checked,
-            extended_date_1: $('tl-ext1').value || null,
-            extended_date_2: $('tl-ext2').value || null,
-            atem_status_id: $('tl-status').value ? parseInt($('tl-status').value, 10) : null,
-            remarks: $('tl-remarks').value,
-            finalize: true
+            start_date: $('tl-start').value || null,
+            end_date: $('tl-end').value || null,
+            arci: flattenArci(),
+            reference_links: reflinks,
+            mode: mode
         };
+    }
+
+    // Upload the staged files (multipart) against a saved ATEM id, then continue.
+    function saveAtem(mode, navUrl) {
+        if (mode === 'final' && !validateFinal()) { return; }
+        setError('atem-save-error', '');
 
         var btn = $('atem-save-btn');
-        btn.disabled = true;
-        btn.textContent = 'Saving...';
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
-        apiCall('update-atem', { id: CFG.atemId, data: data }).then(function (res) {
-            if (res && res.success) {
-                window.location.href = 'atem/index.php';
+        // Staged files already hold their base64 content, so the card and its
+        // attachments are persisted together in one atomic call.
+        var payload = collectPayload(mode);
+        payload.attachments = stagedFiles;
+        apiCall('save-atem', { data: payload }).then(function (res) {
+            if (res && res.success && res.data && res.data.id) {
+                apiCall('draft-clear').then(function () {
+                    leaving = true;
+                    window.location.href = navUrl || 'atem/index.php';
+                });
             } else {
-                alert(res && res.message ? res.message : 'Failed to save ATEM.');
-                btn.disabled = false;
-                btn.textContent = 'Save ATEM';
+                setError('atem-save-error', res && res.message ? res.message : 'Failed to save ATEM.');
+                if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
             }
         }).catch(function () {
-            alert('Network error while saving.');
-            btn.disabled = false;
-            btn.textContent = 'Save ATEM';
+            setError('atem-save-error', 'Network error while saving.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
+        });
+    }
+
+    function cancelAtem(navUrl) {
+        apiCall('draft-clear').then(function () {
+            leaving = true;
+            window.location.href = navUrl || 'atem/index.php';
+        });
+    }
+
+    // ------------------------------------------------------------ leave guard
+    var _leaveModal = null;
+    function getLeaveModal() {
+        if (!_leaveModal && typeof bootstrap !== 'undefined') {
+            _leaveModal = new bootstrap.Modal($('atem-leave-modal'));
+        }
+        return _leaveModal;
+    }
+
+    function showLeaveModal(navUrl) {
+        pendingNavUrl = navUrl || 'atem/index.php';
+        var m = getLeaveModal();
+        if (m) { m.show(); }
+    }
+
+    function bindLeaveGuard() {
+        var cancelBtn = $('atem-cancel-btn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function () { showLeaveModal('atem/index.php'); });
+        }
+        var leaveCancel = $('atem-leave-cancel');
+        if (leaveCancel) {
+            leaveCancel.addEventListener('click', function () {
+                var m = getLeaveModal(); if (m) { m.hide(); }
+                cancelAtem(pendingNavUrl);
+            });
+        }
+        var leaveDraft = $('atem-leave-draft');
+        if (leaveDraft) {
+            leaveDraft.addEventListener('click', function () {
+                var m = getLeaveModal(); if (m) { m.hide(); }
+                saveAtem('draft', pendingNavUrl);
+            });
+        }
+
+        // Intercept in-app navigation links while there are unsaved changes.
+        document.addEventListener('click', function (e) {
+            if (!dirty || leaving) { return; }
+            var a = e.target.closest ? e.target.closest('a[href]') : null;
+            if (!a) { return; }
+            var href = a.getAttribute('href');
+            if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) { return; }
+            if (a.getAttribute('target') === '_blank') { return; }
+            e.preventDefault();
+            showLeaveModal(a.href);
+        });
+
+        // Tab close / refresh: only a generic browser prompt is possible.
+        window.addEventListener('beforeunload', function (e) {
+            if (dirty && !leaving) {
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            }
         });
     }
 
     // --------------------------------------------------------------- wiring
     function bind() {
-        $('atem-level').addEventListener('change', recalcIncentive);
-        $('atem-rule').addEventListener('change', recalcIncentive);
-        $('tl-status').addEventListener('change', function () { syncClosureDate(); recalcIncentive(); });
-
-        $('tl-end').addEventListener('change', recalcFinalDue);
-        $('tl-extended').addEventListener('change', syncExtensionFields);
-        $('tl-ext1').addEventListener('change', function () { syncExtensionFields(); });
-        $('tl-ext2').addEventListener('change', recalcFinalDue);
+        $('atem-title').addEventListener('input', markChanged);
+        $('atem-level').addEventListener('change', function () { recalcIncentive(); markChanged(); });
+        $('atem-rule').addEventListener('change', function () { recalcIncentive(); markChanged(); });
+        $('tl-start').addEventListener('change', markChanged);
+        $('tl-end').addEventListener('change', markChanged);
 
         $('arci-dept-search').addEventListener('keyup', filterDepartments);
         $('arci-dept-select').addEventListener('change', renderStaffList);
@@ -438,22 +793,40 @@
         $('arci-grid').addEventListener('click', function (e) {
             var t = e.target;
             if (t.classList.contains('atem-arci-remove')) {
-                removeMember(parseInt(t.getAttribute('data-staff'), 10), t.getAttribute('data-role'));
+                var sId = parseInt(t.getAttribute('data-staff'), 10);
+                var sRole = t.getAttribute('data-role');
+                armOrConfirm(t, function () { removeMember(sId, sRole); });
             } else if (t.classList.contains('atem-arci-clear')) {
-                clearRole(t.getAttribute('data-role'));
+                clearRole(t.getAttribute('data-role'), t);
             }
         });
 
+        $('atem-add-reflink-btn').addEventListener('click', openReflinkModal);
+        $('reflink-save-btn').addEventListener('click', saveReferenceLink);
+        $('atem-reflink-list').addEventListener('click', function (e) {
+            if (e.target.classList.contains('atem-reflink-remove')) {
+                var idx = parseInt(e.target.getAttribute('data-index'), 10);
+                confirmAction('Remove this reference link?', function () { removeReferenceLink(idx); });
+            }
+        });
+
+        bindAttachmentZone();
+
         var saveBtn = $('atem-save-btn');
-        if (saveBtn) { saveBtn.addEventListener('click', saveAtem); }
+        if (saveBtn) { saveBtn.addEventListener('click', function () { saveAtem('final', 'atem/index.php'); }); }
+
+        bindLeaveGuard();
     }
 
     document.addEventListener('DOMContentLoaded', function () {
         populateLookups();
         populateDepartments();
         initEditor();
+        hydrate(CFG.draft);
         bind();
         recalcIncentive();
         renderArci();
+        renderReferenceLinks();
+        renderStagedFiles();
     });
 })();

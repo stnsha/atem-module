@@ -5,6 +5,7 @@ $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 
 // Determine active class for each nav item
 $dashboard_active = ($current_page == 'index.php' && $current_dir == 'atem')  ? 'active' : '';
+$view_active      = ($current_page == 'view.php')                             ? 'active' : '';
 $admin_active     = ($current_dir == 'admin')                                 ? 'active' : '';
 
 // Resolve role for conditional menu items.
@@ -30,6 +31,9 @@ if (isset($atem_permission)) {
                 </li>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $dashboard_active; ?>" href="atem/index.php">Dashboard</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?php echo $view_active; ?>" href="atem/view.php">View ATEM</a>
                 </li>
                 <?php if ($atem_role === 1): ?>
                 <li class="nav-item">

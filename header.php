@@ -51,6 +51,6 @@ include(dirname(__FILE__) . '/../common/index_adv.php');
 
         <div class="row mb-4">
             <div class="col-12">
-                <h1 class="atem-page-title"><?php echo htmlspecialchars($page_title); ?></h1>
+                <h1 class="atem-page-title"><?php echo htmlspecialchars($page_title); ?><?php echo isset($page_title_badge) ? ' ' . $page_title_badge : ''; ?></h1>
             </div>
         </div>
