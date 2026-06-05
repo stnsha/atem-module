@@ -84,6 +84,14 @@ if ($record) {
             $record['arci'][$k]['department_name'] = isset($dept_names[$mdid]) ? $dept_names[$mdid] : '';
         }
     }
+    if (isset($record['audit_logs']) && is_array($record['audit_logs'])) {
+        foreach ($record['audit_logs'] as $k => $entry) {
+            $aid = isset($entry['actor_staff_id']) ? (int) $entry['actor_staff_id'] : 0;
+            $record['audit_logs'][$k]['actor_name'] = isset($staff_names[$aid])
+                ? $staff_names[$aid]
+                : ($aid ? 'Staff #' . $aid : 'System');
+        }
+    }
 }
 
 $atem_config = array(
@@ -111,7 +119,8 @@ $atem_config = array(
     <div class="atem-bento-item atem-span-8">
         <div class="atem-card h-100">
             <h6 class="atem-card-title"><i class="bi bi-file-earmark-text"></i> ATEM Details</h6>
-            <p class="atem-card-hint"><?php echo $is_read ? 'Viewing an ATEM card (read only).' : 'Edit this ATEM card. Fields marked'; ?>
+            <p class="atem-card-hint">
+                <?php echo $is_read ? 'Viewing an ATEM card (read only).' : 'Edit this ATEM card. Fields marked'; ?>
                 <?php if (!$is_read): ?><span class="atem-req">*</span> are required.<?php endif; ?></p>
             <div class="row g-3 mt-1">
                 <div class="col-12">
@@ -121,11 +130,13 @@ $atem_config = array(
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Issuer</label>
-                    <input type="text" class="form-control" id="atem-issuer" value="<?php echo htmlspecialchars($issuer_name); ?>" readonly>
+                    <input type="text" class="form-control" id="atem-issuer"
+                        value="<?php echo htmlspecialchars($issuer_name); ?>" readonly>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Department</label>
-                    <input type="text" class="form-control" id="atem-department" value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
+                    <input type="text" class="form-control" id="atem-department"
+                        value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
                 <div class="col-md-6">
                     <label for="atem-level" class="form-label">ATEM Level <span class="atem-req">*</span></label>
@@ -135,13 +146,13 @@ $atem_config = array(
                     <div class="atem-form-error" id="atem-level-error"></div>
                 </div>
                 <div class="col-md-6">
-                    <label for="atem-rule" class="form-label">Incentive Rule</label>
+                    <label for="atem-rule" class="form-label">Incentive Rule <span class="atem-req" id="rule-req-star" style="display:none;">*</span></label>
                     <select class="form-select" id="atem-rule">
                         <option value="">Select rule</option>
                     </select>
                     <div class="atem-form-error" id="atem-rule-error"></div>
                 </div>
-                <div class="col-12">
+                <div class="col-12 mt-2">
                     <label class="form-label">ATEM Description</label>
                     <div id="atem-description-editor"></div>
                 </div>
@@ -160,9 +171,12 @@ $atem_config = array(
                     <div class="atem-incentive-total-amount" id="inc-total">RM0.00</div>
                 </div>
                 <div class="atem-incentive-breakdown">
-                    <div class="atem-incentive-stat"><span class="atem-incentive-stat-label">Base</span><span class="atem-incentive-stat-value" id="inc-base">RM0.00</span></div>
-                    <div class="atem-incentive-stat"><span class="atem-incentive-stat-label">A &middot; Accountable</span><span class="atem-incentive-stat-value" id="inc-a">RM0.00</span></div>
-                    <div class="atem-incentive-stat"><span class="atem-incentive-stat-label">R &middot; Responsible</span><span class="atem-incentive-stat-value" id="inc-r">RM0.00</span></div>
+                    <div class="atem-incentive-stat"><span class="atem-incentive-stat-label">Base</span><span
+                            class="atem-incentive-stat-value" id="inc-base">RM0.00</span></div>
+                    <div class="atem-incentive-stat"><span class="atem-incentive-stat-label">A &middot;
+                            Accountable</span><span class="atem-incentive-stat-value" id="inc-a">RM0.00</span></div>
+                    <div class="atem-incentive-stat"><span class="atem-incentive-stat-label">R &middot;
+                            Responsible</span><span class="atem-incentive-stat-value" id="inc-r">RM0.00</span></div>
                 </div>
                 <div class="atem-incentive-note" id="inc-note">Incentive is computed from the level and rule.</div>
             </div>
@@ -174,8 +188,10 @@ $atem_config = array(
             <p class="atem-card-hint">Files stored with this ATEM.</p>
             <?php if (!$is_read): ?>
             <div id="atem-dropzone" class="atem-dropzone">
-                <input type="file" id="atem-file-input" multiple accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt" hidden>
-                <div class="atem-dropzone-text"><strong>Drag &amp; drop files here</strong> or <a href="#" id="atem-file-pick">click to select</a></div>
+                <input type="file" id="atem-file-input" multiple
+                    accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt" hidden>
+                <div class="atem-dropzone-text"><strong>Drag &amp; drop files here</strong> or <a href="#"
+                        id="atem-file-pick">click to select</a></div>
                 <small class="atem-dropzone-hint">Maximum 10MB per file. Allowed: Images, PDF, Word, Excel, Text</small>
             </div>
             <div class="atem-form-error" id="atem-file-error"></div>
@@ -188,9 +204,10 @@ $atem_config = array(
         <!-- Reference Link -->
         <div class="atem-card">
             <div class="atem-card-title-row">
-                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Links</h6>
+                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link</h6>
                 <?php if (!$is_read): ?>
-                <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference Link</button>
+                <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference
+                    Link</button>
                 <?php endif; ?>
             </div>
             <p class="atem-card-hint">Named links to related documents or resources.</p>
@@ -203,8 +220,9 @@ $atem_config = array(
     <!-- ARCI -->
     <div class="atem-bento-item atem-span-12">
         <div class="atem-card">
-            <h6 class="atem-card-title"><i class="bi bi-people"></i> ARCI</h6>
-            <p class="atem-card-hint">A (Accountable) is mandatory and limited to one person. C and I are for visibility only.</p>
+            <h6 class="atem-card-title"><i class="bi bi-people"></i> Project Team (ARCI)</h6>
+            <p class="atem-card-hint">A (Accountable) is mandatory and limited to one person. C and I are for visibility
+                only.</p>
             <?php if (!$is_read): ?>
             <div class="atem-arci-add">
                 <div class="atem-arci-add-grid">
@@ -220,14 +238,19 @@ $atem_config = array(
                     </div>
                     <div>
                         <label class="form-label">Department</label>
-                        <input type="text" class="form-control mb-1" id="arci-dept-search" placeholder="Search department...">
-                        <select class="form-select" id="arci-dept-select" size="6"><option value="">Select department</option></select>
+                        <input type="text" class="form-control mb-1" id="arci-dept-search"
+                            placeholder="Search department...">
+                        <select class="form-select" id="arci-dept-select" size="6">
+                            <option value="">Select department</option>
+                        </select>
                     </div>
                     <div>
                         <label class="form-label">Staff</label>
-                        <input type="text" class="form-control mb-1" id="arci-staff-search" placeholder="Search staff...">
+                        <input type="text" class="form-control mb-1" id="arci-staff-search"
+                            placeholder="Search staff...">
                         <div id="arci-staff-list" class="atem-arci-staff-list"></div>
-                        <button type="button" class="btn btn-primary btn-sm mt-2 w-100" id="arci-add-btn">Add Selected</button>
+                        <button type="button" class="btn btn-primary btn-sm mt-2 w-100" id="arci-add-btn">Add
+                            Selected</button>
                     </div>
                 </div>
                 <div class="atem-form-error" id="arci-error"></div>
@@ -243,7 +266,8 @@ $atem_config = array(
                     <div class="atem-arci-col-head">
                         <span><strong><?php echo $rkey; ?></strong> - <?php echo $rlabel; ?></span>
                         <?php if (!$is_read): ?>
-                        <button type="button" class="btn btn-outline-secondary btn-sm atem-arci-clear" data-role="<?php echo $rkey; ?>">Delete All</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm atem-arci-clear"
+                            data-role="<?php echo $rkey; ?>">Delete All</button>
                         <?php endif; ?>
                     </div>
                     <div class="atem-arci-members" data-role="<?php echo $rkey; ?>">
@@ -252,6 +276,22 @@ $atem_config = array(
                 </div>
                 <?php endforeach; ?>
             </div>
+        </div>
+    </div>
+
+    <!-- Progress Update -->
+    <div class="atem-bento-item atem-span-12">
+        <div class="atem-card">
+            <div class="atem-card-title-row">
+                <h6 class="atem-card-title"><i class="bi bi-bar-chart-steps"></i> Progress Update</h6>
+                <?php if (!$is_read): ?>
+                <button type="button" class="btn btn-primary btn-sm" id="atem-add-progress-btn">Add Progress</button>
+                <?php endif; ?>
+            </div>
+            <p class="atem-card-hint">Periodic progress updates for this task. Status reflects overall health at the
+                time of the update.</p>
+            <div id="atem-progress-wrap"></div>
+            <div class="atem-form-error" id="progress-error"></div>
         </div>
     </div>
 
@@ -273,15 +313,19 @@ $atem_config = array(
                     <div class="atem-form-error" id="tl-end-error"></div>
                 </div>
                 <div class="col-md-4">
-                    <label for="tl-status" class="form-label">Status</label>
-                    <select class="form-select" id="tl-status"><option value="">Select status</option></select>
+                    <label for="tl-status" class="form-label">Status <span class="atem-req">*</span></label>
+                    <select class="form-select" id="tl-status">
+                        <option value="">Select status</option>
+                    </select>
+                    <div class="atem-form-error" id="tl-status-error"></div>
                 </div>
 
                 <!-- Row 2: Extended -->
                 <div class="col-12">
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" id="tl-extended">
-                        <label class="form-check-label" for="tl-extended" style="font-size:13px;">Extended? (maximum 2 extensions)</label>
+                        <label class="form-check-label" for="tl-extended" style="font-size:13px;">Extended? (maximum 2
+                            extensions)</label>
                     </div>
                     <div class="row g-3">
                         <div class="col-md-4 atem-ext-field" id="tl-ext1-wrap" style="display:none;">
@@ -308,7 +352,8 @@ $atem_config = array(
                 <!-- Row 4: Remarks -->
                 <div class="col-12">
                     <label for="tl-remarks" class="form-label">Remarks</label>
-                    <textarea class="form-control" id="tl-remarks" rows="4" placeholder="Notes, failure reason or excellence remark"></textarea>
+                    <textarea class="form-control" id="tl-remarks" rows="4"
+                        placeholder="Notes, failure reason or excellence remark"></textarea>
                 </div>
             </div>
         </div>
@@ -322,8 +367,17 @@ $atem_config = array(
 <div class="atem-save-bar">
     <a href="atem/view.php" class="btn btn-outline-secondary">Back to list</a>
     <?php if (!$is_read): ?>
-    <button type="button" class="btn btn-primary" id="atem-save-btn" <?php echo $api_unavailable ? 'disabled' : ''; ?>>Save ATEM</button>
+    <button type="button" class="btn btn-primary" id="atem-save-btn"
+        <?php echo $api_unavailable ? 'disabled' : ''; ?>>Save ATEM</button>
     <?php endif; ?>
+</div>
+
+<!-- Audit Log -->
+<div class="atem-card mt-4" id="atem-audit-card">
+    <h6 class="atem-card-title"><i class="bi bi-clock-history"></i> Audit Log</h6>
+    <p class="atem-card-hint">Full history of changes made to this ATEM card.</p>
+    <div id="atem-audit-meta" class="atem-audit-meta"></div>
+    <div id="atem-audit-log" class="atem-audit-log mt-3"></div>
 </div>
 
 <!-- Add Reference Link modal -->

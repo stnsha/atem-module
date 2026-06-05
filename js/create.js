@@ -285,6 +285,8 @@
         } else {
             ruleSelect.removeAttribute('disabled');
         }
+        var ruleStar = $('rule-req-star');
+        if (ruleStar) { ruleStar.style.display = (base > 0) ? '' : 'none'; }
         rule = selectedRule();
 
         var a = 0, r = 0;

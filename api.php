@@ -694,7 +694,7 @@ function addAtemArci($id, $data, $staff_id)
 function removeAtemArci($id, $member_staff_id, $role, $staff_id)
 {
     $endpoint = 'atem/' . (int)$id . '/arci?staff_id=' . (int)$member_staff_id . '&role=' . urlencode($role);
-    $result = getApiDataWithJWT($endpoint, null, 'DELETE', $staff_id);
+    $result = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id), 'DELETE', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded = json_decode($result['response'], true);
 
@@ -722,7 +722,7 @@ function removeAtemArci($id, $member_staff_id, $role, $staff_id)
 function removeAtemArciByRole($id, $role, $staff_id)
 {
     $endpoint = 'atem/' . (int)$id . '/arci/role/' . urlencode($role);
-    $result = getApiDataWithJWT($endpoint, null, 'DELETE', $staff_id);
+    $result = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id), 'DELETE', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded = json_decode($result['response'], true);
 
@@ -803,7 +803,7 @@ function addAtemReferenceLink($id, $data, $staff_id)
 function removeAtemReferenceLink($id, $link_id, $staff_id)
 {
     $endpoint = 'atem/' . (int)$id . '/reference-links/' . (int)$link_id;
-    $result = getApiDataWithJWT($endpoint, null, 'DELETE', $staff_id);
+    $result = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id), 'DELETE', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded = json_decode($result['response'], true);
 
@@ -922,7 +922,7 @@ function uploadAtemAttachment($id, $file_info, $staff_id)
 function removeAtemAttachment($id, $att_id, $staff_id)
 {
     $endpoint = 'atem/' . (int)$id . '/attachments/' . (int)$att_id;
-    $result = getApiDataWithJWT($endpoint, null, 'DELETE', $staff_id);
+    $result = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id), 'DELETE', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded = json_decode($result['response'], true);
 
@@ -936,6 +936,102 @@ function removeAtemAttachment($id, $att_id, $staff_id)
         return array(
             'success' => false,
             'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to remove attachment'
+        );
+    }
+}
+
+/**
+ * List progress updates for an ATEM card
+ */
+function getAtemProgress($id, $staff_id)
+{
+    $result = getApiDataWithJWT('atem/' . (int)$id . '/progress', null, 'GET', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : array()
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to retrieve progress updates'
+        );
+    }
+}
+
+/**
+ * Add a progress update to an ATEM card
+ */
+function addAtemProgress($id, $data, $staff_id)
+{
+    $result = getApiDataWithJWT('atem/' . (int)$id . '/progress', $data, 'POST', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200 || $httpCode == 201) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Progress update added successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to add progress update',
+            'errors' => isset($decoded['errors']) ? $decoded['errors'] : null
+        );
+    }
+}
+
+/**
+ * Update an existing progress update on an ATEM card
+ */
+function updateAtemProgress($id, $progress_id, $data, $staff_id)
+{
+    $data['actor_id'] = (int)$staff_id;
+    $endpoint = 'atem/' . (int)$id . '/progress/' . (int)$progress_id;
+    $result = getApiDataWithJWT($endpoint, $data, 'PUT', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Progress update saved successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to update progress update',
+            'errors' => isset($decoded['errors']) ? $decoded['errors'] : null
+        );
+    }
+}
+
+/**
+ * Remove a progress update from an ATEM card
+ */
+function removeAtemProgress($id, $progress_id, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/progress/' . (int)$progress_id;
+    $result = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id), 'DELETE', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200 || $httpCode == 204) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Progress update removed successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to remove progress update'
         );
     }
 }
@@ -1150,6 +1246,40 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = removeAtemAttachment($jsonData['id'], $jsonData['att_id'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or att_id');
+                    }
+                    break;
+
+                case 'progress-list':
+                    if (isset($jsonData['id'])) {
+                        $response = getAtemProgress($jsonData['id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID');
+                    }
+                    break;
+
+                case 'progress-add':
+                    if (isset($jsonData['id']) && isset($jsonData['data'])) {
+                        $data = $jsonData['data'];
+                        $data['created_by'] = $staff_id;
+                        $response = addAtemProgress($jsonData['id'], $data, $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or progress data');
+                    }
+                    break;
+
+                case 'progress-update':
+                    if (isset($jsonData['id']) && isset($jsonData['progress_id']) && isset($jsonData['data'])) {
+                        $response = updateAtemProgress($jsonData['id'], $jsonData['progress_id'], $jsonData['data'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID, progress_id or data');
+                    }
+                    break;
+
+                case 'progress-remove':
+                    if (isset($jsonData['id']) && isset($jsonData['progress_id'])) {
+                        $response = removeAtemProgress($jsonData['id'], $jsonData['progress_id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or progress_id');
                     }
                     break;
 

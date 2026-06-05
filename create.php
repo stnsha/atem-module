@@ -134,7 +134,7 @@ $api_unavailable = empty($lookup_result['success']);
                     <div class="atem-form-error" id="atem-level-error"></div>
                 </div>
                 <div class="col-md-6">
-                    <label for="atem-rule" class="form-label">Incentive Rule</label>
+                    <label for="atem-rule" class="form-label">Incentive Rule <span class="atem-req" id="rule-req-star" style="display:none;">*</span></label>
                     <select class="form-select" id="atem-rule">
                         <option value="">Select rule</option>
                     </select>
@@ -150,7 +150,7 @@ $api_unavailable = empty($lookup_result['success']);
                     <input type="date" class="form-control" id="tl-end">
                     <div class="atem-form-error" id="tl-end-error"></div>
                 </div>
-                <div class="col-12">
+                <div class="col-12 mt-2">
                     <label class="form-label">ATEM Description</label>
                     <div id="atem-description-editor"></div>
                 </div>
@@ -209,8 +209,9 @@ $api_unavailable = empty($lookup_result['success']);
         <!-- Reference Link -->
         <div class="atem-card">
             <div class="atem-card-title-row">
-                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Links</h6>
-                <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference Link</button>
+                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link</h6>
+                <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference
+                    Link</button>
             </div>
             <p class="atem-card-hint">Add named links to related documents or resources.</p>
             <div id="atem-reflink-list" class="atem-reflink-list">
