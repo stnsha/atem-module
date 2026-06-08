@@ -13,7 +13,7 @@
 
     var LEVEL_COLOR = { 'Level 1': '#6c757d', 'Level 2': '#0d6efd', 'Level 3': '#6610f2', 'Level 4': '#003B73' };
     var STATUS_COLOR = {
-        'Draft': '#6c757d', 'On Hold': '#7a5cff', 'Pending': '#e0a800', 'In Progress': '#0d6efd',
+        'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Extended': '#fd7e14', 'Failed': '#dc3545'
     };
 
@@ -127,7 +127,9 @@
                     + '<td>' + statusCell + '</td>'
                     + '<td class="atem-view-actions">'
                     + '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
-                    + '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
+                    + (CFG.staffId && (r.issuer_staff_id == CFG.staffId || (r.arci_staff_ids && r.arci_staff_ids.indexOf(CFG.staffId) !== -1))
+                        ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
+                        : '')
                     + '</td></tr>';
             }
             body.innerHTML = html;

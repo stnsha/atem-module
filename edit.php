@@ -86,11 +86,40 @@ if ($record) {
     }
     if (isset($record['audit_logs']) && is_array($record['audit_logs'])) {
         foreach ($record['audit_logs'] as $k => $entry) {
-            $aid = isset($entry['actor_staff_id']) ? (int) $entry['actor_staff_id'] : 0;
+            $aid = isset($entry['actor_staff_id']) ? (int) $entry['actor_staff_id']
+                 : (isset($entry['actor_id']) ? (int) $entry['actor_id'] : 0);
             $record['audit_logs'][$k]['actor_name'] = isset($staff_names[$aid])
                 ? $staff_names[$aid]
                 : ($aid ? 'Staff #' . $aid : 'System');
         }
+    }
+    if (isset($record['progress']) && is_array($record['progress'])) {
+        foreach ($record['progress'] as $k => $prog) {
+            $cid = isset($prog['created_by']) ? (int) $prog['created_by'] : 0;
+            $record['progress'][$k]['created_by_name'] = ($cid && isset($staff_names[$cid]))
+                ? $staff_names[$cid]
+                : '';
+        }
+    }
+}
+
+// Access control: only the issuer and ARCI members may open this card.
+if ($record) {
+    $current_sid = (int) $staff_id;
+    $allowed = ($current_sid && $current_sid === (int) (isset($record['issuer_staff_id']) ? $record['issuer_staff_id'] : 0));
+    if (!$allowed && isset($record['arci']) && is_array($record['arci'])) {
+        foreach ($record['arci'] as $m) {
+            if ((int) $m['staff_id'] === $current_sid) {
+                $allowed = true;
+                break;
+            }
+        }
+    }
+    if (!$allowed) {
+        $_SESSION['atem_warning'] = 'You do not have permission to view this ATEM card.';
+        echo '<script>window.location.replace("view.php");</script>';
+        include('footer.php');
+        exit;
     }
 }
 
@@ -98,6 +127,7 @@ $atem_config = array(
     'atemId'      => $atem_id,
     'apiUrl'      => 'atem/api.php',
     'mode'        => $mode,
+    'staffId'     => (int) $staff_id,
     'levels'      => $lookups['levels'],
     'rules'       => $lookups['rules'],
     'statuses'    => $lookups['statuses'],

@@ -8,6 +8,7 @@
     var CFG = window.ATEM_CONFIG || {};
     var READ = (CFG.mode !== 'edit');
     var REC = CFG.record || {};
+    var IS_ISSUER = !!(CFG.staffId && REC.issuer_staff_id && CFG.staffId == REC.issuer_staff_id);
     var quillEditor = null;
     var arciState = { A: [], R: [], C: [], I: [] };
     var reflinks = [];
@@ -509,6 +510,9 @@
             var remarkHtml = p.remark
                 ? '<div class="atem-progress-item-remark">' + escapeHtml(p.remark) + '</div>'
                 : '';
+            var creatorHtml = p.created_by_name
+                ? '<div class="atem-progress-item-creator">Added by: ' + escapeHtml(p.created_by_name) + '</div>'
+                : '';
             html += '<div class="atem-progress-item atem-progress-item-' + p.status + '" data-pid="' + p.id + '">'
                 + '<div class="atem-progress-item-header">'
                 + '<span class="atem-progress-item-num">' + (i + 1) + '</span>'
@@ -517,6 +521,7 @@
                 + actionsHtml
                 + '</div>'
                 + remarkHtml
+                + creatorHtml
                 + '</div>';
         }
         html += '</div>';
@@ -679,8 +684,8 @@
             return false;
         }
         var originalStatusValue = (REC.status && REC.status.value) ? REC.status.value : '';
-        var MUST_CHANGE = ['Draft', 'Pending', 'On Hold'];
-        if (MUST_CHANGE.indexOf(originalStatusValue) >= 0 && String($('tl-status').value) === String(REC.atem_status_id)) {
+        var MUST_CHANGE = ['Draft'];
+        if (IS_ISSUER && MUST_CHANGE.indexOf(originalStatusValue) >= 0 && String($('tl-status').value) === String(REC.atem_status_id)) {
             setError('tl-status-error', 'The current status is "' + originalStatusValue + '". Please change the status before saving.');
             return false;
         }
@@ -954,5 +959,11 @@
         lockDateFields();
         injectBadge();
         applyReadMode();
+        if (!READ && !IS_ISSUER) {
+            ['tl-status', 'tl-extended', 'tl-ext1', 'tl-ext2', 'tl-remarks'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) { el.disabled = true; }
+            });
+        }
     });
 })();

@@ -941,6 +941,38 @@ function removeAtemAttachment($id, $att_id, $staff_id)
 }
 
 /**
+ * Resolve created_by IDs to staff names in a progress list.
+ */
+function resolveProgressCreatorNames($progressList, $conn)
+{
+    if (!is_array($progressList) || empty($progressList)) {
+        return $progressList;
+    }
+    $ids = array();
+    foreach ($progressList as $p) {
+        if (!empty($p['created_by'])) {
+            $ids[] = (int) $p['created_by'];
+        }
+    }
+    if (empty($ids)) {
+        return $progressList;
+    }
+    $ids_str = implode(',', array_unique($ids));
+    $names = array();
+    $res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE id IN ($ids_str) AND recycle != 1");
+    if ($res) {
+        while ($row = mysqli_fetch_assoc($res)) {
+            $names[(int) $row['id']] = $row['nama_staff'];
+        }
+    }
+    foreach ($progressList as $k => $p) {
+        $cid = isset($p['created_by']) ? (int) $p['created_by'] : 0;
+        $progressList[$k]['created_by_name'] = ($cid && isset($names[$cid])) ? $names[$cid] : '';
+    }
+    return $progressList;
+}
+
+/**
  * List progress updates for an ATEM card
  */
 function getAtemProgress($id, $staff_id)
@@ -1252,6 +1284,9 @@ if (!defined('API_JWT_INCLUDED')) {
                 case 'progress-list':
                     if (isset($jsonData['id'])) {
                         $response = getAtemProgress($jsonData['id'], $staff_id);
+                        if ($response['success'] && is_array($response['data'])) {
+                            $response['data'] = resolveProgressCreatorNames($response['data'], $conn);
+                        }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID');
                     }
@@ -1262,6 +1297,9 @@ if (!defined('API_JWT_INCLUDED')) {
                         $data = $jsonData['data'];
                         $data['created_by'] = $staff_id;
                         $response = addAtemProgress($jsonData['id'], $data, $staff_id);
+                        if ($response['success'] && is_array($response['data'])) {
+                            $response['data'] = resolveProgressCreatorNames($response['data'], $conn);
+                        }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or progress data');
                     }
@@ -1270,6 +1308,9 @@ if (!defined('API_JWT_INCLUDED')) {
                 case 'progress-update':
                     if (isset($jsonData['id']) && isset($jsonData['progress_id']) && isset($jsonData['data'])) {
                         $response = updateAtemProgress($jsonData['id'], $jsonData['progress_id'], $jsonData['data'], $staff_id);
+                        if ($response['success'] && is_array($response['data'])) {
+                            $response['data'] = resolveProgressCreatorNames($response['data'], $conn);
+                        }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID, progress_id or data');
                     }
@@ -1278,6 +1319,9 @@ if (!defined('API_JWT_INCLUDED')) {
                 case 'progress-remove':
                     if (isset($jsonData['id']) && isset($jsonData['progress_id'])) {
                         $response = removeAtemProgress($jsonData['id'], $jsonData['progress_id'], $staff_id);
+                        if ($response['success'] && is_array($response['data'])) {
+                            $response['data'] = resolveProgressCreatorNames($response['data'], $conn);
+                        }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or progress_id');
                     }

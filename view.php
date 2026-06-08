@@ -35,6 +35,12 @@ $list_result = getAtemList($staff_id);
 $rows = (!empty($list_result['success']) && isset($list_result['data'])) ? $list_result['data'] : array();
 $api_unavailable = empty($list_result['success']);
 
+$atem_warning = '';
+if (isset($_SESSION['atem_warning'])) {
+    $atem_warning = $_SESSION['atem_warning'];
+    unset($_SESSION['atem_warning']);
+}
+
 // Enrich each row with resolved names + flattened display fields.
 $view_rows = array();
 foreach ($rows as $a) {
@@ -42,6 +48,15 @@ foreach ($rows as $a) {
     $dept_id   = isset($a['department_id']) ? (int) $a['department_id'] : 0;
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
+
+    $arci_ids = array();
+    if (isset($a['arci']) && is_array($a['arci'])) {
+        foreach ($a['arci'] as $m) {
+            if (!empty($m['staff_id'])) {
+                $arci_ids[] = (int) $m['staff_id'];
+            }
+        }
+    }
 
     $view_rows[] = array(
         'id'              => (int) $a['id'],
@@ -53,6 +68,8 @@ foreach ($rows as $a) {
         'status'          => $status ? $status['value'] : '',
         'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
+        'issuer_staff_id' => $issuer_id,
+        'arci_staff_ids'  => $arci_ids,
     );
 }
 
@@ -60,6 +77,7 @@ $view_config = array(
     'rows'     => $view_rows,
     'levels'   => isset($lookups['levels']) ? $lookups['levels'] : array(),
     'statuses' => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
+    'staffId'  => (int) $staff_id,
 );
 ?>
 
@@ -67,6 +85,13 @@ $view_config = array(
 <div class="alert alert-warning" role="alert" style="font-size:13px;">
     The ATEM service is not reachable, so the list could not be loaded. Please ensure the atem-api service is running,
     then reload this page.
+</div>
+<?php endif; ?>
+
+<?php if ($atem_warning): ?>
+<div class="alert alert-warning alert-dismissible fade show" role="alert" style="font-size:13px;">
+    <?php echo htmlspecialchars($atem_warning); ?>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
 <?php endif; ?>
 

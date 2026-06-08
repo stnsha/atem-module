@@ -29,15 +29,17 @@ $page_title = isset($page_title) ? $page_title : 'ATEM';
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link href="atem/css/style.css?v=<?php echo time(); ?>" rel="stylesheet">
+    <?php if (isset($extra_css)) echo $extra_css; ?>
 </head>
 <?php
 require_once(dirname(__FILE__) . '/../lock_adv.php');
 $connect = 1;
 include(dirname(__FILE__) . '/../common/index_adv.php');
 
-// Placeholder for the real atem permission lookup. When the role/permission
-// column is defined, query it here for the logged-in user ($id_user) and set
-// $atem_permission so navbar.php can gate role-specific items.
+$atem_permission = isset($grade) ? (int)$grade : 0;
+if (isset($_SESSION['atem_dev_role_override'])) {
+    $atem_permission = (int)$_SESSION['atem_dev_role_override'];
+}
 ?>
 
 <body>
