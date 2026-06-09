@@ -108,8 +108,7 @@ $api_unavailable = empty($lookup_result['success']);
     <div class="atem-bento-item atem-span-8">
         <div class="atem-card h-100">
             <h6 class="atem-card-title"><i class="bi bi-file-earmark-text"></i> ATEM Details</h6>
-            <p class="atem-card-hint">File in a new ATEM card. Issuer and department are captured automatically. Fields
-                marked <span class="atem-req">*</span> are required.</p>
+            <p class="atem-card-hint">Fields marked <span class="atem-req">*</span> are required.</p>
             <div class="row g-3 mt-1">
                 <div class="col-12">
                     <label for="atem-title" class="form-label">ATEM Title <span class="atem-req">*</span></label>
@@ -161,9 +160,8 @@ $api_unavailable = empty($lookup_result['success']);
     <!-- Right column: Incentive (live) + Attachment + Reference Link -->
     <div class="atem-bento-item atem-span-4">
         <div class="atem-card mb-3">
-            <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Incentive</h6>
-            <p class="atem-card-hint">Live payout preview from the selected level and rule. C and I are not
-                incentivised.</p>
+            <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
+            <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The company reserves the right to determine the final payout under its incentive scheme. C and I roles are not incentivised.</p>
             <div class="atem-incentive">
                 <div class="atem-incentive-total-block">
                     <div class="atem-incentive-total-label">Total Incentive</div>
@@ -179,7 +177,7 @@ $api_unavailable = empty($lookup_result['success']);
                         <span class="atem-incentive-stat-value" id="inc-a">RM0.00</span>
                     </div>
                     <div class="atem-incentive-stat">
-                        <span class="atem-incentive-stat-label">R &middot; Responsible</span>
+                        <span class="atem-incentive-stat-label" id="inc-r-label">R &middot; Responsible</span>
                         <span class="atem-incentive-stat-value" id="inc-r">RM0.00</span>
                     </div>
                 </div>

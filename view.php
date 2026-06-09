@@ -1,5 +1,5 @@
 <?php
-$page_title = 'View ATEM';
+$page_title = 'ATEM';
 include('header.php');
 
 // header.php bootstrapped the odb connection ($conn) and current staff.
@@ -49,11 +49,15 @@ foreach ($rows as $a) {
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 
-    $arci_ids = array();
+    $arci_ids   = array();
+    $user_roles = array();
     if (isset($a['arci']) && is_array($a['arci'])) {
         foreach ($a['arci'] as $m) {
             if (!empty($m['staff_id'])) {
                 $arci_ids[] = (int) $m['staff_id'];
+                if ((int) $m['staff_id'] === (int) $staff_id && !empty($m['role'])) {
+                    $user_roles[] = $m['role'];
+                }
             }
         }
     }
@@ -70,6 +74,7 @@ foreach ($rows as $a) {
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
         'issuer_staff_id' => $issuer_id,
         'arci_staff_ids'  => $arci_ids,
+        'user_arci_roles' => $user_roles,
     );
 }
 
@@ -112,6 +117,10 @@ $view_config = array(
             <select class="form-select form-select-sm" id="vf-status"><option value="">All statuses</option></select>
         </div>
         <div class="col-md-3">
+            <label class="form-label">Role with ARCI</label>
+            <select class="form-select form-select-sm" id="vf-role"><option value="">All roles</option></select>
+        </div>
+        <div class="col-md-3">
             <label class="form-label">Start from</label>
             <input type="date" class="form-control form-control-sm" id="vf-from">
         </div>
@@ -119,11 +128,11 @@ $view_config = array(
             <label class="form-label">Start to</label>
             <input type="date" class="form-control form-control-sm" id="vf-to">
         </div>
-        <div class="col-md-6">
+        <div class="col-md-4">
             <label class="form-label">Search title</label>
             <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type to search...">
         </div>
-        <div class="col-md-3 d-flex align-items-end">
+        <div class="col-md-2 d-flex align-items-end">
             <button type="button" class="btn btn-outline-secondary btn-sm atem-reset-btn w-100" id="vf-reset">Reset Filters</button>
         </div>
     </div>
@@ -138,12 +147,12 @@ $view_config = array(
                     <th class="atem-sortable" data-col="id">ATEM ID</th>
                     <th class="atem-sortable" data-col="title">Title</th>
                     <th class="atem-sortable" data-col="issuer_name">Issuer</th>
-                    <th class="atem-sortable" data-col="department_name">Department</th>
+                    <th>ARCI</th>
                     <th class="atem-sortable" data-col="level_label">Level Structure</th>
                     <th class="atem-sortable" data-col="start_date">Start</th>
                     <th class="atem-sortable" data-col="end_date">End</th>
                     <th class="atem-sortable" data-col="status">Status</th>
-                    <th style="width:90px;">Action</th>
+                    <th style="width:110px;">Action</th>
                 </tr>
             </thead>
             <tbody id="atem-view-body"></tbody>

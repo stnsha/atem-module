@@ -15,7 +15,8 @@ $_navbar_isLocal    = in_array($_navbar_serverName, array('localhost', '127.0.0.
     || strpos($_navbar_httpHost,   'localhost') !== false
     || strpos($_navbar_httpHost,   '127.0.0.1') !== false;
 
-if ($_navbar_isLocal && $atem_role === 6) {
+$_navbar_realRole = isset($grade) ? (int)$grade : $atem_role;
+if ($_navbar_isLocal && $_navbar_realRole === 6) {
     if (session_id() == '') {
         session_start();
     }
@@ -63,7 +64,7 @@ $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 
 // Determine active class for each nav item
 $dashboard_active = ($current_page == 'index.php' && $current_dir == 'atem')  ? 'active' : '';
-$view_active      = ($current_page == 'view.php')                             ? 'active' : '';
+$view_active      = ($current_page == 'view.php' || $current_page == 'edit.php') ? 'active' : '';
 $admin_active     = ($current_dir == 'admin' && $current_page == 'index.php') ? 'active' : '';
 $library_active   = ($current_dir == 'admin' && $current_page == 'library.php') ? 'active' : '';
 
@@ -78,14 +79,14 @@ $library_active   = ($current_dir == 'admin' && $current_page == 'library.php') 
             <ul class="navbar-nav align-items-lg-center">
                 <li class="nav-item me-lg-2">
                     <a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="atem/create.php">
-                        <i class="bi bi-plus-lg me-1"></i>New ATEM
+                        <i class="bi bi-plus-lg me-1"></i>ATEM
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $dashboard_active; ?>" href="atem/index.php">Dashboard</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $view_active; ?>" href="atem/view.php">View ATEM</a>
+                    <a class="nav-link <?php echo $view_active; ?>" href="atem/view.php">ATEM</a>
                 </li>
                 <?php if ($atem_role >= 3): ?>
                 <li class="nav-item">

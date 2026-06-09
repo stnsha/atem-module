@@ -6,218 +6,225 @@
    Base typography
 --------------------------------------------------------------- */
 * {
-    font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
 }
 
 body {
-    font-family: 'Inter', sans-serif;
-    background-color: #f8f9fa;
-    font-size: 14px;
-    font-weight: 400;
+  font-family: "Inter", sans-serif;
+  background-color: #f8f9fa;
+  font-size: 14px;
+  font-weight: 400;
 }
 
-h1, h2, h3, h4, h5, h6 {
-    font-weight: 600;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
 }
 
 input,
 select,
 textarea,
 button {
-    font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
 }
 
 /* Force Inter on the ODB page header box reused by atem pages */
 .headerH1 {
-    font-family: 'Inter', sans-serif !important;
-    font-weight: 600 !important;
+  font-family: "Inter", sans-serif !important;
+  font-weight: 600 !important;
 }
 
 /* Keep Inter consistent inside the atem container */
 .atem-container,
 .atem-container * {
-    font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
 }
 
 /* ---------------------------------------------------------------
    Navigation Bar
 --------------------------------------------------------------- */
 .atem-nav {
-    background-color: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(19, 92, 170, 0.1);
-    padding: 0.5rem 1rem;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(19, 92, 170, 0.1);
+  padding: 0.5rem 1rem;
 }
 
 .atem-nav .navbar-nav {
-    gap: 0.5rem;
+  gap: 0.5rem;
 }
 
 .atem-nav .nav-link {
-    display: inline-flex;
-    align-items: center;
-    height: 38px;
-    font-size: 14px;
-    font-weight: 500;
-    color: #6c757d;
-    padding: 0 1rem;
-    border-radius: 6px;
-    transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6c757d;
+  padding: 0 1rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
 }
 
 .atem-nav .nav-link:hover {
-    color: #0d6efd;
-    background-color: rgba(13, 110, 253, 0.1);
+  color: #0d6efd;
+  background-color: rgba(13, 110, 253, 0.1);
 }
 
 .atem-nav .nav-link.active {
-    color: #0d6efd;
-    background-color: rgba(13, 110, 253, 0.1);
-    font-weight: 600;
+  color: #0d6efd;
+  background-color: rgba(13, 110, 253, 0.1);
+  font-weight: 600;
 }
 
 /* "New ATEM" navbar button - Alpro Blue (matches the ATEM header background) */
 .atem-nav .atem-btn-new {
-    height: 38px;
-    font-size: 14px;
-    font-weight: 500;
-    padding: 0 1rem;
-    border-radius: 6px;
-    line-height: 1;
-    white-space: nowrap;
-    background: linear-gradient(90deg, #003B73, #0A5AA8);
-    border: none;
-    color: #ffffff;
-    box-shadow: 0 2px 6px rgba(0, 59, 115, 0.25);
+  height: 38px;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 1rem;
+  border-radius: 6px;
+  line-height: 1;
+  white-space: nowrap;
+  background: linear-gradient(90deg, #003b73, #0a5aa8);
+  border: none;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 59, 115, 0.25);
 }
 
 .atem-nav .atem-btn-new:hover,
 .atem-nav .atem-btn-new:focus {
-    background: linear-gradient(90deg, #00305f, #094f93);
-    color: #ffffff;
-    box-shadow: 0 3px 9px rgba(0, 59, 115, 0.35);
+  background: linear-gradient(90deg, #00305f, #094f93);
+  color: #ffffff;
+  box-shadow: 0 3px 9px rgba(0, 59, 115, 0.35);
 }
 
 .atem-nav .atem-btn-new .bi {
-    font-size: 14px;
-    line-height: 1;
+  font-size: 14px;
+  line-height: 1;
 }
 
 /* On mobile the navbar stacks vertically; let the button sit inline-left */
 @media (max-width: 991.98px) {
-    .atem-nav .atem-btn-new {
-        margin-bottom: 0.5rem;
-    }
+  .atem-nav .atem-btn-new {
+    margin-bottom: 0.5rem;
+  }
 }
 
 /* ---------------------------------------------------------------
    Main Container - ODB Integration
 --------------------------------------------------------------- */
 .atem-container {
-    display: flex;
-    flex-direction: column;
-    padding: 15px 25px 35px 15px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(19, 92, 170, 0.1);
+  display: flex;
+  flex-direction: column;
+  padding: 15px 25px 35px 15px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(19, 92, 170, 0.1);
 }
 
 /* Page header title (title only, left aligned) */
 .atem-page-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #212529;
-    text-align: left;
-    margin-bottom: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #212529;
+  text-align: left;
+  margin-bottom: 0;
 }
 
 /* ---------------------------------------------------------------
    Cards (title only)
 --------------------------------------------------------------- */
 .atem-card {
-    background-color: #ffffff;
-    border-radius: 10px;
-    padding: 1.25rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-    border: 1px solid #e9ecef;
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
+  background-color: #ffffff;
+  border-radius: 10px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e9ecef;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
 }
 
 .atem-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .atem-card-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: #212529;
-    text-align: left;
-    margin: 0;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #e9ecef;
+  font-size: 15px;
+  font-weight: 600;
+  color: #212529;
+  text-align: left;
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e9ecef;
 }
 
 /* ---------------------------------------------------------------
    Shared form / button styles (match consultcall for future content)
 --------------------------------------------------------------- */
 .btn {
-    font-size: 14px;
-    font-weight: 500;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .btn-primary {
-    background-color: #0d6efd;
-    border-color: #0d6efd;
-    border-radius: 6px;
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+  border-radius: 6px;
 }
 
 .btn-primary:hover {
-    background-color: #0b5ed7;
-    border-color: #0a58ca;
+  background-color: #0b5ed7;
+  border-color: #0a58ca;
 }
 
 .btn-secondary {
-    border-radius: 6px;
+  border-radius: 6px;
 }
 
 .btn-outline-primary {
-    color: #0d6efd;
-    border-color: #0d6efd;
-    border-radius: 6px;
+  color: #0d6efd;
+  border-color: #0d6efd;
+  border-radius: 6px;
 }
 
 .btn-outline-primary:hover {
-    background-color: #0d6efd;
-    color: #fff;
+  background-color: #0d6efd;
+  color: #fff;
 }
 
 .btn-outline-secondary {
-    color: #6c757d;
-    border-color: #6c757d;
-    border-radius: 6px;
+  color: #6c757d;
+  border-color: #6c757d;
+  border-radius: 6px;
 }
 
 .btn-outline-secondary:hover {
-    background-color: #6c757d;
-    color: #fff;
+  background-color: #6c757d;
+  color: #fff;
 }
 
 .form-label {
-    font-weight: 500;
-    font-size: 12px;
-    color: #495057;
-    text-align: left;
-    display: block;
+  font-weight: 500;
+  font-size: 12px;
+  color: #495057;
+  text-align: left;
+  display: block;
 }
 
 .form-control,
 .form-select {
-    border-radius: 6px;
-    border-color: #ced4da;
-    font-size: 14px;
-    font-weight: 400;
-    height: 38px;
-    padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  border-color: #ced4da;
+  font-size: 14px;
+  font-weight: 400;
+  height: 38px;
+  padding: 0.375rem 0.75rem;
 }
 
 /* Keep room for the dropdown chevron (Bootstrap reserves 2.25rem on the right)
@@ -225,76 +232,76 @@ button {
    overflow across the arrow. */
 .form-select:not([size]),
 .form-select[size="1"] {
-    padding-right: 2.25rem;
-    text-overflow: ellipsis;
+  padding-right: 2.25rem;
+  text-overflow: ellipsis;
 }
 
 /* Multi-row list boxes (e.g. the department picker uses size="6") must grow to
    fit their rows rather than being clamped to the single-line control height. */
 .form-select[size]:not([size="1"]) {
-    height: auto;
-    padding-right: 0.75rem;
+  height: auto;
+  padding-right: 0.75rem;
 }
 
 .form-control::placeholder {
-    font-size: 14px;
-    font-weight: 400;
-    color: #adb5bd;
+  font-size: 14px;
+  font-weight: 400;
+  color: #adb5bd;
 }
 
 .form-control:focus,
 .form-select:focus {
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
 }
 
 /* ---------------------------------------------------------------
    Create form - bento layout
 --------------------------------------------------------------- */
 .atem-bento {
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 1rem;
-    /* Stretch so the left ATEM Details card matches the right column height. */
-    align-items: stretch;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1rem;
+  /* Stretch so the left ATEM Details card matches the right column height. */
+  align-items: stretch;
 }
 
 .atem-bento-item {
-    grid-column: span 12;
-    min-width: 0;
+  grid-column: span 12;
+  min-width: 0;
 }
 
 .atem-span-8 {
-    grid-column: span 8;
+  grid-column: span 8;
 }
 
 .atem-span-4 {
-    grid-column: span 4;
+  grid-column: span 4;
 }
 
 /* Right column: lay the stacked cards vertically and let the last card grow so
    the column bottom always aligns with the taller ATEM Details card. */
 .atem-bento-item.atem-span-4 {
-    display: flex;
-    flex-direction: column;
+  display: flex;
+  flex-direction: column;
 }
 
 .atem-bento-item.atem-span-4 > .atem-card:last-child {
-    flex: 1 1 auto;
+  flex: 1 1 auto;
 }
 
 .atem-span-12 {
-    grid-column: span 12;
+  grid-column: span 12;
 }
 
 .atem-req {
-    color: #dc3545;
-    /* The legacy common/css/page.css sets span { font-size: 15px }, which inflates
+  color: #dc3545;
+  /* The legacy common/css/page.css sets span { font-size: 15px }, which inflates
        this asterisk and the label's line height, pushing fields with a required
        marker lower than their row neighbours. Pin it to the label size. */
-    font-size: 12px;
-    line-height: 1;
-    vertical-align: baseline;
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: baseline;
 }
 
 /* Left-align everything inside the create form by default */
@@ -313,378 +320,446 @@ button {
 .atem-container .form-control,
 .atem-container .form-select,
 .atem-container .form-check-label {
-    text-align: left;
+  text-align: left;
 }
 
 /* Card title with leading icon */
 .atem-card-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .atem-card-title .bi {
-    color: #0A5AA8;
-    font-size: 16px;
+  color: #0a5aa8;
+  font-size: 16px;
 }
 
 .atem-card-hint {
-    font-size: 12px;
-    color: #6c757d;
-    margin: 6px 0 0;
+  font-size: 12px;
+  color: #6c757d;
+  margin: 6px 0 0;
 }
 
 /* record_state pill. NOTE: do not use the Bootstrap .badge class here - the
    legacy common/css/page.css defines .badge as an absolutely-positioned
    notification dot, which would hijack it. Use a dedicated .atem-pill. */
 .atem-pill {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 12px;
-    line-height: 1.4;
-    color: #ffffff;
-    vertical-align: middle;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  line-height: 1.4;
+  color: #ffffff;
+  vertical-align: middle;
 }
 
 .atem-page-title .atem-pill {
-    margin-left: 8px;
+  margin-left: 8px;
 }
 
 .atem-pill-draft {
-    background-color: #6c757d;
+  background-color: #6c757d;
 }
 
 .atem-pill-created {
-    background-color: #198754;
+  background-color: #198754;
 }
 
 .atem-pill-active {
-    background-color: #0d6efd;
+  background-color: #0d6efd;
 }
 
 .atem-pill-red {
-    background-color: #dc3545;
+  background-color: #dc3545;
 }
 
 .atem-pill-yellow {
-    background-color: #ffc107;
-    color: #212529;
+  background-color: #ffc107;
+  color: #212529;
 }
 
 .atem-pill-green {
-    background-color: #198754;
+  background-color: #198754;
 }
 
 /* Progress update cards */
 .atem-progress-item {
-    border: 1px solid #dee2e6;
-    border-left: 4px solid #dee2e6;
-    border-radius: 6px;
-    padding: 12px 16px;
-    background: #fff;
+  border: 1px solid #dee2e6;
+  border-left: 4px solid #dee2e6;
+  border-radius: 6px;
+  padding: 12px 16px;
+  background: #fff;
 }
 
-.atem-progress-item-red    { border-left-color: #dc3545; }
-.atem-progress-item-yellow { border-left-color: #ffc107; }
-.atem-progress-item-green  { border-left-color: #198754; }
+.atem-progress-item-red {
+  border-left-color: #dc3545;
+}
+.atem-progress-item-yellow {
+  border-left-color: #ffc107;
+}
+.atem-progress-item-green {
+  border-left-color: #198754;
+}
 
 .atem-progress-form-item {
-    grid-column: 1 / -1;
-    background: #f8f9fa;
+  grid-column: 1 / -1;
+  background: #f8f9fa;
 }
 
 #atem-progress-wrap {
-    margin-top: 12px;
+  margin-top: 12px;
 }
 
 .atem-progress-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
 }
 
 @media (max-width: 900px) {
-    .atem-progress-grid { grid-template-columns: repeat(2, 1fr); }
+  .atem-progress-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 540px) {
-    .atem-progress-grid { grid-template-columns: 1fr; }
+  .atem-progress-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .atem-progress-item-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .atem-progress-item-num {
-    font-size: 12px;
-    font-weight: 700;
-    color: #6c757d;
-    min-width: 18px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6c757d;
+  min-width: 18px;
 }
 
 .atem-progress-item-dates {
-    font-size: 13px;
-    font-weight: 500;
-    color: #343a40;
+  font-size: 13px;
+  font-weight: 500;
+  color: #343a40;
 }
 
 .atem-progress-item-actions {
-    margin-left: auto;
-    display: flex;
-    gap: 6px;
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
 }
 
 .atem-progress-item-remark {
-    font-size: 13px;
-    color: #495057;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid #f0f0f0;
-    white-space: pre-wrap;
-    line-height: 1.5;
+  font-size: 13px;
+  color: #495057;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+  white-space: pre-wrap;
+  line-height: 1.5;
 }
 
 .atem-progress-form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr auto;
-    gap: 12px;
-    align-items: end;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
 }
 
 @media (max-width: 600px) {
-    .atem-progress-form-grid { grid-template-columns: 1fr; }
+  .atem-progress-form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .atem-progress-form-actions {
-    margin-top: 12px;
-    display: flex;
-    gap: 8px;
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
 }
 
 /* Status toggle button group */
 .atem-status-btn-group {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .atem-status-btn {
-    padding: 4px 14px;
-    border-radius: 20px;
-    border: 2px solid;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    background: transparent;
-    line-height: 1.4;
-    transition: background-color 0.12s, color 0.12s;
+  padding: 4px 14px;
+  border-radius: 20px;
+  border: 2px solid;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  line-height: 1.4;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
 }
 
-.atem-status-btn-red                    { border-color: #dc3545; color: #dc3545; }
-.atem-status-btn-red.atem-status-btn-on { background-color: #dc3545; color: #fff; }
+.atem-status-btn-red {
+  border-color: #dc3545;
+  color: #dc3545;
+}
+.atem-status-btn-red.atem-status-btn-on {
+  background-color: #dc3545;
+  color: #fff;
+}
 
-.atem-status-btn-yellow                    { border-color: #e6ac00; color: #856404; }
-.atem-status-btn-yellow.atem-status-btn-on { background-color: #ffc107; color: #212529; border-color: #ffc107; }
+.atem-status-btn-yellow {
+  border-color: #e6ac00;
+  color: #856404;
+}
+.atem-status-btn-yellow.atem-status-btn-on {
+  background-color: #ffc107;
+  color: #212529;
+  border-color: #ffc107;
+}
 
-.atem-status-btn-green                    { border-color: #198754; color: #198754; }
-.atem-status-btn-green.atem-status-btn-on { background-color: #198754; color: #fff; }
+.atem-status-btn-green {
+  border-color: #198754;
+  color: #198754;
+}
+.atem-status-btn-green.atem-status-btn-on {
+  background-color: #198754;
+  color: #fff;
+}
 
 /* ---------------------------------------------------------------
    Audit Log
 --------------------------------------------------------------- */
-#atem-audit-card .atem-card-title { font-size: 13px; }
-#atem-audit-card .atem-card-hint  { font-size: 11px; margin-bottom: 10px; }
-
-.atem-audit-meta {
-    display: flex;
-    gap: 24px;
-    flex-wrap: wrap;
-    font-size: 12px;
-    color: #495057;
+#atem-audit-card .atem-card-title {
+  font-size: 13px;
+}
+#atem-audit-card .atem-card-hint {
+  font-size: 11px;
+  margin-bottom: 10px;
 }
 
-.atem-audit-meta-item strong { color: #212529; }
+.atem-audit-meta {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #495057;
+}
+
+.atem-audit-meta-item strong {
+  color: #212529;
+}
 
 .atem-audit-log {
-    max-height: 420px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .atem-audit-entry {
-    display: flex;
-    gap: 10px;
-    padding: 8px 0;
-    border-bottom: 1px solid #f0f0f0;
-    font-size: 12px;
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 12px;
 }
 
-.atem-audit-entry:last-child { border-bottom: none; }
+.atem-audit-entry:last-child {
+  border-bottom: none;
+}
 
 .atem-audit-icon {
-    flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    background: #f0f0f0;
-    color: #495057;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: #f0f0f0;
+  color: #495057;
 }
 
-.atem-audit-created .atem-audit-icon      { background: #d1e7dd; color: #0a3622; }
-.atem-audit-status_changed .atem-audit-icon { background: #cfe2ff; color: #084298; }
-.atem-audit-updated .atem-audit-icon      { background: #fff3cd; color: #664d03; }
-.atem-audit-arci_added .atem-audit-icon   { background: #d1e7dd; color: #0a3622; }
-.atem-audit-arci_removed .atem-audit-icon { background: #f8d7da; color: #58151c; }
-.atem-audit-attachment_added .atem-audit-icon { background: #e2d9f3; color: #3d0a91; }
+.atem-audit-created .atem-audit-icon {
+  background: #d1e7dd;
+  color: #0a3622;
+}
+.atem-audit-status_changed .atem-audit-icon {
+  background: #cfe2ff;
+  color: #084298;
+}
+.atem-audit-updated .atem-audit-icon {
+  background: #fff3cd;
+  color: #664d03;
+}
+.atem-audit-arci_added .atem-audit-icon {
+  background: #d1e7dd;
+  color: #0a3622;
+}
+.atem-audit-arci_removed .atem-audit-icon {
+  background: #f8d7da;
+  color: #58151c;
+}
+.atem-audit-attachment_added .atem-audit-icon {
+  background: #e2d9f3;
+  color: #3d0a91;
+}
 
-.atem-audit-body { flex: 1; }
+.atem-audit-body {
+  flex: 1;
+}
 
 .atem-audit-header {
-    color: #6c757d;
-    margin-bottom: 3px;
+  color: #6c757d;
+  margin-bottom: 3px;
 }
 
-.atem-audit-header strong { color: #212529; }
+.atem-audit-header strong {
+  color: #212529;
+}
 
 .atem-audit-changes {
-    margin: 4px 0 0;
-    padding-left: 16px;
-    list-style: disc;
-    color: #495057;
+  margin: 4px 0 0;
+  padding-left: 16px;
+  list-style: disc;
+  color: #495057;
 }
 
-.atem-audit-changes li { margin-bottom: 2px; }
+.atem-audit-changes li {
+  margin-bottom: 2px;
+}
 
-.atem-audit-summary { color: #495057; }
+.atem-audit-summary {
+  color: #495057;
+}
 
 /* ---------------------------------------------------------------
-   View ATEM listing
+   ATEM listing
 --------------------------------------------------------------- */
 .atem-view-tbl {
-    margin-bottom: 0;
+  margin-bottom: 0;
 }
 
 .atem-view-tbl th {
-    font-size: 13px;
-    font-weight: 600;
-    color: #495057;
-    white-space: nowrap;
-    text-align: left;
-    border-bottom: 2px solid #e9ecef;
+  font-size: 13px;
+  font-weight: 600;
+  color: #495057;
+  white-space: nowrap;
+  text-align: left;
+  border-bottom: 2px solid #e9ecef;
 }
 
 .atem-view-tbl td {
-    font-size: 13px;
-    color: #212529;
-    vertical-align: middle;
-    text-align: left;
+  font-size: 13px;
+  color: #212529;
+  vertical-align: middle;
+  text-align: left;
 }
 
 .atem-view-tbl tbody tr:nth-child(odd) {
-    background-color: #fbfcfe;
+  background-color: #fbfcfe;
 }
 
 .atem-view-tbl tbody tr:hover {
-    background-color: #eef6ff;
+  background-color: #eef6ff;
 }
 
 .atem-sortable {
-    cursor: pointer;
-    user-select: none;
+  cursor: pointer;
+  user-select: none;
 }
 
 .atem-sortable:hover {
-    color: #0A5AA8;
+  color: #0a5aa8;
 }
 
 .atem-id {
-    font-family: monospace;
-    font-size: 12px;
-    color: #0A5AA8;
-    background: #eef3f9;
-    border-radius: 4px;
-    padding: 2px 6px;
-    white-space: nowrap;
+  font-family: monospace;
+  font-size: 12px;
+  color: #0a5aa8;
+  background: #eef3f9;
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
 }
 
 .atem-view-actions {
-    white-space: nowrap;
-    text-align: center;
+  white-space: nowrap;
+  text-align: center;
 }
 
 /* Filter bar: keep the controls at the table font size */
 .atem-filter .form-select,
 .atem-filter .form-control,
 .atem-filter .btn {
-    font-size: 13px;
+  font-size: 13px;
 }
 
 /* Pager (right-aligned) */
 .atem-pager {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
 }
 
 .atem-pager-bar {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .atem-pager-btn {
-    border: 1px solid #ced4da;
-    background: #ffffff;
-    color: #495057;
-    font-size: 13px;
-    border-radius: 6px;
-    padding: 4px 10px;
-    cursor: pointer;
+  border: 1px solid #ced4da;
+  background: #ffffff;
+  color: #495057;
+  font-size: 13px;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
 }
 
 .atem-pager-btn:hover:not(:disabled) {
-    background: #eef6ff;
-    border-color: #0A5AA8;
-    color: #0A5AA8;
+  background: #eef6ff;
+  border-color: #0a5aa8;
+  color: #0a5aa8;
 }
 
 .atem-pager-btn.active {
-    background: #0A5AA8;
-    border-color: #0A5AA8;
-    color: #ffffff;
+  background: #0a5aa8;
+  border-color: #0a5aa8;
+  color: #ffffff;
 }
 
 .atem-pager-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .atem-pager-gap {
-    padding: 0 4px;
-    color: #adb5bd;
+  padding: 0 4px;
+  color: #adb5bd;
 }
 
 .atem-pager-info {
-    font-size: 12px;
-    color: #6c757d;
+  font-size: 12px;
+  color: #6c757d;
 }
 
 /* Reset button matches the small search input height */
 .atem-reset-btn {
-    height: 31px;
+  height: 31px;
 }
 
 /* Edit/View read-mode: grey disabled + readonly fields and the Quill editor */
@@ -692,460 +767,462 @@ button {
 .atem-mode-read select[disabled],
 .atem-mode-read input[readonly],
 .atem-mode-read textarea[disabled] {
-    background-color: #e9ecef;
-    opacity: 1;
+  background-color: #e9ecef;
+  opacity: 1;
 }
 
 .atem-mode-read .ql-toolbar {
-    display: none;
+  display: none;
 }
 
 .atem-mode-read #atem-description-editor.ql-container {
-    background-color: #e9ecef;
-    border-radius: 4px;
+  background-color: #e9ecef;
+  border-radius: 4px;
 }
 
 /* Page intro line under the ODB header title */
 .atem-page-hint {
-    font-size: 13px;
-    color: #6c757d;
-    margin-top: 4px;
-    text-align: left;
+  font-size: 13px;
+  color: #6c757d;
+  margin-top: 4px;
+  text-align: left;
 }
 
 /* Incentive panel */
 .atem-incentive {
-    margin-top: 14px;
+  margin-top: 14px;
 }
 
 .atem-incentive-total-block {
-    background: linear-gradient(90deg, #003B73, #0A5AA8);
-    border-radius: 10px;
-    padding: 14px 16px;
-    color: #ffffff;
+  background: linear-gradient(90deg, #003b73, #0a5aa8);
+  border-radius: 10px;
+  padding: 14px 16px;
+  color: #ffffff;
 }
 
 .atem-incentive-total-label {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .atem-incentive-total-amount {
-    font-size: 26px;
-    font-weight: 700;
-    line-height: 1.1;
-    margin-top: 2px;
-    color: #ffffff;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 2px;
+  color: #ffffff;
 }
 
 .atem-incentive-breakdown {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
-    margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .atem-incentive-stat {
-    background-color: #f8f9fa;
-    border: 1px solid #eef0f2;
-    border-radius: 8px;
-    padding: 8px 10px;
+  background-color: #f8f9fa;
+  border: 1px solid #eef0f2;
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
 .atem-incentive-stat-label {
-    display: block;
-    font-size: 11px;
-    color: #6c757d;
+  display: block;
+  font-size: 11px;
+  color: #6c757d;
 }
 
 .atem-incentive-stat-value {
-    display: block;
-    font-size: 15px;
-    font-weight: 700;
-    color: #212529;
-    margin-top: 2px;
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: #212529;
+  margin-top: 2px;
 }
 
 .atem-incentive-note {
-    margin-top: 12px;
-    font-size: 12px;
-    color: #6c757d;
-    background-color: #fff8f0;
-    border: 1px solid #ffe7c2;
-    border-radius: 8px;
-    padding: 8px 10px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: #6c757d;
+  background-color: #fff8f0;
+  border: 1px solid #ffe7c2;
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
 /* ARCI */
 .atem-arci-add {
-    background-color: #f8f9fa;
-    border-radius: 8px;
-    padding: 12px;
-    margin: 12px 0 16px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0 16px;
 }
 
 .atem-arci-add-grid {
-    display: grid;
-    grid-template-columns: 1fr 1.5fr 2fr;
-    gap: 12px;
-    /* Stretch columns so the Department list and Staff list bottoms align with
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 2fr;
+  gap: 12px;
+  /* Stretch columns so the Department list and Staff list bottoms align with
        the Add Selected button. */
-    align-items: stretch;
+  align-items: stretch;
 }
 
 .atem-arci-add-grid > div {
-    display: flex;
-    flex-direction: column;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Department list box fills its column down to the Add Selected button. */
 #arci-dept-select {
-    flex: 1 1 auto;
-    height: auto;
-    min-height: 120px;
-    padding: 4px;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 120px;
+  padding: 4px;
 }
 
 #arci-dept-select option {
-    padding: 6px 8px;
+  padding: 6px 8px;
 }
 
 .atem-arci-staff-list {
-    border: 1px solid #ced4da;
-    border-radius: 6px;
-    padding: 8px;
-    /* Fixed height with scroll: a department can have hundreds of staff, so the
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  padding: 8px;
+  /* Fixed height with scroll: a department can have hundreds of staff, so the
        list keeps a steady height and scrolls instead of growing to fit all. */
-    height: 240px;
-    overflow-y: auto;
-    background-color: #fff;
+  height: 240px;
+  overflow-y: auto;
+  background-color: #fff;
 }
 
 .atem-arci-staff-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 0;
-    font-size: 13px;
-    cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .atem-arci-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 8px;
 }
 
 .atem-arci-col {
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    min-width: 0;
-    overflow: hidden;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .atem-arci-col-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    background-color: #f8f9fa;
-    border-bottom: 1px solid #e9ecef;
-    font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 13px;
 }
 
 .atem-arci-members {
-    padding: 8px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-height: 90px;
-    max-height: 260px;
-    overflow-y: auto;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 90px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .atem-arci-member {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 6px;
-    background-color: #f8f9fa;
-    border-radius: 6px;
-    padding: 6px 8px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  padding: 6px 8px;
 }
 
 .atem-arci-member-info {
-    min-width: 0;
+  min-width: 0;
 }
 
 .atem-arci-member-dept {
-    font-size: 11px;
-    color: #6c757d;
+  font-size: 11px;
+  color: #6c757d;
 }
 
 .atem-arci-member-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: #212529;
-    word-break: break-word;
+  font-size: 13px;
+  font-weight: 500;
+  color: #212529;
+  word-break: break-word;
 }
 
 .atem-arci-remove {
-    color: #dc3545;
-    font-weight: 700;
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    flex-shrink: 0;
+  color: #dc3545;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .atem-arci-empty {
-    font-size: 12px;
-    color: #adb5bd;
-    font-style: italic;
-    text-align: center;
-    padding: 12px 0;
+  font-size: 12px;
+  color: #adb5bd;
+  font-style: italic;
+  text-align: center;
+  padding: 12px 0;
 }
 
 /* Extension fields helper */
 .atem-ext-field {
-    transition: opacity 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
 /* Two-click confirm state for the ARCI Delete All button */
 .atem-arci-clear-confirm {
-    color: #dc3545;
-    border-color: #dc3545;
+  color: #dc3545;
+  border-color: #dc3545;
 }
 
 /* Armed state for an inline two-click remove control (the 'x' -> "confirm?") */
 .atem-confirm-x {
-    color: #dc3545;
-    font-weight: 600;
-    font-size: 11px;
+  color: #dc3545;
+  font-weight: 600;
+  font-size: 11px;
 }
 
 /* Quill RTE for the ATEM Description - matches the iidas editor styling */
 .ql-container {
-    font-family: Arial, sans-serif;
-    font-size: 14px;
-    border: 1px solid #ccc;
-    border-radius: 0 0 4px 4px;
-    background: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 0 0 4px 4px;
+  background: #fff;
 }
 
 /* Fixed height so the editor scrolls internally instead of growing the card.
    Pinned to the id (specificity 1,1,0) because Quill core's .ql-container
    { height: 100% } loads after style.css and would otherwise win. */
 #atem-description-editor.ql-container {
-    height: 350px;
+  height: 350px;
 }
 
 .ql-editor {
-    overflow-y: auto;
-    padding: 12px;
+  overflow-y: auto;
+  padding: 12px;
 }
 
 .ql-toolbar {
-    border-top: 1px solid #ccc;
-    border-left: 1px solid #ccc;
-    border-right: 1px solid #ccc;
-    border-bottom: none;
-    border-radius: 4px 4px 0 0;
-    background: #fafafa;
+  border-top: 1px solid #ccc;
+  border-left: 1px solid #ccc;
+  border-right: 1px solid #ccc;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: #fafafa;
 }
 
 /* Save bar */
 .atem-save-error-wrap {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 .atem-save-bar {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 /* Inline form error (small red text instead of system dialogs) */
 .atem-form-error {
-    font-size: 12px;
-    color: #dc3545;
-    margin-top: 6px;
-    min-height: 0;
+  font-size: 12px;
+  color: #dc3545;
+  margin-top: 6px;
+  min-height: 0;
 }
 
 /* Attachment dropzone */
 .atem-dropzone {
-    border: 2px dashed #ced4da;
-    border-radius: 8px;
-    padding: 16px;
-    text-align: center;
-    background-color: #f9fafb;
-    cursor: pointer;
-    transition: border-color 0.15s ease, background-color 0.15s ease;
-    margin-top: 12px;
+  border: 2px dashed #ced4da;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  background-color: #f9fafb;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+  margin-top: 12px;
 }
 
 .atem-dropzone:hover,
 .atem-dropzone-active {
-    border-color: #0A5AA8;
-    background-color: #f0f7ff;
+  border-color: #0a5aa8;
+  background-color: #f0f7ff;
 }
 
 .atem-dropzone-text {
-    font-size: 13px;
-    color: #495057;
+  font-size: 13px;
+  color: #495057;
 }
 
 .atem-dropzone-text a {
-    color: #0A5AA8;
-    text-decoration: underline;
+  color: #0a5aa8;
+  text-decoration: underline;
 }
 
 .atem-dropzone-hint {
-    display: block;
-    margin-top: 4px;
-    font-size: 11px;
-    color: #adb5bd;
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #adb5bd;
 }
 
 /* Staged file rows and submitted attachment rows */
 .atem-file-list {
-    margin-top: 8px;
+  margin-top: 8px;
 }
 
 .atem-file-row,
 .atem-attachment-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    background-color: #f8f9fa;
-    border-radius: 6px;
-    padding: 6px 8px;
-    margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
 }
 
 .atem-file-name {
-    font-size: 13px;
-    color: #212529;
-    word-break: break-word;
+  font-size: 13px;
+  color: #212529;
+  word-break: break-word;
 }
 
 .atem-file-size {
-    font-size: 11px;
-    color: #6c757d;
-    margin-left: auto;
-    margin-right: 6px;
-    white-space: nowrap;
+  font-size: 11px;
+  color: #6c757d;
+  margin-left: auto;
+  margin-right: 6px;
+  white-space: nowrap;
 }
 
 .atem-file-remove {
-    color: #dc3545;
-    font-weight: 700;
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    flex-shrink: 0;
+  color: #dc3545;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* Reference link rows */
 .atem-reflink-list {
-    margin-top: 4px;
+  margin-top: 4px;
 }
 
 .atem-reflink-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 5px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
 }
 
 /* Card header with a right-aligned action button (e.g. Add Reference Link) */
 .atem-card-title-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #e9ecef;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e9ecef;
 }
 
 .atem-card-title-row .atem-card-title {
-    border-bottom: none;
-    padding-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 /* Ordered list of reference links */
 .atem-reflink-ol {
-    margin: 8px 0 0;
-    padding-left: 22px;
+  margin: 8px 0 0;
+  padding-left: 22px;
 }
 
 .atem-reflink-ol li {
-    padding: 2px 0;
+  padding: 2px 0;
 }
 
 .atem-reflink-row a {
-    color: #0A5AA8;
-    text-decoration: underline;
-    font-weight: 500;
-    font-size: 13px;
-    word-break: break-word;
+  color: #0a5aa8;
+  text-decoration: underline;
+  font-weight: 500;
+  font-size: 13px;
+  word-break: break-word;
 }
 
 .atem-reflink-remove {
-    color: #dc3545;
-    font-weight: 700;
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    flex-shrink: 0;
+  color: #dc3545;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* Empty state for attachment / reference link lists */
 .atem-empty-state {
-    font-size: 12px;
-    color: #adb5bd;
-    font-style: italic;
-    padding: 6px 0;
+  font-size: 12px;
+  color: #adb5bd;
+  font-style: italic;
+  padding: 6px 0;
 }
 
 /* ---------------------------------------------------------------
    Responsive Adjustments
 --------------------------------------------------------------- */
 @media (max-width: 991.98px) {
-    .atem-span-8,
-    .atem-span-4 {
-        grid-column: span 12;
-    }
+  .atem-span-8,
+  .atem-span-4 {
+    grid-column: span 12;
+  }
 
-    .atem-arci-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+  .atem-arci-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-    .atem-arci-add-grid {
-        grid-template-columns: 1fr;
-    }
+  .atem-arci-add-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
-    .atem-card {
-        padding: 1rem;
-    }
+  .atem-card {
+    padding: 1rem;
+  }
 
-    .atem-container {
-        padding: 10px 15px 25px 10px;
-    }
+  .atem-container {
+    padding: 10px 15px 25px 10px;
+  }
 
-    .atem-arci-grid {
-        grid-template-columns: 1fr;
-    }
+  .atem-arci-grid {
+    grid-template-columns: 1fr;
+  }
 }

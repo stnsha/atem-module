@@ -16,7 +16,7 @@
     // Leave/save bookkeeping.
     var dirty = false;
     var leaving = false;
-    var pendingNavUrl = 'atem/index.php';
+    var pendingNavUrl = 'atem/view.php';
     var _syncTimer = null;
 
     // ----------------------------------------------------------------- helpers
@@ -289,10 +289,11 @@
         if (ruleStar) { ruleStar.style.display = (base > 0) ? '' : 'none'; }
         rule = selectedRule();
 
+        var rCount = (arciState.R) ? arciState.R.length : 0;
         var a = 0, r = 0;
         if (base > 0 && rule) {
             a = base;
-            r = (String(rule.code).toLowerCase() === 'rule 2') ? base * 0.5 : 0;
+            r = (String(rule.code).toLowerCase() === 'rule 2') ? base * 0.5 * rCount : 0;
         }
         var total = a + r;
 
@@ -300,6 +301,8 @@
         $('inc-a').textContent = money(a);
         $('inc-r').textContent = money(r);
         $('inc-total').textContent = money(total);
+        var rLabel = $('inc-r-label');
+        if (rLabel) { rLabel.textContent = rCount > 1 ? 'R · Responsible ×' + rCount : 'R · Responsible'; }
 
         if (!level) {
             note.textContent = 'Select an ATEM level and rule to calculate incentive. C and I are not incentivised.';
@@ -345,6 +348,7 @@
         }
         // refresh staff picker so already-assigned people drop off
         renderStaffList();
+        recalcIncentive();
     }
 
     function populateDepartments() {
@@ -703,7 +707,7 @@
             if (res && res.success && res.data && res.data.id) {
                 apiCall('draft-clear').then(function () {
                     leaving = true;
-                    window.location.href = navUrl || 'atem/index.php';
+                    window.location.href = navUrl || 'atem/view.php';
                 });
             } else {
                 setError('atem-save-error', res && res.message ? res.message : 'Failed to save ATEM.');
@@ -718,7 +722,7 @@
     function cancelAtem(navUrl) {
         apiCall('draft-clear').then(function () {
             leaving = true;
-            window.location.href = navUrl || 'atem/index.php';
+            window.location.href = navUrl || 'atem/view.php';
         });
     }
 
@@ -732,7 +736,7 @@
     }
 
     function showLeaveModal(navUrl) {
-        pendingNavUrl = navUrl || 'atem/index.php';
+        pendingNavUrl = navUrl || 'atem/view.php';
         var m = getLeaveModal();
         if (m) { m.show(); }
     }
@@ -740,7 +744,7 @@
     function bindLeaveGuard() {
         var cancelBtn = $('atem-cancel-btn');
         if (cancelBtn) {
-            cancelBtn.addEventListener('click', function () { showLeaveModal('atem/index.php'); });
+            cancelBtn.addEventListener('click', function () { showLeaveModal('atem/view.php'); });
         }
         var leaveCancel = $('atem-leave-cancel');
         if (leaveCancel) {
@@ -815,7 +819,7 @@
         bindAttachmentZone();
 
         var saveBtn = $('atem-save-btn');
-        if (saveBtn) { saveBtn.addEventListener('click', function () { saveAtem('final', 'atem/index.php'); }); }
+        if (saveBtn) { saveBtn.addEventListener('click', function () { saveAtem('final', 'atem/view.php'); }); }
 
         bindLeaveGuard();
     }

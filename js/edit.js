@@ -9,6 +9,16 @@
     var READ = (CFG.mode !== 'edit');
     var REC = CFG.record || {};
     var IS_ISSUER = !!(CFG.staffId && REC.issuer_staff_id && CFG.staffId == REC.issuer_staff_id);
+    var IS_A_ARCI = (function () {
+        var arci = REC.arci || [];
+        for (var i = 0; i < arci.length; i++) {
+            if (arci[i].role === 'A' && String(arci[i].staff_id) === String(CFG.staffId)) {
+                return true;
+            }
+        }
+        return false;
+    }());
+    var TERMINAL_STATUSES = ['Failed', 'Completed', 'Completed with Excellence'];
     var quillEditor = null;
     var arciState = { A: [], R: [], C: [], I: [] };
     var reflinks = [];
@@ -166,12 +176,15 @@
         var ruleStar = $('rule-req-star');
         if (ruleStar) { ruleStar.style.display = (base > 0) ? '' : 'none'; }
         rule = selectedRule();
+        var rCount = (arciState.R) ? arciState.R.length : 0;
         var a = 0, r = 0;
-        if (base > 0 && rule) { a = base; r = (String(rule.code).toLowerCase() === 'rule 2') ? base * 0.5 : 0; }
+        if (base > 0 && rule) { a = base; r = (String(rule.code).toLowerCase() === 'rule 2') ? base * 0.5 * rCount : 0; }
         $('inc-base').textContent = money(base);
         $('inc-a').textContent = money(a);
         $('inc-r').textContent = money(r);
         $('inc-total').textContent = money(a + r);
+        var rLabel = $('inc-r-label');
+        if (rLabel) { rLabel.textContent = rCount > 1 ? 'R · Responsible ×' + rCount : 'R · Responsible'; }
         if (!level) { note.textContent = 'Select an ATEM level and rule to calculate incentive.'; }
         else if (base === 0) { note.textContent = 'Level 1 carries no incentive payout.'; }
         else if (!rule) { note.textContent = 'Select an incentive rule (required for Level 2-4).'; }
@@ -185,8 +198,22 @@
         if ($('tl-ext1') && $('tl-ext1').value) { v = $('tl-ext1').value; }
         if ($('tl-ext2') && $('tl-ext2').value) { v = $('tl-ext2').value; }
         $('tl-final-due').value = v || '';
-        // Closure date always follows the final due date.
-        if ($('tl-closure')) { $('tl-closure').value = v || ''; }
+    }
+    function recalcClosureDate() {
+        var closureEl = $('tl-closure');
+        if (!closureEl) { return; }
+        var selId = $('tl-status') ? $('tl-status').value : '';
+        var selVal = '';
+        (CFG.statuses || []).forEach(function (s) {
+            if (String(s.id) === String(selId)) { selVal = s.value; }
+        });
+        if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
+            if (!closureEl.value) {
+                closureEl.value = new Date().toISOString().substring(0, 10);
+            }
+        } else {
+            closureEl.value = '';
+        }
     }
     function syncExtensionFields() {
         var on = $('tl-extended').checked;
@@ -248,6 +275,7 @@
             cols[i].innerHTML = html;
         }
         if (!READ) { renderStaffList(); }
+        recalcIncentive();
     }
     function populateDepartments() {
         var sel = $('arci-dept-select'); if (!sel) { return; }
@@ -484,7 +512,7 @@
             + '<div><label class="form-label" style="font-size:12px;font-weight:600;margin-bottom:4px;">Status</label>'
             + progressStatusBtnsHtml(rowId, status) + '</div>'
             + '</div>'
-            + '<div class="mt-2"><label class="form-label" style="font-size:12px;font-weight:600;margin-bottom:4px;">Remark</label>'
+            + '<div class="mt-2"><label class="form-label" style="font-size:12px;font-weight:600;margin-bottom:4px;">Task</label>'
             + '<textarea class="form-control form-control-sm" id="' + rowId + '-remark" rows="2" style="resize:vertical;">' + remark + '</textarea></div>'
             + '<div class="atem-progress-form-actions">'
             + '<button type="button" class="btn btn-primary btn-sm atem-progress-save" data-row="' + rowId + '" data-id="' + (p ? p.id : '') + '">Save</button>'
@@ -912,6 +940,7 @@
         if ($('tl-extended')) { $('tl-extended').addEventListener('change', syncExtensionFields); }
         if ($('tl-ext1')) { $('tl-ext1').addEventListener('change', function () { syncExtensionFields(); }); }
         if ($('tl-ext2')) { $('tl-ext2').addEventListener('change', recalcFinalDue); }
+        if ($('tl-status')) { $('tl-status').addEventListener('change', recalcClosureDate); }
 
         if ($('arci-dept-search')) { $('arci-dept-search').addEventListener('keyup', filterDepartments); }
         if ($('arci-dept-select')) { $('arci-dept-select').addEventListener('change', renderStaffList); }
@@ -947,7 +976,62 @@
         bindProgressWrap();
         if ($('atem-add-progress-btn')) { $('atem-add-progress-btn').addEventListener('click', startAddProgressRow); }
 
-        if ($('atem-save-btn')) { $('atem-save-btn').addEventListener('click', saveAtem); }
+        if ($('atem-save-btn')) {
+            $('atem-save-btn').addEventListener('click', function () {
+                var selId = $('tl-status') ? $('tl-status').value : '';
+                var selVal = '';
+                (CFG.statuses || []).forEach(function (s) {
+                    if (String(s.id) === String(selId)) { selVal = s.value; }
+                });
+                if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
+                    var msgEl = $('atem-terminal-warn-msg');
+                    if (msgEl) {
+                        msgEl.textContent = 'You are about to set this ATEM to "' + selVal + '". Once saved, the ATEM will be locked and cannot be edited further. Do you want to proceed?';
+                    }
+                    var warnModal = new bootstrap.Modal($('atem-terminal-warn-modal'));
+                    var okBtn = $('atem-terminal-warn-ok');
+                    if (okBtn) {
+                        var handler = function () {
+                            okBtn.removeEventListener('click', handler);
+                            warnModal.hide();
+                            saveAtem();
+                        };
+                        okBtn.addEventListener('click', handler);
+                    }
+                    warnModal.show();
+                } else {
+                    saveAtem();
+                }
+            });
+        }
+
+        if ($('atem-delete-btn')) { $('atem-delete-btn').addEventListener('click', deleteAtem); }
+    }
+
+    function deleteAtem() {
+        var okBtn = $('atem-confirm-ok');
+        if (okBtn) { okBtn.textContent = 'Delete'; }
+        confirmAction(
+            'Delete this ATEM permanently? All associated data will be removed and this action cannot be undone.',
+            function () {
+                if (okBtn) { okBtn.textContent = 'Remove'; }
+                apiCall('delete-atem', { id: CFG.atemId }).then(function (res) {
+                    if (res && res.success) {
+                        window.location.href = 'atem/view.php';
+                    } else {
+                        setError('atem-save-error', res && res.message ? res.message : 'Failed to delete ATEM.');
+                    }
+                }).catch(function () {
+                    setError('atem-save-error', 'Network error while deleting.');
+                });
+            }
+        );
+        var dismissBtns = document.querySelectorAll('#atem-confirm-modal [data-bs-dismiss="modal"]');
+        for (var i = 0; i < dismissBtns.length; i++) {
+            dismissBtns[i].addEventListener('click', function () {
+                if (okBtn) { okBtn.textContent = 'Remove'; }
+            }, { once: true });
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -959,11 +1043,12 @@
         lockDateFields();
         injectBadge();
         applyReadMode();
-        if (!READ && !IS_ISSUER) {
+        if (!READ && !IS_ISSUER && !IS_A_ARCI) {
             ['tl-status', 'tl-extended', 'tl-ext1', 'tl-ext2', 'tl-remarks'].forEach(function (id) {
                 var el = document.getElementById(id);
                 if (el) { el.disabled = true; }
             });
         }
+        recalcClosureDate();
     });
 })();

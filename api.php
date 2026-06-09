@@ -657,6 +657,27 @@ function updateAtem($id, $data, $staff_id)
 }
 
 /**
+ * Delete a Draft ATEM card (Issuer only)
+ * @param int $id ATEM ID
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result
+ */
+function deleteAtem($id, $staff_id)
+{
+    // Pass actor_id as a query parameter because the shared DELETE curl branch
+    // does not send a request body (CURLOPT_POSTFIELDS is omitted for DELETE).
+    $endpoint = 'atem/' . (int)$id . '?actor_id=' . (int)$staff_id;
+    $result   = getApiDataWithJWT($endpoint, null, 'DELETE', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return array('success' => true);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to delete ATEM.';
+    return array('success' => false, 'message' => $msg);
+}
+
+/**
  * Add an ARCI member to an ATEM card
  * @param int $id ATEM ID
  * @param array $data Member data (staff_id, staff_name, department_id, department_name, role, assigned_by)
@@ -1201,6 +1222,14 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = updateAtem($jsonData['id'], $data, $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or data');
+                    }
+                    break;
+
+                case 'delete-atem':
+                    if (isset($jsonData['id'])) {
+                        $response = deleteAtem($jsonData['id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID');
                     }
                     break;
 

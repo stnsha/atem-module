@@ -1,7 +1,7 @@
 <?php
 $mode = (isset($_GET['mode']) && $_GET['mode'] === 'edit') ? 'edit' : 'read';
 $is_read = ($mode === 'read');
-$page_title = $is_read ? 'View ATEM' : 'Edit ATEM';
+$page_title = $is_read ? 'ATEM' : 'Edit ATEM';
 include('header.php');
 
 // header.php bootstrapped $conn and the current staff. Build id -> name maps so
@@ -123,6 +123,20 @@ if ($record) {
     }
 }
 
+// ATEMs with a terminal status cannot be edited.
+$terminal_statuses = array('Failed', 'Completed', 'Completed with Excellence');
+$current_status_value = '';
+if ($record && isset($record['status']['value'])) {
+    $current_status_value = $record['status']['value'];
+}
+if (!$is_read && in_array($current_status_value, $terminal_statuses)) {
+    $mode    = 'read';
+    $is_read = true;
+}
+
+$is_draft      = ($current_status_value === 'Draft');
+$is_issuer_now = ($record && (int)$staff_id === (int)$record['issuer_staff_id']);
+
 $atem_config = array(
     'atemId'      => $atem_id,
     'apiUrl'      => 'atem/api.php',
@@ -193,8 +207,8 @@ $atem_config = array(
     <!-- Right column: Incentive + Attachment + Reference Link -->
     <div class="atem-bento-item atem-span-4">
         <div class="atem-card mb-3">
-            <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Incentive</h6>
-            <p class="atem-card-hint">Live payout from the selected level and rule. C and I are not incentivised.</p>
+            <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
+            <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The company reserves the right to determine the final payout under its incentive scheme. C and I roles are not incentivised.</p>
             <div class="atem-incentive">
                 <div class="atem-incentive-total-block">
                     <div class="atem-incentive-total-label">Total Incentive</div>
@@ -205,7 +219,7 @@ $atem_config = array(
                             class="atem-incentive-stat-value" id="inc-base">RM0.00</span></div>
                     <div class="atem-incentive-stat"><span class="atem-incentive-stat-label">A &middot;
                             Accountable</span><span class="atem-incentive-stat-value" id="inc-a">RM0.00</span></div>
-                    <div class="atem-incentive-stat"><span class="atem-incentive-stat-label">R &middot;
+                    <div class="atem-incentive-stat"><span class="atem-incentive-stat-label" id="inc-r-label">R &middot;
                             Responsible</span><span class="atem-incentive-stat-value" id="inc-r">RM0.00</span></div>
                 </div>
                 <div class="atem-incentive-note" id="inc-note">Incentive is computed from the level and rule.</div>
@@ -396,6 +410,10 @@ $atem_config = array(
 </div>
 <div class="atem-save-bar">
     <a href="atem/view.php" class="btn btn-outline-secondary">Back to list</a>
+    <?php if (!$is_read && $is_draft && $is_issuer_now): ?>
+    <button type="button" class="btn btn-outline-danger" id="atem-delete-btn"
+        <?php echo $api_unavailable ? 'disabled' : ''; ?>>Delete</button>
+    <?php endif; ?>
     <?php if (!$is_read): ?>
     <button type="button" class="btn btn-primary" id="atem-save-btn"
         <?php echo $api_unavailable ? 'disabled' : ''; ?>>Save ATEM</button>
@@ -451,6 +469,25 @@ $atem_config = array(
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" id="atem-confirm-ok">Remove</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Terminal-status confirmation modal -->
+<div class="modal fade" id="atem-terminal-warn-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm status change</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0" id="atem-terminal-warn-msg"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="atem-terminal-warn-ok">Proceed and Save</button>
             </div>
         </div>
     </div>

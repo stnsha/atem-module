@@ -12,6 +12,7 @@
     var sortDir = -1; // newest first by id
 
     var LEVEL_COLOR = { 'Level 1': '#6c757d', 'Level 2': '#0d6efd', 'Level 3': '#6610f2', 'Level 4': '#003B73' };
+    var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
     var STATUS_COLOR = {
         'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Extended': '#fd7e14', 'Failed': '#dc3545'
@@ -65,6 +66,12 @@
         var sh = '<option value="">All statuses</option>';
         for (var s = 0; s < statuses.length; s++) { sh += '<option value="' + escapeHtml(statuses[s].value) + '">' + escapeHtml(statuses[s].value) + '</option>'; }
         st.innerHTML = sh;
+
+        var roleEl = $('vf-role');
+        var roleOptions = ['A', 'R', 'C', 'I', 'Not Applicable'];
+        var rh = '<option value="">All roles</option>';
+        for (var ri = 0; ri < roleOptions.length; ri++) { rh += '<option value="' + escapeHtml(roleOptions[ri]) + '">' + escapeHtml(roleOptions[ri]) + '</option>'; }
+        roleEl.innerHTML = rh;
     }
 
     // --------------------------------------------------------------- filtering
@@ -72,6 +79,7 @@
         var level = $('vf-level').value;
         var dept = $('vf-dept').value;
         var status = $('vf-status').value;
+        var role = $('vf-role').value;
         var from = $('vf-from').value;
         var to = $('vf-to').value;
         var term = $('vf-search').value.toLowerCase().trim();
@@ -80,6 +88,13 @@
             if (level && r.level_label !== level) { return false; }
             if (dept && r.department_name !== dept) { return false; }
             if (status && r.status !== status) { return false; }
+            if (role) {
+                if (role === 'Not Applicable') {
+                    if (r.user_arci_roles && r.user_arci_roles.length > 0) { return false; }
+                } else {
+                    if (!r.user_arci_roles || r.user_arci_roles.indexOf(role) < 0) { return false; }
+                }
+            }
             if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
             if (to && (!r.start_date || r.start_date.substring(0, 10) > to)) { return false; }
             if (term && String(r.title).toLowerCase().indexOf(term) < 0) { return false; }
@@ -116,11 +131,21 @@
                 var r = pageRows[i];
                 var levelCell = r.level_label ? pill(r.level_label, LEVEL_COLOR[r.level_label] || '#6c757d', r.system_name) : '-';
                 var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
+                var arciCell = '';
+                if (r.user_arci_roles && r.user_arci_roles.length > 0) {
+                    for (var ri = 0; ri < r.user_arci_roles.length; ri++) {
+                        var role = r.user_arci_roles[ri];
+                        var rc = ARCI_COLOR[role] || '#6c757d';
+                        arciCell += '<span style="display:inline-block;background:' + rc + ';color:#fff;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;margin:1px 2px;">' + escapeHtml(role) + '</span>';
+                    }
+                } else {
+                    arciCell = '<span style="color:#adb5bd;font-size:12px;">—</span>';
+                }
                 html += '<tr>'
                     + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
                     + '<td>' + escapeHtml(r.title) + '</td>'
-                    + '<td>' + escapeHtml(r.issuer_name) + '</td>'
-                    + '<td>' + escapeHtml(r.department_name) + '</td>'
+                    + '<td><div style="font-size:13px;">' + escapeHtml(r.issuer_name) + '</div><div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.department_name) + '</div></td>'
+                    + '<td>' + arciCell + '</td>'
                     + '<td>' + levelCell + '</td>'
                     + '<td>' + fmtDate(r.start_date) + '</td>'
                     + '<td>' + fmtDate(r.end_date) + '</td>'
@@ -129,6 +154,9 @@
                     + '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
                     + (CFG.staffId && (r.issuer_staff_id == CFG.staffId || (r.arci_staff_ids && r.arci_staff_ids.indexOf(CFG.staffId) !== -1))
                         ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
+                        : '')
+                    + (CFG.staffId && r.issuer_staff_id == CFG.staffId && r.status === 'Draft'
+                        ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>'
                         : '')
                     + '</td></tr>';
             }
@@ -158,14 +186,36 @@
 
     // --------------------------------------------------------------- wiring
     function bind() {
-        ['vf-level', 'vf-dept', 'vf-status', 'vf-from', 'vf-to'].forEach(function (id) {
+        ['vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
             $(id).addEventListener('change', function () { page = 1; render(); });
         });
         $('vf-search').addEventListener('keyup', function () { page = 1; render(); });
         $('vf-reset').addEventListener('click', function () {
-            ['vf-level', 'vf-dept', 'vf-status', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { $(id).value = ''; });
+            ['vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { $(id).value = ''; });
             page = 1; render();
         });
+
+        var body = $('atem-view-body');
+        if (body) {
+            body.addEventListener('click', function (e) {
+                var btn = e.target.closest ? e.target.closest('.atem-delete-row') : null;
+                if (!btn) { return; }
+                var atemId = parseInt(btn.getAttribute('data-id'), 10);
+                if (!confirm('Delete ATEM #AT' + atemId + '? This action is permanent and cannot be undone.')) { return; }
+                fetch('atem/api.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'delete-atem', id: atemId })
+                }).then(function (r) { return r.json(); }).then(function (res) {
+                    if (res && res.success) {
+                        rows = rows.filter(function (r) { return r.id !== atemId; });
+                        page = 1; render();
+                    } else {
+                        alert(res && res.message ? res.message : 'Failed to delete ATEM.');
+                    }
+                }).catch(function () { alert('Network error while deleting.'); });
+            });
+        }
 
         var ths = document.querySelectorAll('#atem-view-tbl th.atem-sortable');
         for (var i = 0; i < ths.length; i++) {
