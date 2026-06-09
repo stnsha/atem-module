@@ -151,14 +151,14 @@ if ($action === 'getLibrary' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $grades  = array();
     $structs = array();
 
-    $r = mysqli_query($conn, "SELECT id, label FROM staff_grade ORDER BY id ASC");
+    $r = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
             $grades[] = array('id' => (int)$row['id'], 'label' => $row['label']);
         }
     }
 
-    $r = mysqli_query($conn, "SELECT id, label FROM staff_struct ORDER BY id ASC");
+    $r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
             $structs[] = array('id' => (int)$row['id'], 'label' => $row['label']);

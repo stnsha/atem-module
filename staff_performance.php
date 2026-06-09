@@ -30,10 +30,10 @@ if ($sr) { while ($row = mysqli_fetch_assoc($sr)) { $staff_names[(int)$row['id']
 $dr = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
 if ($dr) { while ($row = mysqli_fetch_assoc($dr)) { $dept_names[(int)$row['id']] = $row['depart_name']; } }
 
-$gr = mysqli_query($conn, "SELECT id, label FROM staff_grade ORDER BY id ASC");
+$gr = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade ORDER BY id ASC");
 if ($gr) { while ($row = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$row['id']] = $row['label']; } }
 
-$str_r = mysqli_query($conn, "SELECT id, label FROM staff_struct ORDER BY id ASC");
+$str_r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
 if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$row['id']] = $row['label']; } }
 
 // Fetch bonus eligibility records from API
@@ -70,7 +70,8 @@ $month_names = array(
         </div>
         <div class="col-auto">
             <label class="form-label" style="font-size:12px;">Year</label>
-            <input type="number" name="year" class="form-control form-control-sm" value="<?php echo $filter_year; ?>" min="2024" max="2099" style="width:90px;">
+            <input type="number" name="year" class="form-control form-control-sm" value="<?php echo $filter_year; ?>"
+                min="2024" max="2099" style="width:90px;">
         </div>
         <div class="col-auto">
             <button type="submit" class="btn btn-primary btn-sm">Filter</button>
@@ -79,8 +80,7 @@ $month_names = array(
         <?php if ($atem_permission >= 3): ?>
         <div class="col-auto ms-auto">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="recalc-btn"
-                data-month="<?php echo $filter_month; ?>"
-                data-year="<?php echo $filter_year; ?>"
+                data-month="<?php echo $filter_month; ?>" data-year="<?php echo $filter_year; ?>"
                 <?php echo $api_unavailable ? 'disabled' : ''; ?>>
                 Recalculate
             </button>
@@ -109,7 +109,9 @@ $month_names = array(
             </thead>
             <tbody>
                 <?php if (empty($records)): ?>
-                <tr><td colspan="7" class="text-center text-muted py-4">No records found for this period.</td></tr>
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-4">No records found for this period.</td>
+                </tr>
                 <?php else: ?>
                 <?php foreach ($records as $rec): ?>
                 <?php
@@ -138,7 +140,8 @@ $month_names = array(
                     <td class="text-center"><?php echo $total_atem; ?></td>
                     <td class="text-end">RM <?php echo number_format($total_incentive, 2); ?></td>
                     <td style="max-width:200px;">
-                        <span class="perf-remark-text" data-id="<?php echo $rec_id; ?>"><?php echo htmlspecialchars($remark); ?></span>
+                        <span class="perf-remark-text"
+                            data-id="<?php echo $rec_id; ?>"><?php echo htmlspecialchars($remark); ?></span>
                     </td>
                     <td style="white-space:nowrap;">
                         <a class="btn btn-sm btn-outline-primary me-1"
@@ -165,7 +168,8 @@ $month_names = array(
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <textarea class="form-control" id="remark-input" rows="3" maxlength="500" style="font-size:13px;"></textarea>
+                <textarea class="form-control" id="remark-input" rows="3" maxlength="500"
+                    style="font-size:13px;"></textarea>
                 <div class="atem-form-error mt-1" id="remark-error"></div>
             </div>
             <div class="modal-footer py-2">
@@ -183,13 +187,15 @@ var PERF_API_URL = '/odb/atem/api.php';
 var editingRecordId = null;
 var editingRow = null;
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function() {
     var modal = document.getElementById('editRemarkModal');
     var bsModal = new bootstrap.Modal(modal);
 
-    document.addEventListener('click', function (e) {
+    document.addEventListener('click', function(e) {
         var btn = e.target.closest('.perf-edit-btn');
-        if (!btn) { return; }
+        if (!btn) {
+            return;
+        }
         editingRecordId = parseInt(btn.getAttribute('data-id'), 10);
         editingRow = btn.closest('tr');
         document.getElementById('remark-input').value = btn.getAttribute('data-remark') || '';
@@ -197,67 +203,89 @@ document.addEventListener('DOMContentLoaded', function () {
         bsModal.show();
     });
 
-    document.getElementById('remark-save-btn').addEventListener('click', function () {
+    document.getElementById('remark-save-btn').addEventListener('click', function() {
         var btn = this;
         var remark = document.getElementById('remark-input').value.trim();
         btn.disabled = true;
         btn.textContent = 'Saving...';
 
         fetch(PERF_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'bonus-update-remark', id: editingRecordId, remark: remark || null })
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (res) {
-            if (res.success) {
-                var span = editingRow ? editingRow.querySelector('.perf-remark-text') : null;
-                var editBtn = editingRow ? editingRow.querySelector('.perf-edit-btn') : null;
-                if (span)    { span.textContent = remark; }
-                if (editBtn) { editBtn.setAttribute('data-remark', remark); }
-                bsModal.hide();
-            } else {
-                document.getElementById('remark-error').textContent = res.message || 'Save failed.';
-            }
-        })
-        .catch(function () {
-            document.getElementById('remark-error').textContent = 'Request failed. Please try again.';
-        })
-        .finally(function () {
-            btn.disabled = false;
-            btn.textContent = 'Save';
-        });
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    action: 'bonus-update-remark',
+                    id: editingRecordId,
+                    remark: remark || null
+                })
+            })
+            .then(function(r) {
+                return r.json();
+            })
+            .then(function(res) {
+                if (res.success) {
+                    var span = editingRow ? editingRow.querySelector('.perf-remark-text') : null;
+                    var editBtn = editingRow ? editingRow.querySelector('.perf-edit-btn') : null;
+                    if (span) {
+                        span.textContent = remark;
+                    }
+                    if (editBtn) {
+                        editBtn.setAttribute('data-remark', remark);
+                    }
+                    bsModal.hide();
+                } else {
+                    document.getElementById('remark-error').textContent = res.message ||
+                        'Save failed.';
+                }
+            })
+            .catch(function() {
+                document.getElementById('remark-error').textContent =
+                    'Request failed. Please try again.';
+            })
+            .finally(function() {
+                btn.disabled = false;
+                btn.textContent = 'Save';
+            });
     });
 
     var recalcBtn = document.getElementById('recalc-btn');
     if (recalcBtn) {
-        recalcBtn.addEventListener('click', function () {
+        recalcBtn.addEventListener('click', function() {
             var btn = this;
             var month = parseInt(btn.getAttribute('data-month'), 10);
-            var year  = parseInt(btn.getAttribute('data-year'), 10);
+            var year = parseInt(btn.getAttribute('data-year'), 10);
             btn.disabled = true;
             btn.textContent = 'Calculating...';
 
             fetch(PERF_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'bonus-trigger-calculate', month: month, year: year })
-            })
-            .then(function (r) { return r.json(); })
-            .then(function (res) {
-                if (res.success) {
-                    window.location.reload();
-                } else {
-                    alert(res.message || 'Calculation failed.');
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'bonus-trigger-calculate',
+                        month: month,
+                        year: year
+                    })
+                })
+                .then(function(r) {
+                    return r.json();
+                })
+                .then(function(res) {
+                    if (res.success) {
+                        window.location.reload();
+                    } else {
+                        alert(res.message || 'Calculation failed.');
+                        btn.disabled = false;
+                        btn.textContent = 'Recalculate';
+                    }
+                })
+                .catch(function() {
+                    alert('Request failed. Please try again.');
                     btn.disabled = false;
                     btn.textContent = 'Recalculate';
-                }
-            })
-            .catch(function () {
-                alert('Request failed. Please try again.');
-                btn.disabled = false;
-                btn.textContent = 'Recalculate';
-            });
+                });
         });
     }
 });
