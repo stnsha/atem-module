@@ -421,7 +421,7 @@
             arciState[role].push({
                 staff_id: parseInt(checks[i].value, 10),
                 staff_name: checks[i].getAttribute('data-name'),
-                department_id: deptId ? parseInt(deptId, 10) : null,
+                staff_dept_id: deptId ? parseInt(deptId, 10) : null,
                 department_name: deptName,
                 role: role
             });

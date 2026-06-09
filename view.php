@@ -45,7 +45,7 @@ if (isset($_SESSION['atem_warning'])) {
 $view_rows = array();
 foreach ($rows as $a) {
     $issuer_id = isset($a['issuer_staff_id']) ? (int) $a['issuer_staff_id'] : 0;
-    $dept_id   = isset($a['department_id']) ? (int) $a['department_id'] : 0;
+    $dept_id   = isset($a['staff_dept_id']) ? (int) $a['staff_dept_id'] : 0;
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 

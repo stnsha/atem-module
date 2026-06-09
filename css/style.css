@@ -752,6 +752,65 @@ button {
   color: #adb5bd;
 }
 
+/* ---------------------------------------------------------------
+   Dashboard stat cards
+--------------------------------------------------------------- */
+.atem-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.atem-stat-value--blue   { color: #0d6efd; }
+.atem-stat-value--green  { color: #198754; }
+.atem-stat-value--red    { color: #dc3545; }
+.atem-stat-value--orange { color: #fd7e14; }
+
+.atem-stat-label {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-top: 0.25rem;
+}
+
+/* ---------------------------------------------------------------
+   Dashboard closure bar chart
+--------------------------------------------------------------- */
+.atem-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.atem-bar-label {
+  width: 90px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.atem-bar-track {
+  flex: 1;
+  background: #e9ecef;
+  border-radius: 4px;
+  height: 20px;
+  overflow: hidden;
+}
+
+.atem-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.atem-bar-count {
+  width: 35px;
+  text-align: right;
+  font-size: 0.85rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .atem-pager-info {
   font-size: 12px;
   color: #6c757d;

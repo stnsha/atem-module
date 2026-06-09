@@ -83,7 +83,7 @@ $atem_config = array(
     'issuer'        => array(
         'id'              => $issuer_auth ? $issuer_auth['staff_id'] : $staff_id,
         'name'            => $issuer_name,
-        'department_id'   => $issuer_auth ? $issuer_auth['department_id'] : null,
+        'staff_dept_id'   => $issuer_auth ? $issuer_auth['staff_dept_id'] : null,
         'department_name' => $issuer_department,
     ),
     'departments'   => $departments_list,

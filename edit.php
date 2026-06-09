@@ -73,13 +73,13 @@ $issuer_name = '';
 $issuer_department = '';
 if ($record) {
     $iid = isset($record['issuer_staff_id']) ? (int) $record['issuer_staff_id'] : 0;
-    $did = isset($record['department_id']) ? (int) $record['department_id'] : 0;
+    $did = isset($record['staff_dept_id']) ? (int) $record['staff_dept_id'] : 0;
     $issuer_name = isset($staff_names[$iid]) ? $staff_names[$iid] : ($iid ? ('Staff #' . $iid) : '');
     $issuer_department = isset($dept_names[$did]) ? $dept_names[$did] : '';
     if (isset($record['arci']) && is_array($record['arci'])) {
         foreach ($record['arci'] as $k => $m) {
             $sid = isset($m['staff_id']) ? (int) $m['staff_id'] : 0;
-            $mdid = isset($m['department_id']) ? (int) $m['department_id'] : 0;
+            $mdid = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
             $record['arci'][$k]['staff_name'] = isset($staff_names[$sid]) ? $staff_names[$sid] : ('Staff #' . $sid);
             $record['arci'][$k]['department_name'] = isset($dept_names[$mdid]) ? $dept_names[$mdid] : '';
         }

@@ -264,8 +264,8 @@
             var html = '';
             for (var m = 0; m < members.length; m++) {
                 var mem = members[m];
-                var nm = mem.staff_name || staffNameIn(mem.department_id, mem.staff_id) || ('Staff #' + mem.staff_id);
-                var dn = mem.department_name || deptName(mem.department_id);
+                var nm = mem.staff_name || staffNameIn(mem.staff_dept_id, mem.staff_id) || ('Staff #' + mem.staff_id);
+                var dn = mem.department_name || deptName(mem.staff_dept_id);
                 html += '<div class="atem-arci-member"><div class="atem-arci-member-info">'
                     + '<div class="atem-arci-member-dept">(' + escapeHtml(dn) + ')</div>'
                     + '<div class="atem-arci-member-name">' + escapeHtml(nm) + '</div></div>'
@@ -315,7 +315,7 @@
         function next() {
             if (queue.length === 0) { $('arci-role').value = ''; $('arci-dept-select').value = ''; $('arci-staff-search').value = ''; renderStaffList(); return; }
             var sid = queue.shift();
-            apiCall('arci-add', { id: CFG.atemId, data: { staff_id: sid, department_id: deptId ? parseInt(deptId, 10) : null, role: role } }).then(function (res) {
+            apiCall('arci-add', { id: CFG.atemId, data: { staff_id: sid, staff_dept_id: deptId ? parseInt(deptId, 10) : null, role: role } }).then(function (res) {
                 if (res && res.success) { setArciState(res.data); } else { setError('arci-error', res && res.message ? res.message : 'Failed to add member.'); }
                 next();
             }).catch(function () { setError('arci-error', 'Network error while adding member.'); next(); });

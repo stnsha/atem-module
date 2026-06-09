@@ -52,7 +52,10 @@ if (isset($_SESSION['atem_dev_role_override'])) {
     <div class="atem-container mb-3">
 
         <div class="row mb-4">
-            <div class="col-12">
-                <h1 class="atem-page-title"><?php echo htmlspecialchars($page_title); ?><?php echo isset($page_title_badge) ? ' ' . $page_title_badge : ''; ?></h1>
+            <div class="col-12 d-flex align-items-start justify-content-between flex-wrap gap-2">
+                <h1 class="atem-page-title mb-0"><?php echo htmlspecialchars($page_title); ?><?php echo isset($page_title_badge) ? ' ' . $page_title_badge : ''; ?></h1>
+                <?php if (!empty($page_title_actions)): ?>
+                <div><?php echo $page_title_actions; ?></div>
+                <?php endif; ?>
             </div>
         </div>

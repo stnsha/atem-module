@@ -195,7 +195,7 @@ function getStaffAuthData($staff_id)
     return array(
         'staff_id'        => (int)$row['id'],
         'staff_name'      => $row['nama_staff'],
-        'department_id'   => $row['department'] !== null ? (int)$row['department'] : null,
+        'staff_dept_id'   => $row['department'] !== null ? (int)$row['department'] : null,
         'department_name' => $row['depart_name']
     );
 }
@@ -680,7 +680,7 @@ function deleteAtem($id, $staff_id)
 /**
  * Add an ARCI member to an ATEM card
  * @param int $id ATEM ID
- * @param array $data Member data (staff_id, staff_name, department_id, department_name, role, assigned_by)
+ * @param array $data Member data (staff_id, staff_name, staff_dept_id, department_name, role, assigned_by)
  * @param int $staff_id Staff ID for authentication
  * @return array Result with grouped members
  */
@@ -1197,7 +1197,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     $draftData = array(
                         'issuer_staff_id' => $issuer ? $issuer['staff_id'] : $staff_id,
                         'issuer_name'     => $issuer ? $issuer['staff_name'] : null,
-                        'department_id'   => $issuer ? $issuer['department_id'] : null,
+                        'staff_dept_id'   => $issuer ? $issuer['staff_dept_id'] : null,
                         'department_name' => $issuer ? $issuer['department_name'] : null
                     );
                     $response = createAtemDraft($draftData, $staff_id);
@@ -1205,6 +1205,113 @@ if (!defined('API_JWT_INCLUDED')) {
 
                 case 'list-atems':
                     $response = getAtemList($staff_id);
+                    break;
+
+                case 'dashboard-stats':
+                    $listResult = getAtemList($staff_id);
+                    if (!$listResult['success']) {
+                        $response = array('success' => false, 'message' => 'Failed to load ATEM data');
+                        break;
+                    }
+                    $items = $listResult['data'];
+
+                    $filterYear    = isset($jsonData['filter_year'])    ? (int)$jsonData['filter_year']    : 0;
+                    $filterMonth   = isset($jsonData['filter_month'])   ? (int)$jsonData['filter_month']   : 0;
+                    $filterQuarter = isset($jsonData['filter_quarter']) ? (int)$jsonData['filter_quarter'] : 0;
+                    $quarterMonths = array(
+                        1 => array(1, 2, 3),
+                        2 => array(4, 5, 6),
+                        3 => array(7, 8, 9),
+                        4 => array(10, 11, 12),
+                    );
+
+                    $levelMap = array(
+                        1 => array('label' => 'L1 Operational',     'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
+                        2 => array('label' => 'L2 Improvement',     'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
+                        3 => array('label' => 'L3 Cross/Strategic',  'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
+                        4 => array('label' => 'L4 Company-Level',    'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
+                    );
+
+                    $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'failed' => 0, 'draft' => 0);
+                    $total = 0;
+                    $incentiveTotal = 0.0;
+
+                    foreach ($items as $item) {
+                        if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
+                            $createdAt = isset($item['created_at']) ? $item['created_at'] : '';
+                            if ($createdAt) {
+                                $ts        = strtotime($createdAt);
+                                $itemYear  = (int)date('Y', $ts);
+                                $itemMonth = (int)date('n', $ts);
+                                if ($filterYear > 0 && $itemYear !== $filterYear) { continue; }
+                                if ($filterMonth > 0 && $itemMonth !== $filterMonth) { continue; }
+                                if ($filterQuarter > 0) {
+                                    $qMonths = isset($quarterMonths[$filterQuarter]) ? $quarterMonths[$filterQuarter] : array();
+                                    if (!in_array($itemMonth, $qMonths)) { continue; }
+                                }
+                            }
+                        }
+                        $total++;
+                        $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
+                        $levelNum  = isset($item['levelStructure']['level']) ? (int)$item['levelStructure']['level'] : 0;
+
+                        if ($statusVal === 'Active') {
+                            $byStatus['active']++;
+                        } elseif ($statusVal === 'Completed') {
+                            $byStatus['complete']++;
+                        } elseif ($statusVal === 'Completed with Excellence') {
+                            $byStatus['excellence']++;
+                        } elseif ($statusVal === 'Extended') {
+                            $byStatus['extended']++;
+                        } elseif ($statusVal === 'Failed') {
+                            $byStatus['failed']++;
+                        } elseif ($statusVal === 'Draft') {
+                            $byStatus['draft']++;
+                        }
+
+                        if ($levelNum >= 1 && $levelNum <= 4) {
+                            $levelMap[$levelNum]['cards']++;
+                            if ($statusVal === 'Completed') {
+                                $levelMap[$levelNum]['complete']++;
+                            } elseif ($statusVal === 'Completed with Excellence') {
+                                $levelMap[$levelNum]['excellence']++;
+                            } elseif ($statusVal === 'Failed') {
+                                $levelMap[$levelNum]['fail']++;
+                            }
+                        }
+
+                        $claimable = isset($item['claimable']) ? (bool)$item['claimable'] : false;
+                        if ($claimable && isset($item['total_incentive_amount'])) {
+                            $amt = (float)$item['total_incentive_amount'];
+                            $incentiveTotal += $amt;
+                            if ($levelNum >= 1 && $levelNum <= 4) {
+                                $levelMap[$levelNum]['forecast'] += $amt;
+                            }
+                        }
+                    }
+
+                    $byLevel = array();
+                    foreach ($levelMap as $lvlId => $lvlData) {
+                        $byLevel[] = array(
+                            'level_id'   => $lvlId,
+                            'label'      => $lvlData['label'],
+                            'cards'      => $lvlData['cards'],
+                            'complete'   => $lvlData['complete'],
+                            'excellence' => $lvlData['excellence'],
+                            'fail'       => $lvlData['fail'],
+                            'forecast'   => $lvlData['forecast'],
+                        );
+                    }
+
+                    $response = array(
+                        'success' => true,
+                        'data'    => array(
+                            'total'           => $total,
+                            'by_status'       => $byStatus,
+                            'by_level'        => $byLevel,
+                            'incentive_total' => $incentiveTotal,
+                        ),
+                    );
                     break;
 
                 case 'get-atem':
@@ -1388,7 +1495,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         $data = $jsonData['data'];
                         // Issuer identity and audit fields are injected server-side.
                         $data['issuer_staff_id'] = $issuer ? $issuer['staff_id'] : $staff_id;
-                        $data['department_id']   = $issuer ? $issuer['department_id'] : null;
+                        $data['staff_dept_id']   = $issuer ? $issuer['staff_dept_id'] : null;
                         $data['created_by']      = $staff_id;
                         $response = saveAtemCard($data, $staff_id);
                         if (!empty($response['success'])) {
