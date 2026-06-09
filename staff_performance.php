@@ -1,11 +1,16 @@
 <?php
+ob_start();
+
 $page_title = 'Staff Performance';
 include('header.php');
 
 if ($atem_permission < 3) {
+    ob_end_clean();
     header('Location: /odb/atem/index.php');
     exit;
 }
+
+ob_end_flush();
 
 // Filter params
 $filter_month = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('n');
