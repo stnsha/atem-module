@@ -31,10 +31,10 @@ $dr = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
 if ($dr) { while ($row = mysqli_fetch_assoc($dr)) { $dept_names[(int)$row['id']] = $row['depart_name']; } }
 
 $gr = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade ORDER BY id ASC");
-if ($gr) { while ($row = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$row['id']] = $row['label']; } }
+if ($gr) { while ($row = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$row['id']] = $row['grade_name']; } }
 
 $str_r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
-if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$row['id']] = $row['label']; } }
+if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$row['id']] = $row['struct_name']; } }
 
 // Fetch bonus eligibility records from API
 define('API_JWT_INCLUDED', true);
