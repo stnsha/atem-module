@@ -154,14 +154,14 @@ if ($action === 'getLibrary' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $r = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
-            $grades[] = array('id' => (int)$row['id'], 'label' => $row['label']);
+            $grades[] = array('id' => (int)$row['id'], 'label' => $row['grade_name']);
         }
     }
 
     $r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
-            $structs[] = array('id' => (int)$row['id'], 'label' => $row['label']);
+            $structs[] = array('id' => (int)$row['id'], 'label' => $row['struct_name']);
         }
     }
 
@@ -180,9 +180,10 @@ if ($action === 'updateLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $table         = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
+    $col           = ($type === 'grade') ? 'grade_name'  : 'struct_name';
     $label_escaped = mysqli_real_escape_string($conn, $label);
 
-    $result = mysqli_query($conn, "UPDATE `$table` SET label = '$label_escaped' WHERE id = $id");
+    $result = mysqli_query($conn, "UPDATE `$table` SET `$col` = '$label_escaped' WHERE id = $id");
     if ($result && mysqli_affected_rows($conn) >= 0) {
         echo json_encode(array('success' => true, 'message' => 'Label updated successfully.'));
     } else {
@@ -201,6 +202,7 @@ if ($action === 'addLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $table         = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
+    $col           = ($type === 'grade') ? 'grade_name'  : 'struct_name';
     $label_escaped = mysqli_real_escape_string($conn, $label);
 
     $max_result = mysqli_query($conn, "SELECT COALESCE(MAX(id), -1) + 1 AS next_id FROM `$table`");
@@ -210,7 +212,7 @@ if ($action === 'addLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $next_id = (int)mysqli_fetch_assoc($max_result)['next_id'];
 
-    $insert = "INSERT INTO `$table` (id, label) VALUES ($next_id, '$label_escaped')";
+    $insert = "INSERT INTO `$table` (id, `$col`) VALUES ($next_id, '$label_escaped')";
     if (mysqli_query($conn, $insert)) {
         echo json_encode(array('success' => true, 'message' => 'Entry added successfully.', 'id' => $next_id));
     } else {
