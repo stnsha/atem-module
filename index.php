@@ -1,5 +1,5 @@
 <?php
-$page_title = 'Dashboard';
+$page_title = 'Dashboard Overview';
 ob_start();
 ?>
 <div class="d-flex flex-column align-items-end gap-1">
@@ -116,18 +116,18 @@ window.ATEM_DASH = <?php echo json_encode(array('apiUrl' => 'atem/api.php')); ?>
                 Excellence, Extend, Fail</div>
             <div id="dash-bars">
                 <div class="atem-bar-row">
-                    <div class="atem-bar-label">Complete</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-complete" style="width:0%;background:#198754;"></div>
-                    </div>
-                    <div class="atem-bar-count" id="bar-complete-n">-</div>
-                </div>
-                <div class="atem-bar-row">
                     <div class="atem-bar-label">Excellence</div>
                     <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-excellence" style="width:0%;background:#0d6efd;"></div>
+                        <div class="atem-bar-fill" id="bar-excellence" style="width:0%;background:#198754;"></div>
                     </div>
                     <div class="atem-bar-count" id="bar-excellence-n">-</div>
+                </div>
+                <div class="atem-bar-row">
+                    <div class="atem-bar-label">Complete</div>
+                    <div class="atem-bar-track">
+                        <div class="atem-bar-fill" id="bar-complete" style="width:0%;background:#0d6efd;"></div>
+                    </div>
+                    <div class="atem-bar-count" id="bar-complete-n">-</div>
                 </div>
                 <div class="atem-bar-row">
                     <div class="atem-bar-label">Extended</div>

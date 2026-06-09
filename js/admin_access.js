@@ -121,7 +121,7 @@
             html += '<tr>' +
                 '<td>' + $('<span>').text(s.nama_staff).html() + '</td>' +
                 '<td class="text-muted">' + $('<span>').text(s.department_name).html() + '</td>' +
-                '<td><span class="badge ' + gradeBadge + '">' + gradeLabel + '</span></td>' +
+                '<td><span class="atem-pill ' + gradeBadge + '">' + gradeLabel + '</span></td>' +
                 '<td><button type="button" class="btn btn-sm btn-outline-secondary edit-btn"' +
                     ' data-staff-id="' + s.id + '"' +
                     ' data-staff-name="' + $('<span>').text(s.nama_staff).html() + '"' +

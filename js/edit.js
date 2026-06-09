@@ -717,7 +717,7 @@
             setError('tl-status-error', 'The current status is "' + originalStatusValue + '". Please change the status before saving.');
             return false;
         }
-        if ($('tl-extended').checked && $('tl-ext1').value) {
+        if ($('tl-extended').checked && $('tl-ext1').value && originalStatusValue !== 'Extended') {
             var selStatusId = $('tl-status').value;
             var selStatusValue = '';
             (CFG.statuses || []).forEach(function (s) {

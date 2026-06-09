@@ -67,8 +67,8 @@
                 html += '<tr>' +
                     '<td style="font-size:12px;font-weight:600;">' + l.label + '</td>' +
                     '<td style="font-size:12px;">' + l.cards + '</td>' +
-                    '<td style="font-size:12px;"><span style="color:#198754;">' + l.complete + '</span></td>' +
-                    '<td style="font-size:12px;"><span style="color:#0d6efd;">' + l.excellence + '</span></td>' +
+                    '<td style="font-size:12px;"><span style="color:#0d6efd;">' + l.complete + '</span></td>' +
+                    '<td style="font-size:12px;"><span style="color:#198754;">' + l.excellence + '</span></td>' +
                     '<td style="font-size:12px;"><span style="color:#dc3545;">' + l.fail + '</span></td>' +
                     '<td style="font-size:12px;">' + forecast + '</td>' +
                     '</tr>';
@@ -76,12 +76,11 @@
             tbody.innerHTML = html;
         }
 
-        var barTotal = (s.complete || 0) + (s.excellence || 0) + (s.extended || 0) + failed;
-        if (barTotal > 0) {
-            setWidth('bar-complete',   Math.round((s.complete   || 0) / barTotal * 100));
-            setWidth('bar-excellence', Math.round((s.excellence || 0) / barTotal * 100));
-            setWidth('bar-extended',   Math.round((s.extended   || 0) / barTotal * 100));
-            setWidth('bar-failed',     Math.round(failed              / barTotal * 100));
+        if (total > 0) {
+            setWidth('bar-complete',   Math.round((s.complete   || 0) / total * 100));
+            setWidth('bar-excellence', Math.round((s.excellence || 0) / total * 100));
+            setWidth('bar-extended',   Math.round((s.extended   || 0) / total * 100));
+            setWidth('bar-failed',     Math.round(failed              / total * 100));
         }
         setText('bar-complete-n',   s.complete   || 0);
         setText('bar-excellence-n', s.excellence || 0);

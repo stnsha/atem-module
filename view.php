@@ -1,5 +1,6 @@
 <?php
 $page_title = 'ATEM';
+$page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="atem/create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
 include('header.php');
 
 // header.php bootstrapped the odb connection ($conn) and current staff.
@@ -106,19 +107,27 @@ $view_config = array(
     <div class="row g-2 mt-1 align-items-end">
         <div class="col-md-3">
             <label class="form-label">Level</label>
-            <select class="form-select form-select-sm" id="vf-level"><option value="">All levels</option></select>
+            <select class="form-select form-select-sm" id="vf-level">
+                <option value="">All levels</option>
+            </select>
         </div>
         <div class="col-md-3">
             <label class="form-label">Department</label>
-            <select class="form-select form-select-sm" id="vf-dept"><option value="">All departments</option></select>
+            <select class="form-select form-select-sm" id="vf-dept">
+                <option value="">All departments</option>
+            </select>
         </div>
         <div class="col-md-3">
             <label class="form-label">Status</label>
-            <select class="form-select form-select-sm" id="vf-status"><option value="">All statuses</option></select>
+            <select class="form-select form-select-sm" id="vf-status">
+                <option value="">All statuses</option>
+            </select>
         </div>
         <div class="col-md-3">
-            <label class="form-label">Role with ARCI</label>
-            <select class="form-select form-select-sm" id="vf-role"><option value="">All roles</option></select>
+            <label class="form-label">Your Role with ARCI</label>
+            <select class="form-select form-select-sm" id="vf-role">
+                <option value="">All roles</option>
+            </select>
         </div>
         <div class="col-md-3">
             <label class="form-label">Start from</label>
@@ -133,7 +142,8 @@ $view_config = array(
             <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type to search...">
         </div>
         <div class="col-md-2 d-flex align-items-end">
-            <button type="button" class="btn btn-outline-secondary btn-sm atem-reset-btn w-100" id="vf-reset">Reset Filters</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm atem-reset-btn w-100" id="vf-reset">Reset
+                Filters</button>
         </div>
     </div>
 </div>

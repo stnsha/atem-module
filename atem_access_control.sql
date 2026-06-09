@@ -38,5 +38,7 @@ CREATE TABLE `staff_struct_library` (
 
 INSERT INTO `staff_struct_library` (`id`, `label`) VALUES
 (0, 'No structure'),
-(1, 'Baodi KPI + 4 Atem'),
-(2, '8 Atem');
+(1, 'Flexi KPI'),
+(2, 'KPI Only'),
+(3, 'Baodi KPI + 2 ATEM'),
+(4, 'ATEM Only');

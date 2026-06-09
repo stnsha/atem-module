@@ -1146,6 +1146,37 @@ function downloadAtemAttachment($id, $att_id, $staff_id)
     echo $body;
 }
 
+function getBonusEligibilityList($month, $year, $staff_id_param, $staff_id)
+{
+    $params = array();
+    if ($month)          { $params[] = 'month='    . (int)$month; }
+    if ($year)           { $params[] = 'year='     . (int)$year; }
+    if ($staff_id_param) { $params[] = 'staff_id=' . (int)$staff_id_param; }
+    $qs = $params ? '?' . implode('&', $params) : '';
+
+    $result = getApiDataWithJWT('bonus-eligibility' . $qs, null, 'GET', $staff_id);
+    if (!$result['success']) {
+        return array('success' => false, 'message' => 'API error', 'data' => array());
+    }
+    $body = json_decode($result['response'], true);
+    return array('success' => true, 'data' => isset($body['data']) ? $body['data'] : array());
+}
+
+function updateBonusRemark($record_id, $remark, $staff_id)
+{
+    $result = getApiDataWithJWT(
+        'bonus-eligibility/' . (int)$record_id,
+        array('remark' => $remark),
+        'PUT',
+        $staff_id
+    );
+    if (!$result['success']) {
+        return array('success' => false, 'message' => 'API error');
+    }
+    $body = json_decode($result['response'], true);
+    return array('success' => true, 'data' => isset($body['data']) ? $body['data'] : null);
+}
+
 // Only run request handler if this file is accessed directly (not included)
 if (!defined('API_JWT_INCLUDED')) {
     // Check if we have a staff ID for authentication
@@ -1253,20 +1284,23 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                         $total++;
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
-                        $levelNum  = isset($item['levelStructure']['level']) ? (int)$item['levelStructure']['level'] : 0;
+                        $levelStr  = isset($item['level_structure']['level']) ? $item['level_structure']['level'] : '';
+                        preg_match('/\d+/', $levelStr, $lvlMatch);
+                        $levelNum  = $lvlMatch ? (int)$lvlMatch[0] : 0;
 
-                        if ($statusVal === 'Active') {
+                        $isExtended = !empty($item['is_extended']);
+                        if ($statusVal === 'Active' || $statusVal === 'Extended') {
                             $byStatus['active']++;
+                        } elseif ($statusVal === 'Draft') {
+                            $byStatus['draft']++;
+                        } elseif ($isExtended) {
+                            $byStatus['extended']++;
                         } elseif ($statusVal === 'Completed') {
                             $byStatus['complete']++;
                         } elseif ($statusVal === 'Completed with Excellence') {
                             $byStatus['excellence']++;
-                        } elseif ($statusVal === 'Extended') {
-                            $byStatus['extended']++;
                         } elseif ($statusVal === 'Failed') {
                             $byStatus['failed']++;
-                        } elseif ($statusVal === 'Draft') {
-                            $byStatus['draft']++;
                         }
 
                         if ($levelNum >= 1 && $levelNum <= 4) {
@@ -1487,6 +1521,34 @@ if (!defined('API_JWT_INCLUDED')) {
                     unset($_SESSION['atem_draft']);
                     unset($_SESSION['atem_draft_files']);
                     $response = array('success' => true);
+                    break;
+
+                case 'bonus-update-remark':
+                    if (isset($jsonData['id'])) {
+                        $remark = isset($jsonData['remark']) ? $jsonData['remark'] : null;
+                        $response = updateBonusRemark($jsonData['id'], $remark, $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing record ID');
+                    }
+                    break;
+
+                case 'bonus-trigger-calculate':
+                    if (isset($jsonData['month']) && isset($jsonData['year'])) {
+                        $result = getApiDataWithJWT(
+                            'bonus-eligibility/calculate',
+                            array('month' => (int)$jsonData['month'], 'year' => (int)$jsonData['year']),
+                            'POST',
+                            $staff_id
+                        );
+                        if ($result['success']) {
+                            $body = json_decode($result['response'], true);
+                            $response = array('success' => true, 'message' => isset($body['message']) ? $body['message'] : 'Done');
+                        } else {
+                            $response = array('success' => false, 'message' => 'Calculation failed');
+                        }
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing month or year');
+                    }
                     break;
 
                 case 'save-atem':
