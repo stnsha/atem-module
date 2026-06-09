@@ -126,10 +126,9 @@ function getApiHost()
     $env = getEnvironment();
 
     if ($env === 'local') {
-        return 'http://localhost/atem-api/public/api/';
+        return 'http://127.0.0.1:8000/api/';
     } else {
-        // TODO: set the production atem-api base URL when deployed.
-        return 'http://localhost/atem-api/public/api/';
+        return 'http://mytotalhealth.com.my/atem-api/api/';
     }
 }
 
