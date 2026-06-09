@@ -151,14 +151,14 @@ if ($action === 'getLibrary' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $grades  = array();
     $structs = array();
 
-    $r = mysqli_query($conn, "SELECT id, label FROM staff_grade_library ORDER BY id ASC");
+    $r = mysqli_query($conn, "SELECT id, label FROM staff_grade ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
             $grades[] = array('id' => (int)$row['id'], 'label' => $row['label']);
         }
     }
 
-    $r = mysqli_query($conn, "SELECT id, label FROM staff_struct_library ORDER BY id ASC");
+    $r = mysqli_query($conn, "SELECT id, label FROM staff_struct ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
             $structs[] = array('id' => (int)$row['id'], 'label' => $row['label']);
@@ -179,7 +179,7 @@ if ($action === 'updateLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $table         = ($type === 'grade') ? 'staff_grade_library' : 'staff_struct_library';
+    $table         = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
     $label_escaped = mysqli_real_escape_string($conn, $label);
 
     $result = mysqli_query($conn, "UPDATE `$table` SET label = '$label_escaped' WHERE id = $id");
@@ -200,7 +200,7 @@ if ($action === 'addLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $table         = ($type === 'grade') ? 'staff_grade_library' : 'staff_struct_library';
+    $table         = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
     $label_escaped = mysqli_real_escape_string($conn, $label);
 
     $max_result = mysqli_query($conn, "SELECT COALESCE(MAX(id), -1) + 1 AS next_id FROM `$table`");

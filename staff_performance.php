@@ -25,10 +25,10 @@ if ($sr) { while ($row = mysqli_fetch_assoc($sr)) { $staff_names[(int)$row['id']
 $dr = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
 if ($dr) { while ($row = mysqli_fetch_assoc($dr)) { $dept_names[(int)$row['id']] = $row['depart_name']; } }
 
-$gr = mysqli_query($conn, "SELECT id, label FROM staff_grade_library ORDER BY id ASC");
+$gr = mysqli_query($conn, "SELECT id, label FROM staff_grade ORDER BY id ASC");
 if ($gr) { while ($row = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$row['id']] = $row['label']; } }
 
-$str_r = mysqli_query($conn, "SELECT id, label FROM staff_struct_library ORDER BY id ASC");
+$str_r = mysqli_query($conn, "SELECT id, label FROM staff_struct ORDER BY id ASC");
 if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$row['id']] = $row['label']; } }
 
 // Fetch bonus eligibility records from API
