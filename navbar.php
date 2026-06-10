@@ -16,6 +16,9 @@ $_navbar_isLocal    = in_array($_navbar_serverName, array('localhost', '127.0.0.
     || strpos($_navbar_httpHost,   '127.0.0.1') !== false;
 
 $_navbar_realRole = isset($grade) ? (int)$grade : $atem_role;
+if (isset($atem) && (int)$atem === 1) {
+    $_navbar_realRole = 6;
+}
 if ($_navbar_isLocal && $_navbar_realRole === 6) {
     if (session_id() == '') {
         session_start();
@@ -27,8 +30,7 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
         2 => 'Middle management',
         3 => 'Senior management',
         4 => 'C suite executive',
-        5 => 'CEO/board',
-        6 => 'SuperAdmin',
+        5 => 'CEO/board'
     );
 
     $_navbar_activeRole      = isset($_SESSION['atem_dev_role_override']) ? (int)$_SESSION['atem_dev_role_override'] : null;

@@ -30,13 +30,16 @@ if ($_be_isLocal && isset($_SESSION['atem_dev_role_override'])) {
     $requester_grade = (int)$_SESSION['atem_dev_role_override'];
 } else {
     $username    = mysqli_real_escape_string($conn, $_SESSION['myusername']);
-    $auth_result = mysqli_query($conn, "SELECT id, grade FROM staff WHERE username = '$username' AND recycle != 1");
+    $auth_result = mysqli_query($conn, "SELECT id, grade, atem FROM staff WHERE username = '$username' AND recycle != 1");
     if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
         echo json_encode(array('error' => 'Unauthorized'));
         exit;
     }
     $auth_row        = mysqli_fetch_assoc($auth_result);
     $requester_grade = (int)$auth_row['grade'];
+    if ((int)$auth_row['atem'] === 1) {
+        $requester_grade = 6;
+    }
 }
 
 if ($requester_grade < 3) {
