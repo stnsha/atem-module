@@ -56,46 +56,36 @@ $month_names = array(
 <?php endif; ?>
 
 <!-- Filters -->
-<div class="bento-card mb-3">
-    <form method="GET" action="atem/staff_performance.php" class="row g-2 align-items-end">
-        <div class="col-auto">
-            <label class="form-label" style="font-size:12px;">Month</label>
-            <select name="month" class="form-select form-select-sm" style="min-width:130px;">
-                <?php foreach ($month_names as $mn => $ml): ?>
-                <option value="<?php echo $mn; ?>" <?php echo ($mn === $filter_month) ? 'selected' : ''; ?>>
-                    <?php echo htmlspecialchars($ml); ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col-auto">
-            <label class="form-label" style="font-size:12px;">Year</label>
-            <input type="number" name="year" class="form-control form-control-sm" value="<?php echo $filter_year; ?>"
-                min="2024" max="2099" style="width:90px;">
-        </div>
-        <div class="col-auto">
-            <button type="submit" class="btn btn-primary btn-sm">Filter</button>
-            <a href="atem/staff_performance.php" class="btn btn-outline-secondary btn-sm ms-1">Reset</a>
-        </div>
+<div class="atem-card mb-3">
+    <form method="GET" action="atem/staff_performance.php" class="d-flex align-items-center flex-wrap gap-2">
+        <select name="month" class="form-select form-select-sm" style="width:auto;">
+            <?php foreach ($month_names as $mn => $ml): ?>
+            <option value="<?php echo $mn; ?>" <?php echo ($mn === $filter_month) ? 'selected' : ''; ?>>
+                <?php echo htmlspecialchars($ml); ?>
+            </option>
+            <?php endforeach; ?>
+        </select>
+        <input type="number" name="year" class="form-control form-control-sm" value="<?php echo $filter_year; ?>"
+            min="2024" max="2099" style="width:90px;">
+        <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+        <a href="atem/staff_performance.php" class="btn btn-outline-secondary btn-sm">Reset</a>
         <?php if ($atem_permission >= 3): ?>
-        <div class="col-auto ms-auto">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="recalc-btn"
-                data-month="<?php echo $filter_month; ?>" data-year="<?php echo $filter_year; ?>"
-                <?php echo $api_unavailable ? 'disabled' : ''; ?>>
-                Recalculate
-            </button>
-        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" id="recalc-btn"
+            data-month="<?php echo $filter_month; ?>" data-year="<?php echo $filter_year; ?>"
+            <?php echo $api_unavailable ? 'disabled' : ''; ?>>
+            Recalculate
+        </button>
         <?php endif; ?>
     </form>
 </div>
 
 <!-- Table -->
-<div class="bento-card">
+<div class="atem-card">
     <p class="mb-3 text-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">
         <?php echo htmlspecialchars($month_names[$filter_month] . ' ' . $filter_year); ?> &mdash; Staff Performance
     </p>
     <div class="table-responsive">
-        <table class="table table-hover mb-0" style="font-size:13px;">
+        <table class="table table-hover align-middle atem-view-tbl">
             <thead>
                 <tr>
                     <th>Staff Details</th>
@@ -104,7 +94,7 @@ $month_names = array(
                     <th class="text-center">Total Completed ATEM</th>
                     <th class="text-end">Total Incentive</th>
                     <th>Remark</th>
-                    <th></th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
