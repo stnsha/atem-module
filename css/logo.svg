@@ -1,53 +1,51 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100" width="320" height="100">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#0d6efd;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#0a58ca;stop-opacity:1" />
     </linearGradient>
-    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.95" />
-      <stop offset="100%" style="stop-color:#e0ecff;stop-opacity:0.95" />
-    </linearGradient>
   </defs>
 
-  <!-- Background pill -->
-  <rect x="0" y="0" width="320" height="100" rx="16" ry="16" fill="url(#bgGrad)" />
+  <!-- Square background with rounded corners -->
+  <rect x="0" y="0" width="200" height="200" rx="24" ry="24" fill="url(#bgGrad)" />
 
-  <!-- Icon area: upward bar chart representing performance -->
+  <!-- Bar chart icon centered in the upper half -->
   <!-- Bar 1 (short) -->
-  <rect x="18" y="62" width="10" height="22" rx="2" fill="url(#iconGrad)" opacity="0.7" />
+  <rect x="58" y="100" width="16" height="36" rx="3" fill="#ffffff" opacity="0.65" />
   <!-- Bar 2 (medium) -->
-  <rect x="32" y="48" width="10" height="36" rx="2" fill="url(#iconGrad)" opacity="0.85" />
+  <rect x="82" y="80" width="16" height="56" rx="3" fill="#ffffff" opacity="0.80" />
   <!-- Bar 3 (tall) -->
-  <rect x="46" y="30" width="10" height="54" rx="2" fill="url(#iconGrad)" />
+  <rect x="106" y="58" width="16" height="78" rx="3" fill="#ffffff" />
 
-  <!-- Upward arrow overlaid on bars -->
-  <polyline points="18,58 38,40 56,22" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
-  <polygon points="56,22 49,25 53,31" fill="#ffffff" opacity="0.6" />
+  <!-- Upward trend arrow across bars -->
+  <polyline points="66,96 90,74 114,52" stroke="#ffffff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
+  <polygon points="114,52 105,57 110,64" fill="#ffffff" opacity="0.55" />
 
-  <!-- Divider -->
-  <line x1="76" y1="20" x2="76" y2="80" stroke="#ffffff" stroke-width="1" opacity="0.3" />
+  <!-- Divider line -->
+  <line x1="30" y1="148" x2="170" y2="148" stroke="#ffffff" stroke-width="1" opacity="0.25" />
 
   <!-- ATEM wordmark -->
   <text
-    x="92"
-    y="65"
+    x="100"
+    y="170"
+    text-anchor="middle"
     font-family="Inter, Segoe UI, Arial, sans-serif"
-    font-size="42"
+    font-size="36"
     font-weight="700"
-    letter-spacing="3"
+    letter-spacing="4"
     fill="#ffffff"
   >ATEM</text>
 
   <!-- Tagline -->
   <text
-    x="93"
-    y="83"
+    x="100"
+    y="188"
+    text-anchor="middle"
     font-family="Inter, Segoe UI, Arial, sans-serif"
-    font-size="10"
+    font-size="8"
     font-weight="400"
-    letter-spacing="2.5"
+    letter-spacing="2"
     fill="#c0d8ff"
-    opacity="0.9"
-  >STAFF PERFORMANCE SYSTEM</text>
+    opacity="0.85"
+  >PERFORMANCE SYSTEM</text>
 </svg>
