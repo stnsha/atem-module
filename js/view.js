@@ -152,7 +152,7 @@
                     + '<td>' + statusCell + '</td>'
                     + '<td class="atem-view-actions">'
                     + '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
-                    + (CFG.staffId && (r.issuer_staff_id == CFG.staffId || (r.arci_staff_ids && r.arci_staff_ids.indexOf(CFG.staffId) !== -1))
+                    + (CFG.isSuperAdmin || (CFG.staffId && (r.issuer_staff_id == CFG.staffId || (r.arci_staff_ids && r.arci_staff_ids.indexOf(CFG.staffId) !== -1)))
                         ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
                         : '')
                     + (CFG.staffId && r.issuer_staff_id == CFG.staffId && r.status === 'Draft'
