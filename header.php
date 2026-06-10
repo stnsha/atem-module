@@ -22,6 +22,7 @@ $page_title = isset($page_title) ? $page_title : 'ATEM';
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title><?php echo htmlspecialchars($page_title); ?></title>
+    <link rel="icon" type="image/svg+xml" href="atem/css/logo.svg">
     <base href="/odb/">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

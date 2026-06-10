@@ -834,5 +834,8 @@
         renderArci();
         renderReferenceLinks();
         renderStagedFiles();
+        var today = new Date().toISOString().substring(0, 10);
+        if ($('tl-start')) { $('tl-start').setAttribute('min', today); }
+        if ($('tl-end')) { $('tl-end').setAttribute('min', today); }
     });
 })();

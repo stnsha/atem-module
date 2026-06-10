@@ -24,6 +24,7 @@
     var reflinks = [];
     var attachments = [];
     var progressUpdates = [];
+    var _inlineSaveTimer = null;
 
     function $(id) { return document.getElementById(id); }
     function money(n) { return 'RM' + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
@@ -229,6 +230,7 @@
             w2.style.display = showExt2 ? '' : 'none';
             if (!showExt2) { $('tl-ext2').value = ''; }
         }
+        applyExtMins();
         recalcFinalDue();
     }
 
@@ -527,9 +529,12 @@
             wrap.innerHTML = '<div class="atem-empty-state">No progress updates recorded.</div>';
             return;
         }
+        var sorted = progressUpdates.slice().sort(function (a, b) {
+            return a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0;
+        });
         var html = '<div class="atem-progress-grid">';
-        for (var i = 0; i < progressUpdates.length; i++) {
-            var p = progressUpdates[i];
+        for (var i = 0; i < sorted.length; i++) {
+            var p = sorted[i];
             var pillClass = 'atem-pill atem-pill-' + p.status;
             var actionsHtml = READ ? '' : '<div class="atem-progress-item-actions">'
                 + '<button type="button" class="btn btn-outline-secondary btn-sm atem-progress-edit" data-id="' + p.id + '">Edit</button>'
@@ -733,7 +738,48 @@
             setError('atem-rule-error', 'Incentive Rule is required for Level 2-4.');
             return false;
         }
+        if (level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
+            if (!arciState.A || arciState.A.length === 0 || !arciState.R || arciState.R.length === 0) {
+                setError('atem-save-error', 'Incentive cannot be applied: ARCI must have at least one Accountable (A) and one Responsible (R) member. Assign the required roles or choose a level without incentive.');
+                return false;
+            }
+        }
         return true;
+    }
+    function saveInline() {
+        setError('atem-title-error', ''); setError('atem-level-error', ''); setError('atem-rule-error', ''); setError('atem-save-error', '');
+        if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return; }
+        var level = selectedLevel();
+        if (level && Number(level.incentive_value) > 0 && !$('atem-rule').value) {
+            setError('atem-rule-error', 'Incentive Rule is required for Level 2-4.');
+            return;
+        }
+        if (level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
+            if (!arciState.A || arciState.A.length === 0 || !arciState.R || arciState.R.length === 0) {
+                setError('atem-save-error', 'Incentive cannot be applied: ARCI must have at least one Accountable (A) and one Responsible (R) member. Assign the required roles or choose a level without incentive.');
+                return;
+            }
+        }
+        var levelId = $('atem-level').value, ruleId = $('atem-rule').value;
+        var description = quillEditor ? ((quillEditor.getText().trim() === '') ? '' : quillEditor.root.innerHTML) : '';
+        var data = {
+            title: $('atem-title').value.trim(),
+            description: description,
+            level_structure_id: levelId ? parseInt(levelId, 10) : null,
+            incentive_rule_id: ruleId ? parseInt(ruleId, 10) : null,
+            start_date: $('tl-start').value || null,
+            end_date: $('tl-end').value || null,
+            is_extended: $('tl-extended').checked,
+            extended_date_1: $('tl-ext1').value || null,
+            extended_date_2: $('tl-ext2').value || null,
+            atem_status_id: $('tl-status').value ? parseInt($('tl-status').value, 10) : null,
+            remarks: $('tl-remarks').value
+        };
+        apiCall('update-atem', { id: CFG.atemId, data: data }).then(function (res) {
+            if (!res || !res.success) {
+                setError('atem-save-error', res && res.message ? res.message : 'Failed to save.');
+            }
+        }).catch(function () { setError('atem-save-error', 'Network error while saving.'); });
     }
     function saveAtem() {
         if (!validateFinal()) { return; }
@@ -909,16 +955,62 @@
         }
     }
 
+    function applyExtMins() {
+        var selId = $('tl-status') ? $('tl-status').value : '';
+        var selVal = '';
+        (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(selId)) { selVal = s.value; } });
+        var isActive = (selVal === 'Active');
+        var todayStr = new Date().toISOString().substring(0, 10);
+        var ext1El = $('tl-ext1'), ext2El = $('tl-ext2');
+        if (ext1El) {
+            if (isActive) { ext1El.setAttribute('min', todayStr); }
+            else { ext1El.removeAttribute('min'); }
+        }
+        if (ext2El) {
+            var ext2Min = null;
+            if (ext1El && ext1El.value) {
+                var d = new Date(ext1El.value + 'T00:00:00');
+                d.setDate(d.getDate() + 1);
+                ext2Min = d.toISOString().substring(0, 10);
+            }
+            if (isActive && (!ext2Min || todayStr > ext2Min)) { ext2Min = todayStr; }
+            if (ext2Min) { ext2El.setAttribute('min', ext2Min); }
+            else { ext2El.removeAttribute('min'); }
+        }
+    }
+
+    function syncExtendedByStatus() {
+        var extEl = $('tl-extended');
+        if (!extEl || READ) { return; }
+        var selId = $('tl-status') ? $('tl-status').value : '';
+        var selVal = '';
+        (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(selId)) { selVal = s.value; } });
+        if (selVal === 'Draft' || selVal === 'Extended') {
+            extEl.setAttribute('disabled', 'disabled');
+        } else {
+            extEl.removeAttribute('disabled');
+        }
+    }
+
+    function restrictDraftStatus() {
+        var sel = $('tl-status');
+        if (!sel) { return; }
+        var currentLabel = '';
+        var selId = REC.atem_status_id ? String(REC.atem_status_id) : '';
+        (CFG.statuses || []).forEach(function (s) { if (String(s.id) === selId) { currentLabel = s.value; } });
+        if (!currentLabel || currentLabel === 'Draft') { return; }
+        for (var i = sel.options.length - 1; i >= 0; i--) {
+            if (sel.options[i].text === 'Draft') { sel.remove(i); break; }
+        }
+    }
+
     function lockDateFields() {
         if (READ) { return; }
         if ($('tl-start') && $('tl-start').value) { $('tl-start').setAttribute('disabled', 'disabled'); }
         if ($('tl-end') && $('tl-end').value) { $('tl-end').setAttribute('disabled', 'disabled'); }
         var ext1El = $('tl-ext1');
-        if (ext1El && ext1El.value) {
-            var today = new Date(); today.setHours(0, 0, 0, 0);
-            if (today > new Date(ext1El.value + 'T00:00:00')) {
-                ext1El.setAttribute('disabled', 'disabled');
-            }
+        if (ext1El && REC.extended_date_1) {
+            ext1El.setAttribute('disabled', 'disabled');
         }
     }
 
@@ -934,13 +1026,15 @@
 
     // --------------------------------------------------------------- wiring
     function bind() {
-        $('atem-level').addEventListener('change', recalcIncentive);
-        $('atem-rule').addEventListener('change', recalcIncentive);
+        $('atem-level').addEventListener('change', function () { recalcIncentive(); saveInline(); });
+        $('atem-rule').addEventListener('change', function () { recalcIncentive(); saveInline(); });
+        if ($('atem-title')) { $('atem-title').addEventListener('blur', saveInline); }
+        if (quillEditor) { quillEditor.on('text-change', function () { clearTimeout(_inlineSaveTimer); _inlineSaveTimer = setTimeout(saveInline, 1500); }); }
         if ($('tl-end')) { $('tl-end').addEventListener('change', recalcFinalDue); }
         if ($('tl-extended')) { $('tl-extended').addEventListener('change', syncExtensionFields); }
         if ($('tl-ext1')) { $('tl-ext1').addEventListener('change', function () { syncExtensionFields(); }); }
         if ($('tl-ext2')) { $('tl-ext2').addEventListener('change', recalcFinalDue); }
-        if ($('tl-status')) { $('tl-status').addEventListener('change', recalcClosureDate); }
+        if ($('tl-status')) { $('tl-status').addEventListener('change', function () { recalcClosureDate(); syncExtendedByStatus(); applyExtMins(); }); }
 
         if ($('arci-dept-search')) { $('arci-dept-search').addEventListener('keyup', filterDepartments); }
         if ($('arci-dept-select')) { $('arci-dept-select').addEventListener('change', renderStaffList); }
@@ -1040,6 +1134,9 @@
         initEditor();
         bind();
         hydrate();
+        restrictDraftStatus();
+        syncExtendedByStatus();
+        applyExtMins();
         lockDateFields();
         injectBadge();
         applyReadMode();
