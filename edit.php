@@ -106,7 +106,7 @@ if ($record) {
 // Access control: SuperAdmin, the issuer, and ARCI members may open this card.
 if ($record) {
     $current_sid = (int) $staff_id;
-    $allowed = ($atem_permission === 6);
+    $allowed = (isset($atem) && (int)$atem === 1);
     if (!$allowed) {
         $allowed = ($current_sid && $current_sid === (int) (isset($record['issuer_staff_id']) ? $record['issuer_staff_id'] : 0));
     }

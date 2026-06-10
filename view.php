@@ -84,7 +84,7 @@ $view_config = array(
     'levels'      => isset($lookups['levels']) ? $lookups['levels'] : array(),
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
     'staffId'     => (int) $staff_id,
-    'isSuperAdmin' => ($atem_permission === 6),
+    'isSuperAdmin' => (isset($atem) && (int)$atem === 1),
 );
 ?>
 
