@@ -117,7 +117,7 @@ if ($record) {
     }
     if (!$allowed) {
         $_SESSION['atem_warning'] = 'You do not have permission to view this ATEM card.';
-        echo '<script>window.location.replace("view.php");</script>';
+        echo '<script>window.location.replace("atem/view.php");</script>';
         include('footer.php');
         exit;
     }
