@@ -76,6 +76,8 @@ foreach ($rows as $a) {
         'issuer_staff_id' => $issuer_id,
         'arci_staff_ids'  => $arci_ids,
         'user_arci_roles' => $user_roles,
+        'is_extended'     => !empty($a['is_extended']),
+        'ext_count'       => isset($a['extension_count']) ? (int) $a['extension_count'] : 0,
     );
 }
 

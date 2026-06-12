@@ -74,7 +74,7 @@ window.ATEM_DASH = <?php echo json_encode(array('apiUrl' => 'atem/api.php')); ?>
     </div>
     <div class="col-12 col-sm-6 col-xl">
         <div class="atem-card h-100">
-            <div class="atem-card-title mb-1">Incentive Forecast</div>
+            <div class="atem-card-title mb-1">Est. Incentive Forecast</div>
             <div class="atem-stat-value atem-stat-value--orange" id="dash-incentive">---</div>
             <div class="atem-stat-label">Level 2-4 payout</div>
         </div>
@@ -85,7 +85,7 @@ window.ATEM_DASH = <?php echo json_encode(array('apiUrl' => 'atem/api.php')); ?>
 <div class="row g-3">
     <div class="col-lg-6">
         <div class="atem-card h-100">
-            <h6 class="atem-card-title mb-0">ATEM by Level</h6>
+            <h6 class="atem-card-title mb-0">ATEM Complexity Reward</h6>
             <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Level 1 RM0; Level 2-4 follow incentive
                 value</div>
             <div class="table-responsive">

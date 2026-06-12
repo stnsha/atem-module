@@ -186,14 +186,16 @@ $atem_config = array(
                         value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
                 <div class="col-md-6">
-                    <label for="atem-level" class="form-label">ATEM Level <span class="atem-req">*</span></label>
+                    <label for="atem-level" class="form-label">ATEM Complexity Level <span
+                            class="atem-req">*</span></label>
                     <select class="form-select" id="atem-level">
                         <option value="">Select level</option>
                     </select>
                     <div class="atem-form-error" id="atem-level-error"></div>
                 </div>
                 <div class="col-md-6">
-                    <label for="atem-rule" class="form-label">Incentive Rule <span class="atem-req" id="rule-req-star" style="display:none;">*</span></label>
+                    <label for="atem-rule" class="form-label">Incentive Rule <span class="atem-req" id="rule-req-star"
+                            style="display:none;">*</span></label>
                     <select class="form-select" id="atem-rule">
                         <option value="">Select rule</option>
                     </select>
@@ -211,7 +213,9 @@ $atem_config = array(
     <div class="atem-bento-item atem-span-4">
         <div class="atem-card mb-3">
             <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
-            <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The company reserves the right to determine the final payout under its incentive scheme. C and I roles are not incentivised.</p>
+            <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The
+                company reserves the right to determine the final payout under its incentive scheme. C and I roles are
+                not incentivised.</p>
             <div class="atem-incentive">
                 <div class="atem-incentive-total-block">
                     <div class="atem-incentive-total-label">Total Incentive</div>
@@ -376,7 +380,8 @@ $atem_config = array(
                     </div>
                     <div class="row g-3">
                         <div class="col-md-4 atem-ext-field" id="tl-ext1-wrap" style="display:none;">
-                            <label for="tl-ext1" class="form-label">Extended Date 1</label>
+                            <label for="tl-ext1" class="form-label">Extended Date 1 <span class="atem-req"
+                                    id="tl-ext1-req" style="display:none;">*</span></label>
                             <input type="date" class="form-control" id="tl-ext1">
                         </div>
                         <div class="col-md-4 atem-ext-field" id="tl-ext2-wrap" style="display:none;">

@@ -218,6 +218,8 @@
     }
     function syncExtensionFields() {
         var on = $('tl-extended').checked;
+        var reqEl = $('tl-ext1-req');
+        if (reqEl) { reqEl.style.display = (!READ && on) ? '' : 'none'; }
         var w1 = $('tl-ext1-wrap'), w2 = $('tl-ext2-wrap');
         if (!on) {
             w1.style.display = 'none'; w2.style.display = 'none';
@@ -226,7 +228,7 @@
             w1.style.display = '';
             var ext1Val = $('tl-ext1').value;
             var today = new Date(); today.setHours(0, 0, 0, 0);
-            var showExt2 = ext1Val && (today > new Date(ext1Val + 'T00:00:00'));
+            var showExt2 = ext1Val && (today >= new Date(ext1Val + 'T00:00:00'));
             w2.style.display = showExt2 ? '' : 'none';
             if (!showExt2) { $('tl-ext2').value = ''; }
         }
@@ -733,13 +735,19 @@
                 return false;
             }
         }
+        if ($('tl-extended').checked && !$('tl-ext1').value) {
+            setError('atem-save-error', 'Extended Date 1 is required when the extended option is checked.');
+            return false;
+        }
         var level = selectedLevel();
         if (level && Number(level.incentive_value) > 0 && !$('atem-rule').value) {
             setError('atem-rule-error', 'Incentive Rule is required for Level 2-4.');
             return false;
         }
         if (level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
-            if (!arciState.A || arciState.A.length === 0 || !arciState.R || arciState.R.length === 0) {
+            var _finalRule = selectedRule();
+            var _finalNeedsR = _finalRule && String(_finalRule.code).toLowerCase() === 'rule 2';
+            if (!arciState.A || arciState.A.length === 0 || (_finalNeedsR && (!arciState.R || arciState.R.length === 0))) {
                 setError('atem-save-error', 'Incentive cannot be applied: ARCI must have at least one Accountable (A) and one Responsible (R) member. Assign the required roles or choose a level without incentive.');
                 return false;
             }
@@ -755,7 +763,9 @@
             return;
         }
         if (level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
-            if (!arciState.A || arciState.A.length === 0 || !arciState.R || arciState.R.length === 0) {
+            var _inlineRule = selectedRule();
+            var _inlineNeedsR = _inlineRule && String(_inlineRule.code).toLowerCase() === 'rule 2';
+            if (!arciState.A || arciState.A.length === 0 || (_inlineNeedsR && (!arciState.R || arciState.R.length === 0))) {
                 setError('atem-save-error', 'Incentive cannot be applied: ARCI must have at least one Accountable (A) and one Responsible (R) member. Assign the required roles or choose a level without incentive.');
                 return;
             }
@@ -890,7 +900,7 @@
             html += '<div class="atem-audit-entry ' + eventClass + '">'
                 + '<div class="atem-audit-icon"><i class="bi ' + icon + '"></i></div>'
                 + '<div class="atem-audit-body">'
-                + '<div class="atem-audit-header"><span style="font-size:12px;">' + ts + '</span> &mdash; <strong>' + actor + '</strong></div>'
+                + '<div class="atem-audit-header"><span>' + ts + '</span> &mdash; <strong>' + actor + '</strong></div>'
                 + bodyHtml
                 + '</div>'
                 + '</div>';
@@ -956,16 +966,17 @@
     }
 
     function applyExtMins() {
-        var selId = $('tl-status') ? $('tl-status').value : '';
-        var selVal = '';
-        (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(selId)) { selVal = s.value; } });
-        var isActive = (selVal === 'Active');
         var todayStr = new Date().toISOString().substring(0, 10);
-        var ext1El = $('tl-ext1'), ext2El = $('tl-ext2');
-        if (ext1El) {
-            if (isActive) { ext1El.setAttribute('min', todayStr); }
-            else { ext1El.removeAttribute('min'); }
+        var endVal = $('tl-end') ? ($('tl-end').value || '') : '';
+        var ext1Min = todayStr;
+        if (endVal) {
+            var endNext = new Date(endVal + 'T00:00:00');
+            endNext.setDate(endNext.getDate() + 1);
+            var endNextStr = endNext.toISOString().substring(0, 10);
+            if (endNextStr > todayStr) { ext1Min = endNextStr; }
         }
+        var ext1El = $('tl-ext1'), ext2El = $('tl-ext2');
+        if (ext1El) { ext1El.setAttribute('min', ext1Min); }
         if (ext2El) {
             var ext2Min = null;
             if (ext1El && ext1El.value) {
@@ -973,9 +984,8 @@
                 d.setDate(d.getDate() + 1);
                 ext2Min = d.toISOString().substring(0, 10);
             }
-            if (isActive && (!ext2Min || todayStr > ext2Min)) { ext2Min = todayStr; }
-            if (ext2Min) { ext2El.setAttribute('min', ext2Min); }
-            else { ext2El.removeAttribute('min'); }
+            if (!ext2Min || todayStr > ext2Min) { ext2Min = todayStr; }
+            ext2El.setAttribute('min', ext2Min);
         }
     }
 
@@ -985,10 +995,30 @@
         var selId = $('tl-status') ? $('tl-status').value : '';
         var selVal = '';
         (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(selId)) { selVal = s.value; } });
-        if (selVal === 'Draft' || selVal === 'Extended') {
-            extEl.setAttribute('disabled', 'disabled');
-        } else {
+        if (selVal === 'Extended') {
+            if (!extEl.checked) {
+                extEl.checked = true;
+                syncExtensionFields();
+            }
             extEl.removeAttribute('disabled');
+        } else {
+            if (extEl.checked) {
+                extEl.checked = false;
+                var ext1El = $('tl-ext1'), ext2El = $('tl-ext2');
+                if (ext1El && !ext1El.disabled) { ext1El.value = ''; }
+                if (ext2El && !ext2El.disabled) { ext2El.value = ''; }
+                var w1 = $('tl-ext1-wrap'), w2 = $('tl-ext2-wrap');
+                if (w1) { w1.style.display = 'none'; }
+                if (w2) { w2.style.display = 'none'; }
+                var reqEl = $('tl-ext1-req');
+                if (reqEl) { reqEl.style.display = 'none'; }
+                recalcFinalDue();
+            }
+            if (selVal === 'Draft') {
+                extEl.setAttribute('disabled', 'disabled');
+            } else {
+                extEl.removeAttribute('disabled');
+            }
         }
     }
 
@@ -1031,7 +1061,24 @@
         if ($('atem-title')) { $('atem-title').addEventListener('blur', saveInline); }
         if (quillEditor) { quillEditor.on('text-change', function () { clearTimeout(_inlineSaveTimer); _inlineSaveTimer = setTimeout(saveInline, 1500); }); }
         if ($('tl-end')) { $('tl-end').addEventListener('change', recalcFinalDue); }
-        if ($('tl-extended')) { $('tl-extended').addEventListener('change', syncExtensionFields); }
+        if ($('tl-extended')) {
+            $('tl-extended').addEventListener('change', function () {
+                syncExtensionFields();
+                var statusSel = $('tl-status');
+                if (!statusSel) { return; }
+                if (this.checked) {
+                    (CFG.statuses || []).forEach(function (s) {
+                        if (s.value === 'Extended') { statusSel.value = s.id; }
+                    });
+                } else {
+                    (CFG.statuses || []).forEach(function (s) {
+                        if (s.value === 'Active') { statusSel.value = s.id; }
+                    });
+                }
+                recalcClosureDate();
+                applyExtMins();
+            });
+        }
         if ($('tl-ext1')) { $('tl-ext1').addEventListener('change', function () { syncExtensionFields(); }); }
         if ($('tl-ext2')) { $('tl-ext2').addEventListener('change', recalcFinalDue); }
         if ($('tl-status')) { $('tl-status').addEventListener('change', function () { recalcClosureDate(); syncExtendedByStatus(); applyExtMins(); }); }
@@ -1077,6 +1124,8 @@
                 (CFG.statuses || []).forEach(function (s) {
                     if (String(s.id) === String(selId)) { selVal = s.value; }
                 });
+                var origStatusVal = (REC.status && REC.status.value) ? REC.status.value : '';
+                var isRevertingFromExtended = (origStatusVal === 'Extended' && selVal !== 'Extended' && selVal !== '');
                 if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
                     var msgEl = $('atem-terminal-warn-msg');
                     if (msgEl) {
@@ -1093,6 +1142,22 @@
                         okBtn.addEventListener('click', handler);
                     }
                     warnModal.show();
+                } else if (isRevertingFromExtended) {
+                    var msgEl2 = $('atem-terminal-warn-msg');
+                    if (msgEl2) {
+                        msgEl2.textContent = 'This ATEM was previously set to "Extended". Saving it as "' + selVal + '" will remove the extension. Do you want to proceed?';
+                    }
+                    var warnModal2 = new bootstrap.Modal($('atem-terminal-warn-modal'));
+                    var okBtn2 = $('atem-terminal-warn-ok');
+                    if (okBtn2) {
+                        var handler2 = function () {
+                            okBtn2.removeEventListener('click', handler2);
+                            warnModal2.hide();
+                            saveAtem();
+                        };
+                        okBtn2.addEventListener('click', handler2);
+                    }
+                    warnModal2.show();
                 } else {
                     saveAtem();
                 }

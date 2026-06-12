@@ -130,7 +130,14 @@
             for (var i = 0; i < pageRows.length; i++) {
                 var r = pageRows[i];
                 var levelCell = r.level_label ? pill(r.level_label, LEVEL_COLOR[r.level_label] || '#6c757d', r.system_name) : '-';
-                var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
+                var extBadge = '';
+                if (r.ext_count > 0) {
+                    extBadge = '<div style="margin-top:3px;font-size:11px;color:#fd7e14;font-weight:500;">'
+                        + '<i class="bi bi-arrow-repeat" style="font-size:10px;"></i> '
+                        + r.ext_count + (r.ext_count === 1 ? ' extension' : ' extensions')
+                        + '</div>';
+                }
+                var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') + extBadge : '-';
                 var arciCell = '';
                 if (r.user_arci_roles && r.user_arci_roles.length > 0) {
                     for (var ri = 0; ri < r.user_arci_roles.length; ri++) {
