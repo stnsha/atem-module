@@ -1,46 +1,82 @@
 <?php
 $page_title = 'Dashboard Overview';
-ob_start();
-?>
-<div class="d-flex flex-column align-items-end gap-1">
-    <div class="d-flex align-items-center flex-wrap gap-2">
-        <select id="dash-filter-year" class="form-select form-select-sm" style="width:auto;">
-            <option value="">All Years</option>
-            <option value="2026" selected>2026</option>
-            <option value="2025">2025</option>
-        </select>
-        <select id="dash-filter-period" class="form-select form-select-sm" style="width:auto;">
-            <option value="">All Months</option>
-            <option value="m:1">January</option>
-            <option value="m:2">February</option>
-            <option value="m:3">March</option>
-            <option value="m:4">April</option>
-            <option value="m:5">May</option>
-            <option value="m:6">June</option>
-            <option value="m:7">July</option>
-            <option value="m:8">August</option>
-            <option value="m:9">September</option>
-            <option value="m:10">October</option>
-            <option value="m:11">November</option>
-            <option value="m:12">December</option>
-            <option value="q:1">Q1 (Jan - Mar)</option>
-            <option value="q:2">Q2 (Apr - Jun)</option>
-            <option value="q:3">Q3 (Jul - Sep)</option>
-            <option value="q:4">Q4 (Oct - Dec)</option>
-        </select>
-        <button class="btn btn-sm btn-primary" id="dash-apply-filter">Apply</button>
-        <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
-    </div>
-    <span class="text-muted" id="dash-filter-label" style="font-size:12px;"></span>
-</div>
-<?php
-$page_title_actions = ob_get_clean();
 include('header.php');
+
+$dash_dept_options = array();
+$_dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department ORDER BY depart_name");
+if ($_dept_res) {
+    while ($_drow = mysqli_fetch_assoc($_dept_res)) {
+        if ((int)$atem_permission >= 3) {
+            $dash_dept_options[] = array('id' => (int)$_drow['id'], 'name' => $_drow['depart_name']);
+        } elseif ((int)$atem_permission === 2 && (int)$_drow['id'] === (int)$department) {
+            $dash_dept_options[] = array('id' => (int)$_drow['id'], 'name' => $_drow['depart_name']);
+        }
+    }
+}
 ?>
 
 <script>
-window.ATEM_DASH = <?php echo json_encode(array('apiUrl' => 'atem/api.php')); ?>;
+window.ATEM_DASH = <?php echo json_encode(array(
+    'apiUrl'      => 'atem/api.php',
+    'departments' => $dash_dept_options,
+)); ?>;
 </script>
+
+<!-- Filter card -->
+<div class="atem-card atem-filter mb-3">
+    <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
+    <div class="row g-2 mt-1 align-items-end">
+        <div class="col-md-2 col-sm-6">
+            <label class="form-label">Year</label>
+            <select id="dash-filter-year" class="form-select form-select-sm">
+                <option value="">All Years</option>
+                <option value="2026" selected>2026</option>
+                <option value="2025">2025</option>
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-6">
+            <label class="form-label">Month</label>
+            <select id="dash-filter-month" class="form-select form-select-sm">
+                <option value="">All Months</option>
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-6">
+            <label class="form-label">Quarter</label>
+            <select id="dash-filter-quarter" class="form-select form-select-sm">
+                <option value="">All Quarters</option>
+                <option value="1">Q1 (Jan &ndash; Mar)</option>
+                <option value="2">Q2 (Apr &ndash; Jun)</option>
+                <option value="3">Q3 (Jul &ndash; Sep)</option>
+                <option value="4">Q4 (Oct &ndash; Dec)</option>
+            </select>
+        </div>
+        <div class="col-md-3 col-sm-6" id="dash-dept-col"<?php if (empty($dash_dept_options)) { echo ' style="display:none;"'; } ?>>
+            <label class="form-label">Department</label>
+            <select id="dash-filter-dept" class="form-select form-select-sm">
+                <option value="">All Departments</option>
+            </select>
+        </div>
+        <div class="col-md-3 col-sm-12 d-flex align-items-end gap-2">
+            <button class="btn btn-sm btn-primary" id="dash-apply-filter">Apply</button>
+            <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
+        </div>
+    </div>
+    <div class="mt-2">
+        <span class="text-muted" id="dash-filter-label" style="font-size:12px;"></span>
+    </div>
+</div>
 
 <!-- Stat Cards -->
 <div class="row g-3 mb-4">
@@ -62,7 +98,7 @@ window.ATEM_DASH = <?php echo json_encode(array('apiUrl' => 'atem/api.php')); ?>
         <div class="atem-card h-100">
             <div class="atem-card-title mb-1">Complete + Excellence</div>
             <div class="atem-stat-value atem-stat-value--green" id="dash-closed">---</div>
-            <div class="atem-stat-label">eligible for completion count</div>
+            <div class="atem-stat-label"><span id="dash-excellence-rate">--%</span> excellence rate</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
@@ -70,6 +106,13 @@ window.ATEM_DASH = <?php echo json_encode(array('apiUrl' => 'atem/api.php')); ?>
             <div class="atem-card-title mb-1">Failed ATEM</div>
             <div class="atem-stat-value atem-stat-value--red" id="dash-failed">---</div>
             <div class="atem-stat-label" id="dash-fail-rate">failure rate</div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl">
+        <div class="atem-card h-100">
+            <div class="atem-card-title mb-1">Overdue Cards</div>
+            <div class="atem-stat-value atem-stat-value--red" id="dash-overdue">---</div>
+            <div class="atem-stat-label">active/extended past end date</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
@@ -146,6 +189,34 @@ window.ATEM_DASH = <?php echo json_encode(array('apiUrl' => 'atem/api.php')); ?>
             </div>
             <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by department,
                 issuer, level and month.</div>
+        </div>
+    </div>
+</div>
+
+<!-- Department Breakdown -->
+<div class="row g-3 mt-0">
+    <div class="col-12">
+        <div class="atem-card">
+            <h6 class="atem-card-title mb-0">Department Breakdown</h6>
+            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and incentive forecast by issuer department</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="font-size:12px;text-align:left;">Department</th>
+                            <th style="font-size:12px;text-align:left;">Cards</th>
+                            <th style="font-size:12px;text-align:left;">Complete</th>
+                            <th style="font-size:12px;text-align:left;">Excellence</th>
+                            <th style="font-size:12px;text-align:left;">Fail</th>
+                            <th style="font-size:12px;text-align:left;">Fail Rate</th>
+                            <th style="font-size:12px;text-align:left;">Forecast</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dash-dept-body">
+                        <tr><td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>

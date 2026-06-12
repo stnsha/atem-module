@@ -50,13 +50,16 @@
         var closed = (s.complete || 0) + (s.excellence || 0);
         var failed = s.failed || 0;
         var failRate = total > 0 ? (failed / total * 100).toFixed(1) + '% failure rate' : '0.0% failure rate';
+        var exRate   = closed > 0 ? ((s.excellence || 0) / closed * 100).toFixed(1) + '%' : '0.0%';
 
-        setText('dash-total',     formatNumber(total));
-        setText('dash-active',    formatNumber(active));
-        setText('dash-closed',    formatNumber(closed));
-        setText('dash-failed',    formatNumber(failed));
-        setText('dash-fail-rate', failRate);
-        setText('dash-incentive', formatRM(data.incentive_total));
+        setText('dash-total',           formatNumber(total));
+        setText('dash-active',          formatNumber(active));
+        setText('dash-closed',          formatNumber(closed));
+        setText('dash-failed',          formatNumber(failed));
+        setText('dash-fail-rate',       failRate);
+        setText('dash-incentive',       formatRM(data.incentive_total));
+        setText('dash-excellence-rate', exRate);
+        setText('dash-overdue',         formatNumber(data.overdue_count || 0));
 
         var tbody = document.getElementById('dash-level-body');
         if (tbody && data.by_level) {
@@ -87,74 +90,123 @@
         setText('bar-extended-n',   s.extended   || 0);
         setText('bar-failed-n',     failed);
 
+        var deptTbody = document.getElementById('dash-dept-body');
+        if (deptTbody) {
+            if (data.by_department && data.by_department.length > 0) {
+                var dHtml = '';
+                for (var d = 0; d < data.by_department.length; d++) {
+                    var dept      = data.by_department[d];
+                    var dFail     = dept.fail || 0;
+                    var dCards    = dept.cards || 0;
+                    var dFailRate = dCards > 0 ? (dFail / dCards * 100).toFixed(1) + '%' : '0%';
+                    var dForecast = dept.forecast > 0 ? formatRM(dept.forecast) : 'RM0';
+                    dHtml += '<tr>' +
+                        '<td style="font-size:12px;font-weight:600;">' + dept.dept_name + '</td>' +
+                        '<td style="font-size:12px;">' + dCards + '</td>' +
+                        '<td style="font-size:12px;"><span style="color:#0d6efd;">' + (dept.complete || 0) + '</span></td>' +
+                        '<td style="font-size:12px;"><span style="color:#198754;">' + (dept.excellence || 0) + '</span></td>' +
+                        '<td style="font-size:12px;"><span style="color:#dc3545;">' + dFail + '</span></td>' +
+                        '<td style="font-size:12px;">' + dFailRate + '</td>' +
+                        '<td style="font-size:12px;">' + dForecast + '</td>' +
+                        '</tr>';
+                }
+                deptTbody.innerHTML = dHtml;
+            } else {
+                deptTbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
+            }
+        }
+
         setLoading(false);
     }
 
     function showError(msg) {
         setLoading(false);
-        setText('dash-total',     'err');
-        setText('dash-active',    'err');
-        setText('dash-closed',    'err');
-        setText('dash-failed',    'err');
-        setText('dash-incentive', 'err');
+        setText('dash-total',           'err');
+        setText('dash-active',          'err');
+        setText('dash-closed',          'err');
+        setText('dash-failed',          'err');
+        setText('dash-incentive',       'err');
+        setText('dash-overdue',         'err');
+        setText('dash-excellence-rate', '--%');
         var tbody = document.getElementById('dash-level-body');
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
+        }
+        var deptTbody = document.getElementById('dash-dept-body');
+        if (deptTbody) {
+            deptTbody.innerHTML = '<tr><td colspan="7" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
         }
     }
 
     function buildPayload() {
         var payload = {};
-        var yearEl   = document.getElementById('dash-filter-year');
-        var periodEl = document.getElementById('dash-filter-period');
-        var year     = yearEl   ? parseInt(yearEl.value,   10) : 0;
-        var period   = periodEl ? periodEl.value : '';
+        var yearEl    = document.getElementById('dash-filter-year');
+        var monthEl   = document.getElementById('dash-filter-month');
+        var quarterEl = document.getElementById('dash-filter-quarter');
+        var deptEl    = document.getElementById('dash-filter-dept');
 
-        if (year > 0) { payload.filter_year = year; }
+        var year    = yearEl    ? parseInt(yearEl.value,    10) : 0;
+        var month   = monthEl   ? parseInt(monthEl.value,   10) : 0;
+        var quarter = quarterEl ? parseInt(quarterEl.value, 10) : 0;
+        var deptId  = deptEl    ? parseInt(deptEl.value,    10) : 0;
 
-        if (period.indexOf('m:') === 0) {
-            payload.filter_month = parseInt(period.slice(2), 10);
-        } else if (period.indexOf('q:') === 0) {
-            payload.filter_quarter = parseInt(period.slice(2), 10);
-        }
+        if (year    > 0) { payload.filter_year    = year;    }
+        if (month   > 0) { payload.filter_month   = month;   }
+        if (quarter > 0) { payload.filter_quarter = quarter; }
+        if (deptId  > 0) { payload.filter_dept_id = deptId;  }
 
         return payload;
     }
 
-    function labelForFilter(year, period) {
-        if (!year && !period) { return 'Showing all records'; }
+    function buildLabel() {
+        var yearEl    = document.getElementById('dash-filter-year');
+        var monthEl   = document.getElementById('dash-filter-month');
+        var quarterEl = document.getElementById('dash-filter-quarter');
+        var deptEl    = document.getElementById('dash-filter-dept');
+
         var parts = [];
-        if (year) { parts.push(year); }
-        if (period) {
+        var yearVal    = yearEl    ? yearEl.value    : '';
+        var monthVal   = monthEl   ? monthEl.value   : '';
+        var quarterVal = quarterEl ? quarterEl.value  : '';
+        var deptVal    = deptEl    ? deptEl.value    : '';
+
+        if (!yearVal && !monthVal && !quarterVal && !deptVal) { return 'Showing all records'; }
+
+        if (yearVal) { parts.push(yearVal); }
+
+        if (monthVal) {
             var months = ['', 'January', 'February', 'March', 'April', 'May', 'June',
                               'July', 'August', 'September', 'October', 'November', 'December'];
-            if (period.indexOf('m:') === 0) {
-                parts.push(months[parseInt(period.slice(2), 10)] || '');
-            } else if (period.indexOf('q:') === 0) {
-                var qLabels = { 1: 'Q1 (Jan-Mar)', 2: 'Q2 (Apr-Jun)', 3: 'Q3 (Jul-Sep)', 4: 'Q4 (Oct-Dec)' };
-                parts.push(qLabels[parseInt(period.slice(2), 10)] || '');
-            }
+            parts.push(months[parseInt(monthVal, 10)] || monthVal);
         }
-        return 'Showing: ' + parts.join(' ');
+
+        if (quarterVal) {
+            var qLabels = { 1: 'Q1 (Jan-Mar)', 2: 'Q2 (Apr-Jun)', 3: 'Q3 (Jul-Sep)', 4: 'Q4 (Oct-Dec)' };
+            parts.push(qLabels[parseInt(quarterVal, 10)] || ('Q' + quarterVal));
+        }
+
+        if (deptEl && deptEl.selectedIndex > 0) {
+            parts.push(deptEl.options[deptEl.selectedIndex].text);
+        }
+
+        return 'Showing: ' + parts.join(', ');
     }
 
     function loadDashboard(payload) {
         setLoading(true);
-        setText('dash-total',     '---');
-        setText('dash-active',    '---');
-        setText('dash-closed',    '---');
-        setText('dash-failed',    '---');
-        setText('dash-incentive', '---');
+        setText('dash-total',           '---');
+        setText('dash-active',          '---');
+        setText('dash-closed',          '---');
+        setText('dash-failed',          '---');
+        setText('dash-incentive',       '---');
+        setText('dash-overdue',         '---');
+        setText('dash-excellence-rate', '--%');
 
-        var yearEl   = document.getElementById('dash-filter-year');
-        var periodEl = document.getElementById('dash-filter-period');
-        var lbl      = document.getElementById('dash-filter-label');
-        if (lbl) {
-            lbl.textContent = labelForFilter(
-                yearEl   ? yearEl.value   : '',
-                periodEl ? periodEl.value : ''
-            );
-        }
+        var deptTbody = document.getElementById('dash-dept-body');
+        if (deptTbody) { deptTbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td></tr>'; }
+
+        var lbl = document.getElementById('dash-filter-label');
+        if (lbl) { lbl.textContent = buildLabel(); }
 
         apiCall('dashboard-stats', payload || {}).then(function (res) {
             if (res && res.success && res.data) {
@@ -167,9 +219,36 @@
         });
     }
 
+    function populateDeptSelect() {
+        var deptEl = document.getElementById('dash-filter-dept');
+        if (!deptEl || !CFG.departments || !CFG.departments.length) { return; }
+        for (var i = 0; i < CFG.departments.length; i++) {
+            var opt = document.createElement('option');
+            opt.value = CFG.departments[i].id;
+            opt.textContent = CFG.departments[i].name;
+            deptEl.appendChild(opt);
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
-        var applyBtn = document.getElementById('dash-apply-filter');
-        var resetBtn = document.getElementById('dash-reset-filter');
+        populateDeptSelect();
+
+        var applyBtn  = document.getElementById('dash-apply-filter');
+        var resetBtn  = document.getElementById('dash-reset-filter');
+        var monthEl   = document.getElementById('dash-filter-month');
+        var quarterEl = document.getElementById('dash-filter-quarter');
+
+        // Month and quarter are mutually exclusive
+        if (monthEl) {
+            monthEl.addEventListener('change', function () {
+                if (this.value && quarterEl) { quarterEl.value = ''; }
+            });
+        }
+        if (quarterEl) {
+            quarterEl.addEventListener('change', function () {
+                if (this.value && monthEl) { monthEl.value = ''; }
+            });
+        }
 
         if (applyBtn) {
             applyBtn.addEventListener('click', function () {
@@ -179,10 +258,12 @@
 
         if (resetBtn) {
             resetBtn.addEventListener('click', function () {
-                var yearEl   = document.getElementById('dash-filter-year');
-                var periodEl = document.getElementById('dash-filter-period');
-                if (yearEl)   { yearEl.value   = '2026'; }
-                if (periodEl) { periodEl.value = ''; }
+                var yearEl    = document.getElementById('dash-filter-year');
+                var deptEl    = document.getElementById('dash-filter-dept');
+                if (yearEl)    { yearEl.value    = '2026'; }
+                if (monthEl)   { monthEl.value   = ''; }
+                if (quarterEl) { quarterEl.value = ''; }
+                if (deptEl)    { deptEl.value    = ''; }
                 loadDashboard({ filter_year: 2026 });
             });
         }

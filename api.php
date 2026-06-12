@@ -1276,9 +1276,48 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     $items = $listResult['data'];
 
+                    // Role-based visibility — mirrors view.php server-side filtering
+                    $_perm       = isset($atem_permission) ? (int)$atem_permission : 0;
+                    $_userDeptId = isset($department)      ? (int)$department      : 0;
+                    $_userStaff  = (int)$staff_id;
+
+                    if ($_perm === 1) {
+                        $roleFiltered = array();
+                        foreach ($items as $_item) {
+                            $_issuerId = isset($_item['issuer_staff_id']) ? (int)$_item['issuer_staff_id'] : 0;
+                            $_arciIds  = array();
+                            if (isset($_item['arci']) && is_array($_item['arci'])) {
+                                foreach ($_item['arci'] as $_m) {
+                                    if (!empty($_m['staff_id'])) { $_arciIds[] = (int)$_m['staff_id']; }
+                                }
+                            }
+                            if ($_issuerId === $_userStaff || in_array($_userStaff, $_arciIds)) {
+                                $roleFiltered[] = $_item;
+                            }
+                        }
+                        $items = $roleFiltered;
+                    } elseif ($_perm === 2) {
+                        $roleFiltered = array();
+                        foreach ($items as $_item) {
+                            $_itemDept  = isset($_item['staff_dept_id']) ? (int)$_item['staff_dept_id'] : 0;
+                            $_arciDepts = array();
+                            if (isset($_item['arci']) && is_array($_item['arci'])) {
+                                foreach ($_item['arci'] as $_m) {
+                                    if (!empty($_m['staff_dept_id'])) { $_arciDepts[] = (int)$_m['staff_dept_id']; }
+                                }
+                            }
+                            if ($_itemDept === $_userDeptId || in_array($_userDeptId, $_arciDepts)) {
+                                $roleFiltered[] = $_item;
+                            }
+                        }
+                        $items = $roleFiltered;
+                    }
+                    // Grade 3–6: no role-based filtering
+
                     $filterYear    = isset($jsonData['filter_year'])    ? (int)$jsonData['filter_year']    : 0;
                     $filterMonth   = isset($jsonData['filter_month'])   ? (int)$jsonData['filter_month']   : 0;
                     $filterQuarter = isset($jsonData['filter_quarter']) ? (int)$jsonData['filter_quarter'] : 0;
+                    $filterDeptId  = isset($jsonData['filter_dept_id']) ? (int)$jsonData['filter_dept_id'] : 0;
                     $quarterMonths = array(
                         1 => array(1, 2, 3),
                         2 => array(4, 5, 6),
@@ -1296,6 +1335,9 @@ if (!defined('API_JWT_INCLUDED')) {
                     $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'failed' => 0, 'draft' => 0);
                     $total = 0;
                     $incentiveTotal = 0.0;
+                    $overdueCount = 0;
+                    $byDept = array();
+                    $today = date('Y-m-d');
 
                     foreach ($items as $item) {
                         if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
@@ -1312,6 +1354,11 @@ if (!defined('API_JWT_INCLUDED')) {
                                 }
                             }
                         }
+                        if ($filterDeptId > 0) {
+                            $itemDeptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
+                            if ($itemDeptId !== $filterDeptId) { continue; }
+                        }
+
                         $total++;
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
                         $levelStr  = isset($item['level_structure']['level']) ? $item['level_structure']['level'] : '';
@@ -1352,6 +1399,31 @@ if (!defined('API_JWT_INCLUDED')) {
                                 $levelMap[$levelNum]['forecast'] += $amt;
                             }
                         }
+
+                        if ($statusVal === 'Active' || $statusVal === 'Extended') {
+                            $dueDate = !empty($item['final_due_date'])
+                                ? $item['final_due_date']
+                                : (isset($item['end_date']) ? $item['end_date'] : '');
+                            if ($dueDate && substr($dueDate, 0, 10) < $today) {
+                                $overdueCount++;
+                            }
+                        }
+
+                        $deptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
+                        if (!isset($byDept[$deptId])) {
+                            $byDept[$deptId] = array('cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0);
+                        }
+                        $byDept[$deptId]['cards']++;
+                        if ($statusVal === 'Completed') {
+                            $byDept[$deptId]['complete']++;
+                        } elseif ($statusVal === 'Completed with Excellence') {
+                            $byDept[$deptId]['excellence']++;
+                        } elseif ($statusVal === 'Failed') {
+                            $byDept[$deptId]['fail']++;
+                        }
+                        if ($claimable && isset($item['total_incentive_amount'])) {
+                            $byDept[$deptId]['forecast'] += (float)$item['total_incentive_amount'];
+                        }
                     }
 
                     $byLevel = array();
@@ -1367,6 +1439,27 @@ if (!defined('API_JWT_INCLUDED')) {
                         );
                     }
 
+                    $deptNames = array();
+                    $deptRes = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
+                    if ($deptRes) {
+                        while ($drow = mysqli_fetch_assoc($deptRes)) {
+                            $deptNames[(int)$drow['id']] = $drow['depart_name'];
+                        }
+                    }
+                    $byDepartment = array();
+                    foreach ($byDept as $dId => $dData) {
+                        $byDepartment[] = array(
+                            'dept_id'    => $dId,
+                            'dept_name'  => isset($deptNames[$dId]) ? $deptNames[$dId] : ($dId ? 'Dept #' . $dId : 'Unknown'),
+                            'cards'      => $dData['cards'],
+                            'complete'   => $dData['complete'],
+                            'excellence' => $dData['excellence'],
+                            'fail'       => $dData['fail'],
+                            'forecast'   => $dData['forecast'],
+                        );
+                    }
+                    usort($byDepartment, function($a, $b) { return $b['cards'] - $a['cards']; });
+
                     $response = array(
                         'success' => true,
                         'data'    => array(
@@ -1374,6 +1467,8 @@ if (!defined('API_JWT_INCLUDED')) {
                             'by_status'       => $byStatus,
                             'by_level'        => $byLevel,
                             'incentive_total' => $incentiveTotal,
+                            'overdue_count'   => $overdueCount,
+                            'by_department'   => $byDepartment,
                         ),
                     );
                     break;
