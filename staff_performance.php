@@ -90,9 +90,13 @@ $month_names = array(
                 <tr>
                     <th>Staff Details</th>
                     <th>Grade</th>
-                    <th>Performance Structure</th>
-                    <th class="text-center">Total Completed ATEM</th>
-                    <th class="text-end">Total Incentive</th>
+                    <th>Evaluation Structure</th>
+                    <th class="text-center">ATEM</th>
+                    <th class="text-center">Complete</th>
+                    <th class="text-center">Active</th>
+                    <th class="text-center">Extend</th>
+                    <th class="text-center">Failed</th>
+                    <th class="text-end">Est. Reward</th>
                     <th>Remark</th>
                     <th>Action</th>
                 </tr>
@@ -100,7 +104,7 @@ $month_names = array(
             <tbody>
                 <?php if (empty($records)): ?>
                 <tr>
-                    <td colspan="7" class="text-center text-muted py-4">No records found for this period.</td>
+                    <td colspan="11" class="text-center text-muted py-4">No records found for this period.</td>
                 </tr>
                 <?php else: ?>
                 <?php foreach ($records as $rec): ?>
@@ -115,10 +119,14 @@ $month_names = array(
                     $glabel    = ($grade_id !== null && isset($grade_labels[$grade_id]))   ? $grade_labels[$grade_id]   : '-';
                     $slabel    = ($struct_id !== null && isset($struct_labels[$struct_id])) ? $struct_labels[$struct_id] : '-';
 
-                    $total_atem      = isset($rec['total_atem'])      ? (int)$rec['total_atem']            : 0;
-                    $total_incentive = isset($rec['total_incentive'])  ? (float)$rec['total_incentive']     : 0.0;
-                    $remark          = isset($rec['remark'])           ? $rec['remark']                     : '';
-                    $rec_id          = isset($rec['id'])               ? (int)$rec['id']                    : 0;
+                    $total_atem      = isset($rec['total_atem'])      ? (int)$rec['total_atem']        : 0;
+                    $complete_count  = isset($rec['complete_count'])  ? (int)$rec['complete_count']  : 0;
+                    $active_count    = isset($rec['active_count'])    ? (int)$rec['active_count']    : 0;
+                    $extend_count    = isset($rec['extend_count'])    ? (int)$rec['extend_count']    : 0;
+                    $failed_count    = isset($rec['failed_count'])    ? (int)$rec['failed_count']    : 0;
+                    $total_incentive = isset($rec['total_incentive']) ? (float)$rec['total_incentive'] : 0.0;
+                    $remark          = isset($rec['remark'])          ? $rec['remark']                : '';
+                    $rec_id          = isset($rec['id'])              ? (int)$rec['id']               : 0;
                 ?>
                 <tr>
                     <td>
@@ -128,6 +136,10 @@ $month_names = array(
                     <td><?php echo htmlspecialchars($glabel); ?></td>
                     <td><?php echo htmlspecialchars($slabel); ?></td>
                     <td class="text-center"><?php echo $total_atem; ?></td>
+                    <td class="text-center"><?php echo $complete_count; ?></td>
+                    <td class="text-center"><?php echo $active_count; ?></td>
+                    <td class="text-center"><?php echo $extend_count; ?></td>
+                    <td class="text-center"><?php echo $failed_count; ?></td>
                     <td class="text-end">RM <?php echo number_format($total_incentive, 2); ?></td>
                     <td style="max-width:200px;">
                         <span class="perf-remark-text"
