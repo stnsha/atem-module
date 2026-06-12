@@ -8,8 +8,8 @@
     var rows = CFG.rows || [];
     var PER_PAGE = 15;
     var page = 1;
-    var sortCol = 'id';
-    var sortDir = -1; // newest first by id
+    var sortCol = 'end_date';
+    var sortDir = 1; // earliest end date first
 
     var LEVEL_COLOR = { 'Level 1': '#6c757d', 'Level 2': '#0d6efd', 'Level 3': '#6610f2', 'Level 4': '#003B73' };
     var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
@@ -17,7 +17,6 @@
         'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Extended': '#fd7e14', 'Failed': '#dc3545'
     };
-
     function $(id) { return document.getElementById(id); }
 
     function escapeHtml(s) {
@@ -113,8 +112,19 @@
         });
     }
 
+    function updateSortIndicators() {
+        var ths = document.querySelectorAll('#atem-view-tbl th.atem-sortable');
+        for (var i = 0; i < ths.length; i++) {
+            ths[i].classList.remove('atem-sort-asc', 'atem-sort-desc');
+            if (ths[i].getAttribute('data-col') === sortCol) {
+                ths[i].classList.add(sortDir === 1 ? 'atem-sort-asc' : 'atem-sort-desc');
+            }
+        }
+    }
+
     // --------------------------------------------------------------- rendering
     function render() {
+        updateSortIndicators();
         var list = sortRows(applyFilters());
         var total = list.length;
         var pages = Math.max(1, Math.ceil(total / PER_PAGE));
@@ -255,6 +265,7 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         buildFilters();
+        $('vf-status').value = 'Active';
         bind();
         render();
     });

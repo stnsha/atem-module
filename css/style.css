@@ -703,6 +703,25 @@ button {
 .atem-sortable {
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
+}
+
+.atem-sortable::after {
+  content: '\2195';
+  margin-left: 5px;
+  font-size: 11px;
+  color: #ced4da;
+  vertical-align: middle;
+}
+
+.atem-sortable.atem-sort-asc::after {
+  content: '\2191';
+  color: #0d6efd;
+}
+
+.atem-sortable.atem-sort-desc::after {
+  content: '\2193';
+  color: #0d6efd;
 }
 
 .atem-sortable:hover {

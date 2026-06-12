@@ -143,11 +143,11 @@ $view_config = array(
             </select>
         </div>
         <div class="col-md-3">
-            <label class="form-label">Start from</label>
+            <label class="form-label">Start Date</label>
             <input type="date" class="form-control form-control-sm" id="vf-from">
         </div>
         <div class="col-md-3">
-            <label class="form-label">Start to</label>
+            <label class="form-label">End Date</label>
             <input type="date" class="form-control form-control-sm" id="vf-to">
         </div>
         <div class="col-md-4">
