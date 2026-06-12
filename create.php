@@ -222,8 +222,7 @@ $api_unavailable = empty($lookup_result['success']);
     <div class="atem-bento-item atem-span-12">
         <div class="atem-card">
             <h6 class="atem-card-title"><i class="bi bi-people"></i> Project Team (ARCI)</h6>
-            <p class="atem-card-hint">Tag the team. A (Accountable) is mandatory and limited to one person. C and I are
-                for visibility only and are not incentivised.</p>
+            <p class="atem-card-hint">Tag the team. A (Accountable) supports up to 2 members. R (Responsible) supports up to 2 members. C and I are for visibility only and are not incentivised.</p>
 
             <div class="atem-arci-add">
                 <div class="atem-arci-add-grid">

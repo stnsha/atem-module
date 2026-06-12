@@ -50,14 +50,23 @@ foreach ($rows as $a) {
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 
-    $arci_ids   = array();
-    $user_roles = array();
+    $arci_ids    = array();
+    $user_roles  = array();
+    $accountable = array();
     if (isset($a['arci']) && is_array($a['arci'])) {
         foreach ($a['arci'] as $m) {
             if (!empty($m['staff_id'])) {
-                $arci_ids[] = (int) $m['staff_id'];
-                if ((int) $m['staff_id'] === (int) $staff_id && !empty($m['role'])) {
+                $m_id = (int) $m['staff_id'];
+                $arci_ids[] = $m_id;
+                if ($m_id === (int) $staff_id && !empty($m['role'])) {
                     $user_roles[] = $m['role'];
+                }
+                if (isset($m['role']) && $m['role'] === 'A') {
+                    $a_dept_id = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
+                    $accountable[] = array(
+                        'name' => isset($staff_names[$m_id]) ? $staff_names[$m_id] : ('Staff #' . $m_id),
+                        'dept' => ($a_dept_id && isset($dept_names[$a_dept_id])) ? $dept_names[$a_dept_id] : '-',
+                    );
                 }
             }
         }
@@ -73,11 +82,12 @@ foreach ($rows as $a) {
         'status'          => $status ? $status['value'] : '',
         'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
+        'extended_date_1' => isset($a['extended_date_1']) ? $a['extended_date_1'] : '',
         'issuer_staff_id' => $issuer_id,
         'arci_staff_ids'  => $arci_ids,
         'user_arci_roles' => $user_roles,
+        'accountable'     => $accountable,
         'is_extended'     => !empty($a['is_extended']),
-        'ext_count'       => isset($a['extension_count']) ? (int) $a['extension_count'] : 0,
     );
 }
 
@@ -160,6 +170,7 @@ $view_config = array(
                     <th class="atem-sortable" data-col="id">ATEM ID</th>
                     <th class="atem-sortable" data-col="title">Title</th>
                     <th class="atem-sortable" data-col="issuer_name">Issuer</th>
+                    <th>Accountable</th>
                     <th>ARCI</th>
                     <th class="atem-sortable" data-col="level_label">Level Structure</th>
                     <th class="atem-sortable" data-col="start_date">Start</th>

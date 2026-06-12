@@ -124,20 +124,13 @@
 
         var body = $('atem-view-body');
         if (total === 0) {
-            body.innerHTML = '<tr><td colspan="9" class="atem-empty-state" style="text-align:center;padding:24px;">No ATEM cards match the current filters.</td></tr>';
+            body.innerHTML = '<tr><td colspan="10" class="atem-empty-state" style="text-align:center;padding:24px;">No ATEM cards match the current filters.</td></tr>';
         } else {
             var html = '';
             for (var i = 0; i < pageRows.length; i++) {
                 var r = pageRows[i];
                 var levelCell = r.level_label ? pill(r.level_label, LEVEL_COLOR[r.level_label] || '#6c757d', r.system_name) : '-';
-                var extBadge = '';
-                if (r.ext_count > 0) {
-                    extBadge = '<div style="margin-top:3px;font-size:11px;color:#fd7e14;font-weight:500;">'
-                        + '<i class="bi bi-arrow-repeat" style="font-size:10px;"></i> '
-                        + r.ext_count + (r.ext_count === 1 ? ' extension' : ' extensions')
-                        + '</div>';
-                }
-                var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') + extBadge : '-';
+                var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
                 var arciCell = '';
                 if (r.user_arci_roles && r.user_arci_roles.length > 0) {
                     for (var ri = 0; ri < r.user_arci_roles.length; ri++) {
@@ -148,14 +141,33 @@
                 } else {
                     arciCell = '<span style="color:#adb5bd;font-size:12px;">—</span>';
                 }
+                var accountableCell = '';
+                if (r.accountable && r.accountable.length > 0) {
+                    for (var ai = 0; ai < r.accountable.length; ai++) {
+                        if (ai > 0) {
+                            accountableCell += '<div style="border-top:1px solid #dee2e6;margin:4px 0;"></div>';
+                        }
+                        accountableCell += '<div style="font-size:13px;">' + escapeHtml(r.accountable[ai].name) + '</div>'
+                            + '<div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.accountable[ai].dept) + '</div>';
+                    }
+                } else {
+                    accountableCell = '<span style="color:#adb5bd;font-size:12px;">—</span>';
+                }
+                var endCell = fmtDate(r.end_date);
+                if (r.is_extended && r.extended_date_1) {
+                    endCell += '<div style="margin-top:3px;font-size:11px;color:#fd7e14;font-weight:500;">'
+                        + '<i class="bi bi-arrow-right" style="font-size:10px;"></i> Extended to '
+                        + fmtDate(r.extended_date_1) + '</div>';
+                }
                 html += '<tr>'
                     + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
                     + '<td>' + escapeHtml(r.title) + '</td>'
                     + '<td><div style="font-size:13px;">' + escapeHtml(r.issuer_name) + '</div><div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.department_name) + '</div></td>'
+                    + '<td>' + accountableCell + '</td>'
                     + '<td>' + arciCell + '</td>'
                     + '<td>' + levelCell + '</td>'
                     + '<td>' + fmtDate(r.start_date) + '</td>'
-                    + '<td>' + fmtDate(r.end_date) + '</td>'
+                    + '<td>' + endCell + '</td>'
                     + '<td>' + statusCell + '</td>'
                     + '<td class="atem-view-actions">'
                     + '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '

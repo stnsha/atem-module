@@ -761,6 +761,37 @@ function removeAtemArciByRole($id, $role, $staff_id)
 }
 
 /**
+ * Toggle the is_incentivised flag on a single ARCI member.
+ * @param int $id ATEM ID
+ * @param int $arci_id AtemArci row ID
+ * @param bool $is_incentivised New flag value
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with grouped ARCI data
+ */
+function updateAtemArciIncentivised($id, $arci_id, $is_incentivised, $staff_id)
+{
+    $result = getApiDataWithJWT(
+        'atem/' . (int)$id . '/arci/' . (int)$arci_id,
+        array('is_incentivised' => (bool)$is_incentivised),
+        'PATCH',
+        $staff_id
+    );
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data'    => isset($decoded['data']) ? $decoded['data'] : null
+        );
+    }
+    return array(
+        'success' => false,
+        'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to update incentivised flag'
+    );
+}
+
+/**
  * List the reference links for an ATEM card
  * @param int $id ATEM ID
  * @param int $staff_id Staff ID for authentication
@@ -1396,6 +1427,19 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = removeAtemArciByRole($jsonData['id'], $jsonData['role'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or role');
+                    }
+                    break;
+
+                case 'arci-set-incentivised':
+                    if (isset($jsonData['id']) && isset($jsonData['arci_id']) && isset($jsonData['is_incentivised'])) {
+                        $response = updateAtemArciIncentivised(
+                            $jsonData['id'],
+                            $jsonData['arci_id'],
+                            (bool)$jsonData['is_incentivised'],
+                            $staff_id
+                        );
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing id, arci_id or is_incentivised');
                     }
                     break;
 

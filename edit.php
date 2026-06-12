@@ -137,6 +137,15 @@ if (!$is_read && in_array($current_status_value, $terminal_statuses)) {
     $is_read = true;
 }
 
+// Extended ATEMs are locked once today is past the closure date (= extended_date_1).
+if (!$is_read && $current_status_value === 'Extended') {
+    $ext_closure = ($record && isset($record['closure_date'])) ? $record['closure_date'] : '';
+    if ($ext_closure && date('Y-m-d') > $ext_closure) {
+        $mode    = 'read';
+        $is_read = true;
+    }
+}
+
 $is_draft      = ($current_status_value === 'Draft');
 $is_issuer_now = ($record && (int)$staff_id === (int)$record['issuer_staff_id']);
 
@@ -272,8 +281,7 @@ $atem_config = array(
     <div class="atem-bento-item atem-span-12">
         <div class="atem-card">
             <h6 class="atem-card-title"><i class="bi bi-people"></i> Project Team (ARCI)</h6>
-            <p class="atem-card-hint">A (Accountable) is mandatory and limited to one person. C and I are for visibility
-                only.</p>
+            <p class="atem-card-hint">A (Accountable) is mandatory; maximum 2 members. R (Responsible) supports up to 2 members. C and I are for visibility only and are not incentivised.</p>
             <?php if (!$is_read): ?>
             <div class="atem-arci-add">
                 <div class="atem-arci-add-grid">
@@ -375,20 +383,36 @@ $atem_config = array(
                 <div class="col-12">
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" id="tl-extended">
-                        <label class="form-check-label" for="tl-extended" style="font-size:13px;">Extended? (maximum 2
-                            extensions)</label>
+                        <label class="form-check-label" for="tl-extended">Extended? (once only — cannot be undone)</label>
                     </div>
                     <div class="row g-3">
                         <div class="col-md-4 atem-ext-field" id="tl-ext1-wrap" style="display:none;">
-                            <label for="tl-ext1" class="form-label">Extended Date 1 <span class="atem-req"
+                            <label for="tl-ext1" class="form-label">Extended Date <span class="atem-req"
                                     id="tl-ext1-req" style="display:none;">*</span></label>
                             <input type="date" class="form-control" id="tl-ext1">
                         </div>
-                        <div class="col-md-4 atem-ext-field" id="tl-ext2-wrap" style="display:none;">
-                            <label for="tl-ext2" class="form-label">Extended Date 2</label>
-                            <input type="date" class="form-control" id="tl-ext2">
-                        </div>
                     </div>
+                </div>
+
+                <!-- Incentive Approval — visible only when extended, issuer only -->
+                <div class="col-12" id="tl-incentive-approval-wrap" style="display:none;">
+                    <label class="form-label" style="font-weight:600;">Incentive Approval</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="tl-incentive-approval"
+                               id="tl-incentive-approve-yes" value="1">
+                        <label class="form-check-label" for="tl-incentive-approve-yes">
+                            Approve — pay estimated incentive
+                            (<span id="tl-approval-amount">RM 0.00</span>)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="tl-incentive-approval"
+                               id="tl-incentive-approve-no" value="0" checked>
+                        <label class="form-check-label" for="tl-incentive-approve-no">
+                            No incentive (RM 0.00)
+                        </label>
+                    </div>
+                    <div class="atem-form-error" id="tl-incentive-approval-error"></div>
                 </div>
 
                 <!-- Row 3: Final Due, Closure (auto, disabled) -->
@@ -406,6 +430,10 @@ $atem_config = array(
                     <label for="tl-remarks" class="form-label">Remarks</label>
                     <textarea class="form-control" id="tl-remarks" rows="4"
                         placeholder="Notes, failure reason or excellence remark"></textarea>
+                </div>
+
+                <div class="col-12" id="tl-save-reminder" style="display:none;">
+                    <div class="atem-tl-reminder">Click <strong>Save ATEM</strong> to apply timeline changes.</div>
                 </div>
             </div>
         </div>

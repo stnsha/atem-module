@@ -18,6 +18,8 @@
         }
         return false;
     }());
+    // Issuer and A members can see all progress cards; R/C/I see only their own.
+    var CAN_VIEW_ALL_PROGRESS = IS_ISSUER || IS_A_ARCI;
     var TERMINAL_STATUSES = ['Failed', 'Completed', 'Completed with Excellence'];
     var quillEditor = null;
     var arciState = { A: [], R: [], C: [], I: [] };
@@ -177,19 +179,46 @@
         var ruleStar = $('rule-req-star');
         if (ruleStar) { ruleStar.style.display = (base > 0) ? '' : 'none'; }
         rule = selectedRule();
-        var rCount = (arciState.R) ? arciState.R.length : 0;
-        var a = 0, r = 0;
-        if (base > 0 && rule) { a = base; r = (String(rule.code).toLowerCase() === 'rule 2') ? base * 0.5 * rCount : 0; }
+        var incentivisedA = countIncentivised('A');
+        var incentivisedR = countIncentivised('R');
+        var code = rule ? String(rule.code).toLowerCase() : '';
+        var a = 0, r = 0, rDisplay = 0;
+        if (base > 0 && rule) {
+            if (code === 'rule 1') {
+                // Each incentivised A gets 50% of base (up to 2)
+                a = base * 0.5 * incentivisedA;
+                rDisplay = incentivisedA > 0 ? base * 0.5 : 0;
+                r = 0;
+            } else if (code === 'rule 2') {
+                // Each incentivised A gets 100%; no R payout
+                a = base * incentivisedA;
+                r = 0;
+            } else if (code === 'rule 3') {
+                // Each incentivised A gets 100%; incentivised R members share a 50% pool
+                a = base * incentivisedA;
+                r = incentivisedR > 0 ? base * 0.5 : 0;
+                rDisplay = r;
+            }
+        }
         $('inc-base').textContent = money(base);
         $('inc-a').textContent = money(a);
-        $('inc-r').textContent = money(r);
+        $('inc-r').textContent = money(code === 'rule 1' ? rDisplay : r);
         $('inc-total').textContent = money(a + r);
         var rLabel = $('inc-r-label');
-        if (rLabel) { rLabel.textContent = rCount > 1 ? 'R · Responsible ×' + rCount : 'R · Responsible'; }
+        if (rLabel) {
+            if (code === 'rule 1') {
+                rLabel.textContent = 'A · Accountable (50% each)';
+            } else if (code === 'rule 3' && incentivisedR > 1) {
+                rLabel.textContent = 'R · Responsible ×' + incentivisedR + ' (pooled 50%)';
+            } else {
+                rLabel.textContent = 'R · Responsible';
+            }
+        }
         if (!level) { note.textContent = 'Select an ATEM level and rule to calculate incentive.'; }
         else if (base === 0) { note.textContent = 'Level 1 carries no incentive payout.'; }
         else if (!rule) { note.textContent = 'Select an incentive rule (required for Level 2-4).'; }
         else { note.textContent = 'Projected amounts. Claimable only on a completed closure.'; }
+        syncIncentiveApproval();
     }
 
     // --------------------------------------------------------------- timeline
@@ -197,7 +226,6 @@
         if (!$('tl-final-due')) { return; }
         var v = $('tl-end').value;
         if ($('tl-ext1') && $('tl-ext1').value) { v = $('tl-ext1').value; }
-        if ($('tl-ext2') && $('tl-ext2').value) { v = $('tl-ext2').value; }
         $('tl-final-due').value = v || '';
     }
     function recalcClosureDate() {
@@ -208,7 +236,9 @@
         (CFG.statuses || []).forEach(function (s) {
             if (String(s.id) === String(selId)) { selVal = s.value; }
         });
-        if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
+        if (selVal === 'Extended') {
+            closureEl.value = ($('tl-ext1') && $('tl-ext1').value) ? $('tl-ext1').value : '';
+        } else if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
             if (!closureEl.value) {
                 closureEl.value = new Date().toISOString().substring(0, 10);
             }
@@ -220,20 +250,76 @@
         var on = $('tl-extended').checked;
         var reqEl = $('tl-ext1-req');
         if (reqEl) { reqEl.style.display = (!READ && on) ? '' : 'none'; }
-        var w1 = $('tl-ext1-wrap'), w2 = $('tl-ext2-wrap');
+        var w1 = $('tl-ext1-wrap');
         if (!on) {
-            w1.style.display = 'none'; w2.style.display = 'none';
-            $('tl-ext1').value = ''; $('tl-ext2').value = '';
+            w1.style.display = 'none';
+            if ($('tl-ext1')) { $('tl-ext1').value = ''; }
         } else {
             w1.style.display = '';
-            var ext1Val = $('tl-ext1').value;
-            var today = new Date(); today.setHours(0, 0, 0, 0);
-            var showExt2 = ext1Val && (today >= new Date(ext1Val + 'T00:00:00'));
-            w2.style.display = showExt2 ? '' : 'none';
-            if (!showExt2) { $('tl-ext2').value = ''; }
         }
         applyExtMins();
+        syncEndDateLock();
+        syncStatusOptions();
+        syncIncentiveApproval();
+        recalcClosureDate();
         recalcFinalDue();
+    }
+
+    function syncEndDateLock() {
+        if (READ || !IS_ISSUER) { return; }
+        var endEl = $('tl-end');
+        if (!endEl || !endEl.value) { return; }
+        var selId  = $('tl-status') ? $('tl-status').value : '';
+        var selVal = '';
+        (CFG.statuses || []).forEach(function (s) {
+            if (String(s.id) === String(selId)) { selVal = s.value; }
+        });
+        var isActive  = selVal === 'Active';
+        var extFilled = !!($('tl-ext1') && $('tl-ext1').value);
+        if (isActive && !extFilled) {
+            endEl.removeAttribute('disabled');
+        } else {
+            endEl.setAttribute('disabled', 'disabled');
+        }
+    }
+
+    function syncStatusOptions() {
+        var statusEl = $('tl-status');
+        if (!statusEl) { return; }
+        var isExtended = !!($('tl-extended') && $('tl-extended').checked && $('tl-ext1') && $('tl-ext1').value);
+        var current    = statusEl.value;
+        statusEl.innerHTML = '<option value="">Select status</option>';
+        (CFG.statuses || []).forEach(function (s) {
+            if (isExtended && s.value !== 'Extended' && s.value !== 'Failed') { return; }
+            var opt         = document.createElement('option');
+            opt.value       = s.id;
+            opt.textContent = s.value;
+            statusEl.appendChild(opt);
+        });
+        statusEl.value = current;
+        if (!statusEl.value && isExtended) {
+            (CFG.statuses || []).forEach(function (s) {
+                if (s.value === 'Extended') { statusEl.value = s.id; }
+            });
+        }
+        recalcClosureDate();
+    }
+
+    function showTimelineReminder() {
+        var el = $('tl-save-reminder');
+        if (el && !READ && IS_ISSUER) { el.style.display = ''; }
+    }
+
+    function syncIncentiveApproval() {
+        var wrap = $('tl-incentive-approval-wrap');
+        if (!wrap) { return; }
+        var isExtended = !!($('tl-extended') && $('tl-extended').checked && $('tl-ext1') && $('tl-ext1').value);
+        wrap.style.display = (isExtended && !READ && IS_ISSUER) ? '' : 'none';
+        var amountEl = $('tl-approval-amount');
+        if (amountEl) {
+            var incTotal = $('inc-total') ? $('inc-total').textContent : 'RM 0.00';
+            amountEl.textContent = incTotal;
+        }
     }
 
     // ------------------------------------------------------------------- ARCI
@@ -248,6 +334,11 @@
         if (!grouped) { return; }
         arciState = { A: grouped.A || [], R: grouped.R || [], C: grouped.C || [], I: grouped.I || [] };
         renderArci();
+    }
+    function countIncentivised(role) {
+        var n = 0;
+        (arciState[role] || []).forEach(function (m) { if (m.is_incentivised) { n++; } });
+        return n;
     }
     function deptName(deptId) {
         var d = CFG.departments || [];
@@ -270,9 +361,25 @@
                 var mem = members[m];
                 var nm = mem.staff_name || staffNameIn(mem.staff_dept_id, mem.staff_id) || ('Staff #' + mem.staff_id);
                 var dn = mem.department_name || deptName(mem.staff_dept_id);
+                var incentivisedHtml = '';
+                if (role === 'A' || role === 'R') {
+                    if (READ) {
+                        if (mem.is_incentivised) {
+                            incentivisedHtml = '<span class="atem-arci-incentivised-badge">Incentivised</span>';
+                        }
+                    } else {
+                        incentivisedHtml = '<label class="atem-arci-incentivised">'
+                            + '<input type="checkbox" class="atem-arci-incentivised-chk"'
+                            + ' data-staff="' + parseInt(mem.staff_id, 10) + '" data-role="' + role + '"'
+                            + (mem.is_incentivised ? ' checked' : '') + '>'
+                            + ' Incentivised</label>';
+                    }
+                }
                 html += '<div class="atem-arci-member"><div class="atem-arci-member-info">'
                     + '<div class="atem-arci-member-dept">(' + escapeHtml(dn) + ')</div>'
-                    + '<div class="atem-arci-member-name">' + escapeHtml(nm) + '</div></div>'
+                    + '<div class="atem-arci-member-name">' + escapeHtml(nm) + '</div>'
+                    + '</div>'
+                    + incentivisedHtml
                     + (READ ? '' : '<span class="atem-arci-remove" data-staff="' + parseInt(mem.staff_id, 10) + '" data-role="' + role + '" title="Remove">&times;</span>')
                     + '</div>';
             }
@@ -313,14 +420,15 @@
         var deptId = $('arci-dept-select').value;
         var checks = $('arci-staff-list').querySelectorAll('input[type="checkbox"]:checked');
         if (checks.length === 0) { setError('arci-error', 'Please select at least one staff member.'); return; }
-        if (role === 'A' && (checks.length > 1 || (arciState.A && arciState.A.length > 0))) { setError('arci-error', 'Role A (Accountable) can only have one person.'); return; }
+        if (role === 'A' && (arciState.A.length + checks.length > 2)) { setError('arci-error', 'Role A (Accountable) is limited to 2 members.'); return; }
+        if (role === 'R' && (arciState.R.length + checks.length > 2)) { setError('arci-error', 'Role R (Responsible) is limited to 2 members.'); return; }
         var queue = [];
         for (var i = 0; i < checks.length; i++) { queue.push(parseInt(checks[i].value, 10)); }
         function next() {
             if (queue.length === 0) { $('arci-role').value = ''; $('arci-dept-select').value = ''; $('arci-staff-search').value = ''; renderStaffList(); return; }
             var sid = queue.shift();
             apiCall('arci-add', { id: CFG.atemId, data: { staff_id: sid, staff_dept_id: deptId ? parseInt(deptId, 10) : null, role: role } }).then(function (res) {
-                if (res && res.success) { setArciState(res.data); } else { setError('arci-error', res && res.message ? res.message : 'Failed to add member.'); }
+                if (res && res.success) { setArciState(res.data); saveInline(); } else { setError('arci-error', res && res.message ? res.message : 'Failed to add member.'); }
                 next();
             }).catch(function () { setError('arci-error', 'Network error while adding member.'); next(); });
         }
@@ -328,7 +436,7 @@
     }
     function removeMember(staffId, role) {
         apiCall('arci-remove', { id: CFG.atemId, staff_id: staffId, role: role }).then(function (res) {
-            if (res && res.success) { setArciState(res.data); } else { setError('arci-error', res && res.message ? res.message : 'Failed to remove member.'); }
+            if (res && res.success) { setArciState(res.data); saveInline(); } else { setError('arci-error', res && res.message ? res.message : 'Failed to remove member.'); }
         });
     }
     var _pendingClear = {};
@@ -337,7 +445,7 @@
             clearTimeout(_pendingClear[role]); delete _pendingClear[role];
             if (btn) { btn.textContent = 'Delete All'; btn.classList.remove('atem-arci-clear-confirm'); }
             apiCall('arci-remove-role', { id: CFG.atemId, role: role }).then(function (res) {
-                if (res && res.success) { setArciState(res.data); } else { setError('arci-error', res && res.message ? res.message : 'Failed to clear role.'); }
+                if (res && res.success) { setArciState(res.data); saveInline(); } else { setError('arci-error', res && res.message ? res.message : 'Failed to clear role.'); }
             });
             return;
         }
@@ -527,21 +635,30 @@
     function renderProgress() {
         var wrap = $('atem-progress-wrap');
         if (!wrap) { return; }
-        if (!progressUpdates.length) {
+
+        // R/C/I see only their own cards; Issuer and A see all.
+        var visible = CAN_VIEW_ALL_PROGRESS
+            ? progressUpdates
+            : progressUpdates.filter(function (p) {
+                return String(p.created_by) === String(CFG.staffId);
+            });
+
+        if (!visible.length) {
             wrap.innerHTML = '<div class="atem-empty-state">No progress updates recorded.</div>';
             return;
         }
-        var sorted = progressUpdates.slice().sort(function (a, b) {
+        var sorted = visible.slice().sort(function (a, b) {
             return a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0;
         });
         var html = '<div class="atem-progress-grid">';
         for (var i = 0; i < sorted.length; i++) {
             var p = sorted[i];
             var pillClass = 'atem-pill atem-pill-' + p.status;
-            var actionsHtml = READ ? '' : '<div class="atem-progress-item-actions">'
+            var isOwn = String(p.created_by) === String(CFG.staffId);
+            var actionsHtml = (!READ && isOwn) ? '<div class="atem-progress-item-actions">'
                 + '<button type="button" class="btn btn-outline-secondary btn-sm atem-progress-edit" data-id="' + p.id + '">Edit</button>'
                 + '<button type="button" class="btn btn-outline-danger btn-sm atem-progress-delete" data-id="' + p.id + '">Delete</button>'
-                + '</div>';
+                + '</div>' : '';
             var remarkHtml = p.remark
                 ? '<div class="atem-progress-item-remark">' + escapeHtml(p.remark) + '</div>'
                 : '';
@@ -744,11 +861,19 @@
             setError('atem-rule-error', 'Incentive Rule is required for Level 2-4.');
             return false;
         }
+        if (!arciState.A || arciState.A.length === 0) {
+            setError('arci-error', 'An Accountable (A) member is mandatory.');
+            return false;
+        }
         if (level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
             var _finalRule = selectedRule();
-            var _finalNeedsR = _finalRule && String(_finalRule.code).toLowerCase() === 'rule 2';
-            if (!arciState.A || arciState.A.length === 0 || (_finalNeedsR && (!arciState.R || arciState.R.length === 0))) {
-                setError('atem-save-error', 'Incentive cannot be applied: ARCI must have at least one Accountable (A) and one Responsible (R) member. Assign the required roles or choose a level without incentive.');
+            var _finalCode = _finalRule ? String(_finalRule.code).toLowerCase() : '';
+            if (countIncentivised('A') === 0) {
+                setError('arci-error', 'Please mark at least one Accountable (A) member as incentivised.');
+                return false;
+            }
+            if (_finalCode === 'rule 3' && countIncentivised('R') === 0) {
+                setError('arci-error', 'Rule 3 requires at least one Responsible (R) member marked as incentivised.');
                 return false;
             }
         }
@@ -762,14 +887,6 @@
             setError('atem-rule-error', 'Incentive Rule is required for Level 2-4.');
             return;
         }
-        if (level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
-            var _inlineRule = selectedRule();
-            var _inlineNeedsR = _inlineRule && String(_inlineRule.code).toLowerCase() === 'rule 2';
-            if (!arciState.A || arciState.A.length === 0 || (_inlineNeedsR && (!arciState.R || arciState.R.length === 0))) {
-                setError('atem-save-error', 'Incentive cannot be applied: ARCI must have at least one Accountable (A) and one Responsible (R) member. Assign the required roles or choose a level without incentive.');
-                return;
-            }
-        }
         var levelId = $('atem-level').value, ruleId = $('atem-rule').value;
         var description = quillEditor ? ((quillEditor.getText().trim() === '') ? '' : quillEditor.root.innerHTML) : '';
         var data = {
@@ -781,7 +898,7 @@
             end_date: $('tl-end').value || null,
             is_extended: $('tl-extended').checked,
             extended_date_1: $('tl-ext1').value || null,
-            extended_date_2: $('tl-ext2').value || null,
+            incentive_approved: !!(document.getElementById('tl-incentive-approve-yes') && document.getElementById('tl-incentive-approve-yes').checked),
             atem_status_id: $('tl-status').value ? parseInt($('tl-status').value, 10) : null,
             remarks: $('tl-remarks').value
         };
@@ -804,7 +921,7 @@
             end_date: $('tl-end').value || null,
             is_extended: $('tl-extended').checked,
             extended_date_1: $('tl-ext1').value || null,
-            extended_date_2: $('tl-ext2').value || null,
+            incentive_approved: !!(document.getElementById('tl-incentive-approve-yes') && document.getElementById('tl-incentive-approve-yes').checked),
             atem_status_id: $('tl-status').value ? parseInt($('tl-status').value, 10) : null,
             remarks: $('tl-remarks').value
         };
@@ -923,17 +1040,19 @@
             $('tl-extended').checked = !!REC.is_extended;
             if (REC.is_extended) {
                 $('tl-ext1-wrap').style.display = '';
-                $('tl-ext1').value = dateOnly(REC.extended_date_1);
-                if (READ) {
-                    // Read mode: show ext2 whenever the record has a value for it.
-                    if (REC.extended_date_2) { $('tl-ext2-wrap').style.display = ''; $('tl-ext2').value = dateOnly(REC.extended_date_2); }
-                } else {
-                    // Edit mode: pre-fill ext2 then let syncExtensionFields decide visibility based on date.
-                    if (REC.extended_date_2) { $('tl-ext2').value = dateOnly(REC.extended_date_2); }
-                    syncExtensionFields();
-                }
+                if ($('tl-ext1')) { $('tl-ext1').value = dateOnly(REC.extended_date_1); }
+                if (!READ) { syncExtensionFields(); }
             }
         }
+        var yesEl = document.getElementById('tl-incentive-approve-yes');
+        var noEl  = document.getElementById('tl-incentive-approve-no');
+        if (yesEl && noEl) {
+            yesEl.checked = !!REC.incentive_approved;
+            noEl.checked  = !REC.incentive_approved;
+        }
+        syncStatusOptions();
+        syncIncentiveApproval();
+        syncEndDateLock();
         if (quillEditor && REC.description) { quillEditor.clipboard.dangerouslyPasteHTML(REC.description); }
 
         var grouped = { A: [], R: [], C: [], I: [] };
@@ -975,18 +1094,8 @@
             var endNextStr = endNext.toISOString().substring(0, 10);
             if (endNextStr > todayStr) { ext1Min = endNextStr; }
         }
-        var ext1El = $('tl-ext1'), ext2El = $('tl-ext2');
+        var ext1El = $('tl-ext1');
         if (ext1El) { ext1El.setAttribute('min', ext1Min); }
-        if (ext2El) {
-            var ext2Min = null;
-            if (ext1El && ext1El.value) {
-                var d = new Date(ext1El.value + 'T00:00:00');
-                d.setDate(d.getDate() + 1);
-                ext2Min = d.toISOString().substring(0, 10);
-            }
-            if (!ext2Min || todayStr > ext2Min) { ext2Min = todayStr; }
-            ext2El.setAttribute('min', ext2Min);
-        }
     }
 
     function syncExtendedByStatus() {
@@ -1001,17 +1110,21 @@
                 syncExtensionFields();
             }
             extEl.removeAttribute('disabled');
+        } else if (selVal === 'Failed' && extEl.checked) {
+            // Failed on an extended ATEM — preserve the extended state, lock the checkbox.
+            extEl.setAttribute('disabled', 'disabled');
         } else {
-            if (extEl.checked) {
+            // Active / Draft / Completed — only clear extension if ext1 was not already saved to DB.
+            var ext1El = $('tl-ext1');
+            var extLocked = ext1El && ext1El.disabled && ext1El.value;
+            if (!extLocked && extEl.checked) {
                 extEl.checked = false;
-                var ext1El = $('tl-ext1'), ext2El = $('tl-ext2');
                 if (ext1El && !ext1El.disabled) { ext1El.value = ''; }
-                if (ext2El && !ext2El.disabled) { ext2El.value = ''; }
-                var w1 = $('tl-ext1-wrap'), w2 = $('tl-ext2-wrap');
+                var w1 = $('tl-ext1-wrap');
                 if (w1) { w1.style.display = 'none'; }
-                if (w2) { w2.style.display = 'none'; }
                 var reqEl = $('tl-ext1-req');
                 if (reqEl) { reqEl.style.display = 'none'; }
+                syncIncentiveApproval();
                 recalcFinalDue();
             }
             if (selVal === 'Draft') {
@@ -1037,10 +1150,13 @@
     function lockDateFields() {
         if (READ) { return; }
         if ($('tl-start') && $('tl-start').value) { $('tl-start').setAttribute('disabled', 'disabled'); }
-        if ($('tl-end') && $('tl-end').value) { $('tl-end').setAttribute('disabled', 'disabled'); }
+        syncEndDateLock();
         var ext1El = $('tl-ext1');
         if (ext1El && REC.extended_date_1) {
             ext1El.setAttribute('disabled', 'disabled');
+            // Lock the checkbox too — a saved extension cannot be undone.
+            var extEl = $('tl-extended');
+            if (extEl) { extEl.setAttribute('disabled', 'disabled'); }
         }
     }
 
@@ -1048,7 +1164,8 @@
         if (!READ) { return; }
         if (quillEditor) { quillEditor.disable(); }
         ['atem-title', 'atem-issuer', 'atem-department', 'atem-level', 'atem-rule', 'tl-start', 'tl-end',
-            'tl-status', 'tl-final-due', 'tl-closure', 'tl-remarks', 'tl-extended', 'tl-ext1', 'tl-ext2'].forEach(function (id) {
+            'tl-status', 'tl-final-due', 'tl-closure', 'tl-remarks', 'tl-extended', 'tl-ext1',
+            'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
             var el = $(id);
             if (el) { el.setAttribute('disabled', 'disabled'); }
         });
@@ -1060,28 +1177,51 @@
         $('atem-rule').addEventListener('change', function () { recalcIncentive(); saveInline(); });
         if ($('atem-title')) { $('atem-title').addEventListener('blur', saveInline); }
         if (quillEditor) { quillEditor.on('text-change', function () { clearTimeout(_inlineSaveTimer); _inlineSaveTimer = setTimeout(saveInline, 1500); }); }
-        if ($('tl-end')) { $('tl-end').addEventListener('change', recalcFinalDue); }
+        if ($('tl-end')) { $('tl-end').addEventListener('change', function () { recalcFinalDue(); syncEndDateLock(); showTimelineReminder(); }); }
         if ($('tl-extended')) {
             $('tl-extended').addEventListener('change', function () {
                 syncExtensionFields();
                 var statusSel = $('tl-status');
                 if (!statusSel) { return; }
                 if (this.checked) {
+                    // Auto-select Extended status when the checkbox is ticked.
                     (CFG.statuses || []).forEach(function (s) {
                         if (s.value === 'Extended') { statusSel.value = s.id; }
                     });
+                    syncStatusOptions();
+                    syncEndDateLock(); // re-evaluate after status is now Extended
                 } else {
+                    syncStatusOptions();
                     (CFG.statuses || []).forEach(function (s) {
                         if (s.value === 'Active') { statusSel.value = s.id; }
                     });
+                    syncEndDateLock(); // re-evaluate after status is back to Active
                 }
                 recalcClosureDate();
                 applyExtMins();
+                showTimelineReminder();
             });
         }
-        if ($('tl-ext1')) { $('tl-ext1').addEventListener('change', function () { syncExtensionFields(); }); }
-        if ($('tl-ext2')) { $('tl-ext2').addEventListener('change', recalcFinalDue); }
-        if ($('tl-status')) { $('tl-status').addEventListener('change', function () { recalcClosureDate(); syncExtendedByStatus(); applyExtMins(); }); }
+        if ($('tl-ext1')) {
+            $('tl-ext1').addEventListener('change', function () {
+                syncExtensionFields();
+                syncEndDateLock();
+                syncStatusOptions();
+                syncIncentiveApproval();
+                recalcClosureDate();
+                showTimelineReminder();
+            });
+        }
+        if ($('tl-status')) {
+            $('tl-status').addEventListener('change', function () {
+                recalcClosureDate(); syncExtendedByStatus(); syncEndDateLock(); applyExtMins();
+                showTimelineReminder();
+            });
+        }
+        var approvalRadios = document.querySelectorAll('input[name="tl-incentive-approval"]');
+        for (var _r = 0; _r < approvalRadios.length; _r++) {
+            approvalRadios[_r].addEventListener('change', showTimelineReminder);
+        }
 
         if ($('arci-dept-search')) { $('arci-dept-search').addEventListener('keyup', filterDepartments); }
         if ($('arci-dept-select')) { $('arci-dept-select').addEventListener('change', renderStaffList); }
@@ -1097,6 +1237,22 @@
                     armOrConfirm(t, function () { removeMember(sId, sRole); });
                 } else if (t.classList.contains('atem-arci-clear')) {
                     clearRole(t.getAttribute('data-role'), t);
+                } else if (t.classList.contains('atem-arci-incentivised-chk')) {
+                    var chkStaff = parseInt(t.getAttribute('data-staff'), 10);
+                    var chkRole = t.getAttribute('data-role');
+                    var chkVal = t.checked;
+                    var rule = selectedRule();
+                    var code = rule ? String(rule.code).toLowerCase() : '';
+                    (arciState[chkRole] || []).forEach(function (m) {
+                        if (parseInt(m.staff_id, 10) === chkStaff) {
+                            m.is_incentivised = chkVal;
+                            apiCall('arci-set-incentivised', { id: CFG.atemId, arci_id: m.id, is_incentivised: chkVal }).then(function () {
+                                saveInline();
+                            });
+                        }
+                    });
+                    recalcIncentive();
+                    renderArci();
                 }
             });
         }
@@ -1205,8 +1361,9 @@
         lockDateFields();
         injectBadge();
         applyReadMode();
-        if (!READ && !IS_ISSUER && !IS_A_ARCI) {
-            ['tl-status', 'tl-extended', 'tl-ext1', 'tl-ext2', 'tl-remarks'].forEach(function (id) {
+        if (!READ && !IS_ISSUER) {
+            ['tl-start', 'tl-end', 'tl-status', 'tl-extended', 'tl-ext1', 'tl-remarks',
+             'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
                 var el = document.getElementById(id);
                 if (el) { el.disabled = true; }
             });

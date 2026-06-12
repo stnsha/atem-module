@@ -216,6 +216,10 @@ button {
   text-align: left;
   display: block;
 }
+.form-check-label {
+  font-size: 12px;
+  color: #495057;
+}
 
 .form-control,
 .form-select {
@@ -1027,7 +1031,7 @@ button {
 
 .atem-arci-member {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 6px;
   background-color: #f8f9fa;
@@ -1036,6 +1040,7 @@ button {
 }
 
 .atem-arci-member-info {
+  flex: 1;
   min-width: 0;
 }
 
@@ -1068,9 +1073,61 @@ button {
   padding: 12px 0;
 }
 
+.atem-arci-incentivised {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #6c757d;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.atem-arci-incentivised input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+
+.atem-arci-incentivised-badge {
+  display: inline-block;
+  font-size: 10px;
+  color: #198754;
+  border: 1px solid #198754;
+  border-radius: 3px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* Extension fields helper */
 .atem-ext-field {
   transition: opacity 0.15s ease;
+}
+
+/* Incentive approval radio group in Timeline card */
+#tl-incentive-approval-wrap .form-check-label,
+#tl-incentive-approval-wrap .form-check-label span {
+  font-size: 12px;
+  color: #495057;
+}
+#tl-incentive-approval-wrap .form-check-input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  border: 1px solid #adb5bd;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Timeline save reminder */
+.atem-tl-reminder {
+  font-size: 12px;
+  color: #856404;
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  padding: 6px 10px;
 }
 
 /* Two-click confirm state for the ARCI Delete All button */

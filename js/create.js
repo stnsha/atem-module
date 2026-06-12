@@ -289,20 +289,43 @@
         if (ruleStar) { ruleStar.style.display = (base > 0) ? '' : 'none'; }
         rule = selectedRule();
 
-        var rCount = (arciState.R) ? arciState.R.length : 0;
-        var a = 0, r = 0;
+        var incentivisedA = countIncentivised('A');
+        var incentivisedR = countIncentivised('R');
+        var code = rule ? String(rule.code).toLowerCase() : '';
+        var a = 0, r = 0, rDisplay = 0;
         if (base > 0 && rule) {
-            a = base;
-            r = (String(rule.code).toLowerCase() === 'rule 2') ? base * 0.5 * rCount : 0;
+            if (code === 'rule 1') {
+                // Each incentivised A gets 50% of base (up to 2)
+                a = base * 0.5 * incentivisedA;
+                rDisplay = incentivisedA > 0 ? base * 0.5 : 0;
+                r = 0;
+            } else if (code === 'rule 2') {
+                // Each incentivised A gets 100%; no R payout
+                a = base * incentivisedA;
+                r = 0;
+            } else if (code === 'rule 3') {
+                // Each incentivised A gets 100%; incentivised R members share a 50% pool
+                a = base * incentivisedA;
+                r = incentivisedR > 0 ? base * 0.5 : 0;
+                rDisplay = r;
+            }
         }
         var total = a + r;
 
         $('inc-base').textContent = money(base);
         $('inc-a').textContent = money(a);
-        $('inc-r').textContent = money(r);
+        $('inc-r').textContent = money(code === 'rule 1' ? rDisplay : r);
         $('inc-total').textContent = money(total);
         var rLabel = $('inc-r-label');
-        if (rLabel) { rLabel.textContent = rCount > 1 ? 'R · Responsible ×' + rCount : 'R · Responsible'; }
+        if (rLabel) {
+            if (code === 'rule 1') {
+                rLabel.textContent = 'A · Accountable (50% each)';
+            } else if (code === 'rule 3' && incentivisedR > 1) {
+                rLabel.textContent = 'R · Responsible ×' + incentivisedR + ' (pooled 50%)';
+            } else {
+                rLabel.textContent = 'R · Responsible';
+            }
+        }
 
         if (!level) {
             note.textContent = 'Select an ATEM level and rule to calculate incentive. C and I are not incentivised.';
@@ -316,6 +339,12 @@
     }
 
     // ------------------------------------------------------------------- ARCI
+    function countIncentivised(role) {
+        var n = 0;
+        (arciState[role] || []).forEach(function (m) { if (m.is_incentivised) { n++; } });
+        return n;
+    }
+
     function assignedStaffIds() {
         var ids = [];
         ['A', 'R', 'C', 'I'].forEach(function (role) {
@@ -336,11 +365,20 @@
             var html = '';
             for (var m = 0; m < members.length; m++) {
                 var mem = members[m];
+                var incentivisedHtml = '';
+                if (role === 'A' || role === 'R') {
+                    incentivisedHtml = '<label class="atem-arci-incentivised">'
+                        + '<input type="checkbox" class="atem-arci-incentivised-chk"'
+                        + ' data-staff="' + parseInt(mem.staff_id, 10) + '" data-role="' + role + '"'
+                        + (mem.is_incentivised ? ' checked' : '') + '>'
+                        + ' Incentivised</label>';
+                }
                 html += '<div class="atem-arci-member">'
                     + '<div class="atem-arci-member-info">'
                     + '<div class="atem-arci-member-dept">(' + escapeHtml(mem.department_name || '') + ')</div>'
                     + '<div class="atem-arci-member-name">' + escapeHtml(mem.staff_name || '') + '</div>'
                     + '</div>'
+                    + incentivisedHtml
                     + '<span class="atem-arci-remove" data-staff="' + parseInt(mem.staff_id, 10) + '" data-role="' + role + '" title="Remove">&times;</span>'
                     + '</div>';
             }
@@ -411,8 +449,12 @@
         var deptId = $('arci-dept-select').value;
         var checks = $('arci-staff-list').querySelectorAll('input[type="checkbox"]:checked');
         if (checks.length === 0) { setError('arci-error', 'Please select at least one staff member.'); return; }
-        if (role === 'A' && (checks.length > 1 || (arciState.A && arciState.A.length > 0))) {
-            setError('arci-error', 'Role A (Accountable) can only have one person.');
+        if (role === 'A' && (arciState.A.length + checks.length > 2)) {
+            setError('arci-error', 'Role A (Accountable) is limited to 2 members.');
+            return;
+        }
+        if (role === 'R' && (arciState.R.length + checks.length > 2)) {
+            setError('arci-error', 'Role R (Responsible) is limited to 2 members.');
             return;
         }
 
@@ -423,7 +465,8 @@
                 staff_name: checks[i].getAttribute('data-name'),
                 staff_dept_id: deptId ? parseInt(deptId, 10) : null,
                 department_name: deptName,
-                role: role
+                role: role,
+                is_incentivised: false
             });
         }
 
@@ -668,6 +711,18 @@
             setError('arci-error', 'An Accountable (A) member is mandatory.');
             return false;
         }
+        var rule = selectedRule();
+        if (level && Number(level.incentive_value) > 0 && rule) {
+            var ruleCode = rule.code.toLowerCase();
+            if (countIncentivised('A') === 0) {
+                setError('arci-error', 'Please mark at least one Accountable (A) member as incentivised.');
+                return false;
+            }
+            if (ruleCode === 'rule 3' && countIncentivised('R') === 0) {
+                setError('arci-error', 'Rule 3 requires at least one Responsible (R) member marked as incentivised.');
+                return false;
+            }
+        }
         return true;
     }
 
@@ -804,6 +859,17 @@
                 armOrConfirm(t, function () { removeMember(sId, sRole); });
             } else if (t.classList.contains('atem-arci-clear')) {
                 clearRole(t.getAttribute('data-role'), t);
+            } else if (t.classList.contains('atem-arci-incentivised-chk')) {
+                var chkStaff = parseInt(t.getAttribute('data-staff'), 10);
+                var chkRole = t.getAttribute('data-role');
+                var rule = selectedRule();
+                var code = rule ? String(rule.code).toLowerCase() : '';
+                (arciState[chkRole] || []).forEach(function (m) {
+                    if (parseInt(m.staff_id, 10) === chkStaff) { m.is_incentivised = t.checked; }
+                });
+                recalcIncentive();
+                markChanged();
+                renderArci();
             }
         });
 
