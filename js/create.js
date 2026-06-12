@@ -328,7 +328,7 @@
         }
 
         if (!level) {
-            note.textContent = 'Select an ATEM level and rule to calculate incentive. C and I are not incentivised.';
+            note.textContent = 'Select an ATEM Complexity Leveland rule to calculate incentive. C and I are not incentivised.';
         } else if (base === 0) {
             note.textContent = 'Level 1 carries no incentive payout.';
         } else if (!rule) {
@@ -699,7 +699,7 @@
         var level = selectedLevel();
 
         if (!title) { setError('atem-title-error', 'ATEM Title is required.'); $('atem-title').focus(); return false; }
-        if (!levelId) { setError('atem-level-error', 'ATEM Level is required.'); $('atem-level').focus(); return false; }
+        if (!levelId) { setError('atem-level-error', 'ATEM Complexity Levelis required.'); $('atem-level').focus(); return false; }
         if (!startDate) { setError('tl-start-error', 'Start Date is required.'); $('tl-start').focus(); return false; }
         if (!endDate) { setError('tl-end-error', 'End Date is required.'); $('tl-end').focus(); return false; }
         if (level && Number(level.incentive_value) > 0 && !ruleId) {

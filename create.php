@@ -126,7 +126,7 @@ $api_unavailable = empty($lookup_result['success']);
                         readonly>
                 </div>
                 <div class="col-md-6">
-                    <label for="atem-level" class="form-label">ATEM Level <span class="atem-req">*</span></label>
+                    <label for="atem-level" class="form-label">ATEM Complexity Level<span class="atem-req">*</span></label>
                     <select class="form-select" id="atem-level">
                         <option value="">Select level</option>
                     </select>
@@ -182,7 +182,7 @@ $api_unavailable = empty($lookup_result['success']);
                     </div>
                 </div>
                 <div class="atem-incentive-note" id="inc-note">
-                    Select an ATEM level and rule to calculate incentive. C and I are not incentivised.
+                    Select an ATEM Complexity Leveland rule to calculate incentive. C and I are not incentivised.
                 </div>
             </div>
         </div>

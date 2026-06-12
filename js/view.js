@@ -55,10 +55,11 @@
         lvl.innerHTML = lh;
 
         var dep = $('vf-dept');
-        var depts = distinct('department_name');
+        var depts = CFG.departments || [];
         var dh = '<option value="">All departments</option>';
         for (var d = 0; d < depts.length; d++) { dh += '<option value="' + escapeHtml(depts[d]) + '">' + escapeHtml(depts[d]) + '</option>'; }
         dep.innerHTML = dh;
+
 
         var st = $('vf-status');
         var statuses = CFG.statuses || [];

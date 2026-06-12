@@ -22,15 +22,12 @@ if ($dept_res) {
     }
 }
 
-$user_dept_id = 0;
-$udept_res = mysqli_query($conn, "SELECT staff_dept_id FROM staff WHERE id = " . (int)$staff_id . " LIMIT 1");
-if ($udept_res && $urow = mysqli_fetch_assoc($udept_res)) {
-    $user_dept_id = (int)$urow['staff_dept_id'];
-}
-
 // Fetch the ATEM list + lookups via the JWT proxy (server-side).
+// api.php also sets $staff_id and $department from the session.
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
+
+$user_dept_id = isset($department) ? (int)$department : 0;
 
 $lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array());
 $lr = getAtemLookups($staff_id);
@@ -128,10 +125,23 @@ if ((int)$atem_permission === 1) {
 }
 // Grades 3–6: no server-side row filtering.
 
+$dept_list = array();
+if ((int)$atem_permission <= 2) {
+    if ($user_dept_id && isset($dept_names[$user_dept_id])) {
+        $dept_list[] = $dept_names[$user_dept_id];
+    }
+} else {
+    foreach ($dept_names as $dept_name_val) {
+        $dept_list[] = $dept_name_val;
+    }
+    sort($dept_list);
+}
+
 $view_config = array(
     'rows'        => $view_rows,
     'levels'      => isset($lookups['levels']) ? $lookups['levels'] : array(),
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
+    'departments' => $dept_list,
     'staffId'     => (int) $staff_id,
     'isSuperAdmin' => (isset($atem) && (int)$atem === 1),
     'userGrade'   => (int)$atem_permission,

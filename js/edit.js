@@ -214,7 +214,7 @@
                 rLabel.textContent = 'R · Responsible';
             }
         }
-        if (!level) { note.textContent = 'Select an ATEM level and rule to calculate incentive.'; }
+        if (!level) { note.textContent = 'Select an ATEM Complexity Leveland rule to calculate incentive.'; }
         else if (base === 0) { note.textContent = 'Level 1 carries no incentive payout.'; }
         else if (!rule) { note.textContent = 'Select an incentive rule (required for Level 2-4).'; }
         else { note.textContent = 'Projected amounts. Claimable only on a completed closure.'; }
@@ -828,7 +828,7 @@
         setError('tl-start-error', ''); setError('tl-end-error', ''); setError('tl-status-error', '');
         setError('atem-save-error', '');
         if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return false; }
-        if (!$('atem-level').value) { setError('atem-level-error', 'ATEM Level is required.'); return false; }
+        if (!$('atem-level').value) { setError('atem-level-error', 'ATEM Complexity Levelis required.'); return false; }
         if (!$('tl-start').value) { setError('tl-start-error', 'Start Date is required.'); return false; }
         if (!$('tl-end').value) { setError('tl-end-error', 'End Date is required.'); return false; }
         if (!$('tl-status').value) {
