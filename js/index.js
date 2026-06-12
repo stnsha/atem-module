@@ -70,9 +70,9 @@
                 html += '<tr>' +
                     '<td style="font-size:12px;font-weight:600;">' + l.label + '</td>' +
                     '<td style="font-size:12px;">' + l.cards + '</td>' +
-                    '<td style="font-size:12px;"><span style="color:#0d6efd;">' + l.complete + '</span></td>' +
-                    '<td style="font-size:12px;"><span style="color:#198754;">' + l.excellence + '</span></td>' +
-                    '<td style="font-size:12px;"><span style="color:#dc3545;">' + l.fail + '</span></td>' +
+                    '<td style="font-size:12px;color:#0d6efd;">' + l.complete + '</td>' +
+                    '<td style="font-size:12px;color:#198754;">' + l.excellence + '</td>' +
+                    '<td style="font-size:12px;color:#dc3545;">' + l.fail + '</td>' +
                     '<td style="font-size:12px;">' + forecast + '</td>' +
                     '</tr>';
             }
@@ -103,9 +103,9 @@
                     dHtml += '<tr>' +
                         '<td style="font-size:12px;font-weight:600;">' + dept.dept_name + '</td>' +
                         '<td style="font-size:12px;">' + dCards + '</td>' +
-                        '<td style="font-size:12px;"><span style="color:#0d6efd;">' + (dept.complete || 0) + '</span></td>' +
-                        '<td style="font-size:12px;"><span style="color:#198754;">' + (dept.excellence || 0) + '</span></td>' +
-                        '<td style="font-size:12px;"><span style="color:#dc3545;">' + dFail + '</span></td>' +
+                        '<td style="font-size:12px;color:#0d6efd;">' + (dept.complete || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#198754;">' + (dept.excellence || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#dc3545;">' + dFail + '</td>' +
                         '<td style="font-size:12px;">' + dFailRate + '</td>' +
                         '<td style="font-size:12px;">' + dForecast + '</td>' +
                         '</tr>';
