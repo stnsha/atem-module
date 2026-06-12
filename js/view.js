@@ -122,6 +122,22 @@
         }
     }
 
+    // --------------------------------------------------------------- edit permission
+    function canEdit(r) {
+        if (CFG.isSuperAdmin) { return true; }
+        if (!CFG.staffId) { return false; }
+        if (r.issuer_staff_id == CFG.staffId) { return true; }
+        if (r.arci_staff_ids && r.arci_staff_ids.indexOf(CFG.staffId) !== -1) {
+            if (r.status === 'Active') { return true; }
+            if (r.status === 'Extended') {
+                var today = new Date().toISOString().substring(0, 10);
+                return !r.extended_date_1 || today <= r.extended_date_1.substring(0, 10);
+            }
+            return false;
+        }
+        return false;
+    }
+
     // --------------------------------------------------------------- rendering
     function render() {
         updateSortIndicators();
@@ -181,7 +197,7 @@
                     + '<td>' + statusCell + '</td>'
                     + '<td class="atem-view-actions">'
                     + '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
-                    + (CFG.isSuperAdmin || (CFG.staffId && (r.issuer_staff_id == CFG.staffId || (r.arci_staff_ids && r.arci_staff_ids.indexOf(CFG.staffId) !== -1)))
+                    + (canEdit(r)
                         ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
                         : '')
                     + (CFG.staffId && r.issuer_staff_id == CFG.staffId && r.status === 'Draft'

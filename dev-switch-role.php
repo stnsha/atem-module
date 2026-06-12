@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$allowed_roles = array(0, 1, 2, 3, 4, 5, 6);
+$allowed_roles = array(1, 2, 3, 4, 5, 6);
 $role_input    = isset($_POST['role']) ? $_POST['role'] : null;
 
 if ($role_input === 'clear') {

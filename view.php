@@ -22,6 +22,12 @@ if ($dept_res) {
     }
 }
 
+$user_dept_id = 0;
+$udept_res = mysqli_query($conn, "SELECT staff_dept_id FROM staff WHERE id = " . (int)$staff_id . " LIMIT 1");
+if ($udept_res && $urow = mysqli_fetch_assoc($udept_res)) {
+    $user_dept_id = (int)$urow['staff_dept_id'];
+}
+
 // Fetch the ATEM list + lookups via the JWT proxy (server-side).
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
@@ -43,21 +49,26 @@ if (isset($_SESSION['atem_warning'])) {
 }
 
 // Enrich each row with resolved names + flattened display fields.
-$view_rows = array();
+$view_rows         = array();
+$row_arci_dept_ids = array(); // parallel array used only for grade 2 server-side filtering
 foreach ($rows as $a) {
     $issuer_id = isset($a['issuer_staff_id']) ? (int) $a['issuer_staff_id'] : 0;
     $dept_id   = isset($a['staff_dept_id']) ? (int) $a['staff_dept_id'] : 0;
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 
-    $arci_ids    = array();
-    $user_roles  = array();
-    $accountable = array();
+    $arci_ids      = array();
+    $arci_dept_ids = array();
+    $user_roles    = array();
+    $accountable   = array();
     if (isset($a['arci']) && is_array($a['arci'])) {
         foreach ($a['arci'] as $m) {
             if (!empty($m['staff_id'])) {
                 $m_id = (int) $m['staff_id'];
                 $arci_ids[] = $m_id;
+                if (!empty($m['staff_dept_id'])) {
+                    $arci_dept_ids[] = (int) $m['staff_dept_id'];
+                }
                 if ($m_id === (int) $staff_id && !empty($m['role'])) {
                     $user_roles[] = $m['role'];
                 }
@@ -77,6 +88,7 @@ foreach ($rows as $a) {
         'title'           => isset($a['title']) ? $a['title'] : '',
         'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
         'department_name' => isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : '-',
+        'department_id'   => $dept_id,
         'level_label'     => $level ? $level['level'] : '',
         'system_name'     => $level ? $level['system_name'] : '',
         'status'          => $status ? $status['value'] : '',
@@ -89,7 +101,32 @@ foreach ($rows as $a) {
         'accountable'     => $accountable,
         'is_extended'     => !empty($a['is_extended']),
     );
+    $row_arci_dept_ids[] = $arci_dept_ids;
 }
+
+// Apply server-side visibility filtering based on grade.
+if ((int)$atem_permission === 1) {
+    // Grade 1: own cards only (issuer or any ARCI role).
+    $filtered = array();
+    foreach ($view_rows as $r) {
+        if ($r['issuer_staff_id'] === (int)$staff_id
+                || in_array((int)$staff_id, $r['arci_staff_ids'])) {
+            $filtered[] = $r;
+        }
+    }
+    $view_rows = $filtered;
+} elseif ((int)$atem_permission === 2) {
+    // Grade 2: cards where issuer or any ARCI member belongs to the user's department.
+    $filtered = array();
+    foreach ($view_rows as $idx => $r) {
+        if ($r['department_id'] === $user_dept_id
+                || in_array($user_dept_id, $row_arci_dept_ids[$idx])) {
+            $filtered[] = $r;
+        }
+    }
+    $view_rows = $filtered;
+}
+// Grades 3–6: no server-side row filtering.
 
 $view_config = array(
     'rows'        => $view_rows,
@@ -97,6 +134,7 @@ $view_config = array(
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
     'staffId'     => (int) $staff_id,
     'isSuperAdmin' => (isset($atem) && (int)$atem === 1),
+    'userGrade'   => (int)$atem_permission,
 );
 ?>
 

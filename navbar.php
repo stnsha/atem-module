@@ -25,7 +25,6 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
     }
 
     $_navbar_gradeLabels = array(
-        0 => 'Non-Graded',
         1 => 'Frontline / Operational Staff',
         2 => 'Middle management',
         3 => 'Senior management',

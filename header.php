@@ -43,6 +43,16 @@ if (isset($_SESSION['atem_dev_role_override'])) {
 } elseif (isset($atem) && (int)$atem === 1) {
     $atem_permission = 6;
 }
+
+if ((int)$atem_permission === 0) {
+    if (isset($_SESSION['atem_dev_role_override'])) {
+        unset($_SESSION['atem_dev_role_override']);
+        header('Location: /odb/atem/index.php');
+    } else {
+        header('Location: /odb/index.php');
+    }
+    exit;
+}
 ?>
 
 <body>
