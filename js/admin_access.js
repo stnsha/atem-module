@@ -47,6 +47,18 @@
     }
 
     // -----------------------------------------------------------------------
+    // Reset form — clears search, hides all right-side panels
+    // -----------------------------------------------------------------------
+    function resetForm() {
+        selectedStaffId = null;
+        $('#staff-info').hide();
+        $('#grade-section').hide();
+        $('#struct-section').hide();
+        $('#submit-section').css('display', 'none');
+        $('#staff-search').val(null).trigger('change');
+    }
+
+    // -----------------------------------------------------------------------
     // Search (Select2) and staff info — only wired when grade 2+
     // -----------------------------------------------------------------------
     if (SHOW_EDIT) {
@@ -81,13 +93,7 @@
 
         $('#staff-search').select2(select2Config);
         $('#staff-search').on('select2:select', function (e) { showStaffInfo(e.params.data.staff_data); });
-        $('#staff-search').on('select2:clear', function () {
-            selectedStaffId = null;
-            $('#staff-info').hide();
-            $('#grade-section').hide();
-            $('#struct-section').hide();
-            $('#submit-section').css('display', 'none');
-        });
+        $('#staff-search').on('select2:clear', function () { resetForm(); });
     }
 
     function showStaffInfo(staff) {
@@ -143,6 +149,8 @@
             struct_name:     staffStructNm
         });
     });
+
+    $('#cancel-btn').on('click', function () { resetForm(); });
 
     // -----------------------------------------------------------------------
     // Active staff table

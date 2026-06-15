@@ -139,6 +139,8 @@ $table_cols      = $show_edit ? 5 : 4;
 }
 </style>
 
+<p class="atem-card-hint mb-3">Manage staff grades and evaluation structures</p>
+
 <div class="row g-4">
 
     <!-- Left: staff table -->
@@ -216,7 +218,8 @@ $table_cols      = $show_edit ? 5 : 4;
                 <p id="struct-none-msg" class="text-muted mb-0" style="display:none; font-size:12px; margin-top:4px;">No evaluation structures defined.</p>
             </div>
 
-            <div class="d-flex justify-content-end" id="submit-section" style="display:none !important;">
+            <div class="d-flex justify-content-end gap-2" id="submit-section" style="display:none !important;">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="cancel-btn">Cancel</button>
                 <button type="button" class="btn btn-primary btn-sm" id="update-btn">Update</button>
             </div>
         </div>

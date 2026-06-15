@@ -1115,7 +1115,9 @@
                 extEl.checked = true;
                 syncExtensionFields();
             }
-            extEl.removeAttribute('disabled');
+            if (!REC.extended_date_1) {
+                extEl.removeAttribute('disabled');
+            }
         } else if (selVal === 'Failed' && extEl.checked) {
             // Failed on an extended ATEM — preserve the extended state, lock the checkbox.
             extEl.setAttribute('disabled', 'disabled');

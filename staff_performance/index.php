@@ -67,6 +67,10 @@ for ($y = 2026; $y <= $init_year; $y++) {
 #atem-detail-tbody td:nth-child(5) {
     white-space: nowrap;
 }
+
+#recalc-progress-wrap span {
+    font-size: 12px;
+}
 </style>
 
 <!-- Filter Card -->
