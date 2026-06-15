@@ -308,6 +308,10 @@
                 a = base * incentivisedA;
                 r = incentivisedR > 0 ? base * 0.5 : 0;
                 rDisplay = r;
+            } else if (code === 'rule 4') {
+                // Each incentivised A gets 50%; incentivised R members share a 50% pool
+                a = base * 0.5 * incentivisedA;
+                r = incentivisedR > 0 ? base * 0.5 : 0;
             }
         }
         var total = a + r;
@@ -320,7 +324,7 @@
         if (rLabel) {
             if (code === 'rule 1') {
                 rLabel.textContent = 'A · Accountable (50% each)';
-            } else if (code === 'rule 3' && incentivisedR > 1) {
+            } else if ((code === 'rule 3' || code === 'rule 4') && incentivisedR > 1) {
                 rLabel.textContent = 'R · Responsible ×' + incentivisedR + ' (pooled 50%)';
             } else {
                 rLabel.textContent = 'R · Responsible';
@@ -366,7 +370,9 @@
             for (var m = 0; m < members.length; m++) {
                 var mem = members[m];
                 var incentivisedHtml = '';
-                if (role === 'A' || role === 'R') {
+                var _arciRule = selectedRule();
+                var _arciRuleCode = _arciRule ? _arciRule.code.toLowerCase() : '';
+                if (role === 'A' || (role === 'R' && (_arciRuleCode === 'rule 3' || _arciRuleCode === 'rule 4'))) {
                     incentivisedHtml = '<label class="atem-arci-incentivised">'
                         + '<input type="checkbox" class="atem-arci-incentivised-chk"'
                         + ' data-staff="' + parseInt(mem.staff_id, 10) + '" data-role="' + role + '"'
@@ -718,8 +724,8 @@
                 setError('arci-error', 'Please mark at least one Accountable (A) member as incentivised.');
                 return false;
             }
-            if (ruleCode === 'rule 3' && countIncentivised('R') === 0) {
-                setError('arci-error', 'Rule 3 requires at least one Responsible (R) member marked as incentivised.');
+            if ((ruleCode === 'rule 3' || ruleCode === 'rule 4') && countIncentivised('R') === 0) {
+                setError('arci-error', 'This rule requires at least one Responsible (R) member marked as incentivised.');
                 return false;
             }
         }
@@ -842,7 +848,15 @@
     function bind() {
         $('atem-title').addEventListener('input', markChanged);
         $('atem-level').addEventListener('change', function () { recalcIncentive(); markChanged(); });
-        $('atem-rule').addEventListener('change', function () { recalcIncentive(); markChanged(); });
+        $('atem-rule').addEventListener('change', function () {
+            var _rule = selectedRule();
+            var _code = _rule ? _rule.code.toLowerCase() : '';
+            if (_code !== 'rule 3' && _code !== 'rule 4') {
+                (arciState['R'] || []).forEach(function (m) { m.is_incentivised = false; });
+            }
+            renderArci();
+            markChanged();
+        });
         $('tl-start').addEventListener('change', markChanged);
         $('tl-end').addEventListener('change', markChanged);
 

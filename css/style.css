@@ -750,11 +750,11 @@ button {
   font-size: 13px;
 }
 
-/* Pager (right-aligned) */
+/* Pager */
 .atem-pager {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
   margin-top: 12px;
@@ -796,6 +796,23 @@ button {
 .atem-pager-gap {
   padding: 0 4px;
   color: #adb5bd;
+}
+
+.atem-pager-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #495057;
+}
+
+.atem-perpage-select {
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 13px;
+  padding: 3px 8px;
+  background: #fff;
+  cursor: pointer;
 }
 
 /* ---------------------------------------------------------------

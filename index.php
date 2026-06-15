@@ -2,6 +2,12 @@
 $page_title = 'Dashboard Overview';
 include('header.php');
 
+$_dash_cur_year = max(2026, (int)date('Y'));
+$dash_year_options = array();
+for ($y = 2026; $y <= $_dash_cur_year; $y++) {
+    $dash_year_options[] = $y;
+}
+
 $dash_dept_options = array();
 $_dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department ORDER BY depart_name");
 if ($_dept_res) {
@@ -30,8 +36,9 @@ window.ATEM_DASH = <?php echo json_encode(array(
             <label class="form-label">Year</label>
             <select id="dash-filter-year" class="form-select form-select-sm">
                 <option value="">All Years</option>
-                <option value="2026" selected>2026</option>
-                <option value="2025">2025</option>
+                <?php foreach ($dash_year_options as $y): ?>
+                <option value="<?php echo $y; ?>"<?php echo ($y === 2026) ? ' selected' : ''; ?>><?php echo $y; ?></option>
+                <?php endforeach; ?>
             </select>
         </div>
         <div class="col-md-2 col-sm-6">
@@ -98,7 +105,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
         <div class="atem-card h-100">
             <div class="atem-card-title mb-1">Complete + Excellence</div>
             <div class="atem-stat-value atem-stat-value--green" id="dash-closed">---</div>
-            <div class="atem-stat-label"><span id="dash-excellence-rate">--%</span> excellence rate</div>
+            <div class="atem-stat-label">eligible for completion count</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">

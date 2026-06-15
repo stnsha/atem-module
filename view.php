@@ -112,8 +112,8 @@ if ((int)$atem_permission === 1) {
         }
     }
     $view_rows = $filtered;
-} elseif ((int)$atem_permission === 2) {
-    // Grade 2: cards where issuer or any ARCI member belongs to the user's department.
+} elseif ((int)$atem_permission >= 2 && (int)$atem_permission <= 3) {
+    // Grades 2–3: cards where issuer or any ARCI member belongs to the user's department.
     $filtered = array();
     foreach ($view_rows as $idx => $r) {
         if ($r['department_id'] === $user_dept_id
@@ -123,10 +123,10 @@ if ((int)$atem_permission === 1) {
     }
     $view_rows = $filtered;
 }
-// Grades 3–6: no server-side row filtering.
+// Grades 4–6: no server-side row filtering.
 
 $dept_list = array();
-if ((int)$atem_permission <= 2) {
+if ((int)$atem_permission <= 3) {
     if ($user_dept_id && isset($dept_names[$user_dept_id])) {
         $dept_list[] = $dept_names[$user_dept_id];
     }
@@ -135,6 +135,12 @@ if ((int)$atem_permission <= 2) {
         $dept_list[] = $dept_name_val;
     }
     sort($dept_list);
+}
+
+$_view_cur_year = max(2026, (int)date('Y'));
+$view_year_opts = array();
+for ($y = 2026; $y <= $_view_cur_year; $y++) {
+    $view_year_opts[] = $y;
 }
 
 $view_config = array(
@@ -165,7 +171,42 @@ $view_config = array(
 <!-- Filter bar -->
 <div class="atem-card atem-filter mb-3">
     <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
-    <div class="row g-2 mt-1 align-items-end">
+    <div class="row g-2 mt-1">
+        <div class="col-md-3">
+            <label class="form-label">Year</label>
+            <select class="form-select form-select-sm" id="vf-year">
+                <option value="">All Year</option>
+                <?php foreach ($view_year_opts as $y): ?>
+                <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Month</label>
+            <select class="form-select form-select-sm" id="vf-month">
+                <option value="0">All Month</option>
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Start Date</label>
+            <input type="date" class="form-control form-control-sm" id="vf-from">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">End Date</label>
+            <input type="date" class="form-control form-control-sm" id="vf-to">
+        </div>
         <div class="col-md-3">
             <label class="form-label">Level</label>
             <select class="form-select form-select-sm" id="vf-level">
@@ -190,22 +231,13 @@ $view_config = array(
                 <option value="">All roles</option>
             </select>
         </div>
-        <div class="col-md-3">
-            <label class="form-label">Start Date</label>
-            <input type="date" class="form-control form-control-sm" id="vf-from">
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">End Date</label>
-            <input type="date" class="form-control form-control-sm" id="vf-to">
-        </div>
-        <div class="col-md-4">
+    </div>
+    <div class="d-flex align-items-end gap-2 mt-3">
+        <div class="flex-grow-1">
             <label class="form-label">Search title</label>
             <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type to search...">
         </div>
-        <div class="col-md-2 d-flex align-items-end">
-            <button type="button" class="btn btn-outline-secondary btn-sm atem-reset-btn w-100" id="vf-reset">Reset
-                Filters</button>
-        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="vf-reset">Reset Filters</button>
     </div>
 </div>
 

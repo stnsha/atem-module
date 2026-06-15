@@ -50,16 +50,14 @@
         var closed = (s.complete || 0) + (s.excellence || 0);
         var failed = s.failed || 0;
         var failRate = total > 0 ? (failed / total * 100).toFixed(1) + '% failure rate' : '0.0% failure rate';
-        var exRate   = closed > 0 ? ((s.excellence || 0) / closed * 100).toFixed(1) + '%' : '0.0%';
 
-        setText('dash-total',           formatNumber(total));
-        setText('dash-active',          formatNumber(active));
-        setText('dash-closed',          formatNumber(closed));
-        setText('dash-failed',          formatNumber(failed));
-        setText('dash-fail-rate',       failRate);
-        setText('dash-incentive',       formatRM(data.incentive_total));
-        setText('dash-excellence-rate', exRate);
-        setText('dash-overdue',         formatNumber(data.overdue_count || 0));
+        setText('dash-total',    formatNumber(total));
+        setText('dash-active',   formatNumber(active));
+        setText('dash-closed',   formatNumber(closed));
+        setText('dash-failed',   formatNumber(failed));
+        setText('dash-fail-rate',  failRate);
+        setText('dash-incentive',  formatRM(data.incentive_total));
+        setText('dash-overdue',    formatNumber(data.overdue_count || 0));
 
         var tbody = document.getElementById('dash-level-body');
         if (tbody && data.by_level) {
@@ -127,7 +125,6 @@
         setText('dash-failed',          'err');
         setText('dash-incentive',       'err');
         setText('dash-overdue',         'err');
-        setText('dash-excellence-rate', '--%');
         var tbody = document.getElementById('dash-level-body');
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
@@ -200,7 +197,6 @@
         setText('dash-failed',          '---');
         setText('dash-incentive',       '---');
         setText('dash-overdue',         '---');
-        setText('dash-excellence-rate', '--%');
 
         var deptTbody = document.getElementById('dash-dept-body');
         if (deptTbody) { deptTbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td></tr>'; }

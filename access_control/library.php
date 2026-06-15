@@ -1,6 +1,16 @@
 <?php
-header('Location: /odb/atem/access_control/library.php');
-exit;
+ob_start();
+
+$page_title = 'Grade & Structure Library';
+include('../header.php');
+
+if ($atem_permission < 4) {
+    ob_end_clean();
+    header('Location: /odb/atem/index.php');
+    exit;
+}
+
+ob_end_flush();
 ?>
 
 <style>
@@ -9,13 +19,8 @@ exit;
         vertical-align: middle;
         font-size: 13px;
     }
-    .lib-label-text {
-        display: inline-block;
-    }
-    .lib-label-input {
-        display: none;
-        width: 100%;
-    }
+    .lib-label-text { display: inline-block; }
+    .lib-label-input { display: none; width: 100%; }
     .lib-row.editing .lib-label-text  { display: none; }
     .lib-row.editing .lib-label-input { display: inline-block; }
     .lib-row.editing .btn-edit        { display: none; }
@@ -92,7 +97,7 @@ exit;
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-    var BACKEND_URL = 'atem/admin/backend.php';
+    var BACKEND_URL = 'atem/access_control/backend.php';
 
     function buildRow(type, item) {
         return '<tr class="lib-row" data-type="' + type + '" data-id="' + item.id + '">' +
@@ -143,11 +148,11 @@ exit;
     });
 
     $(document).on('click', '.btn-save', function() {
-        var $row   = $(this).closest('.lib-row');
-        var type   = $row.data('type');
-        var id     = $row.data('id');
-        var label  = $row.find('.lib-label-input').val().trim();
-        var $btn   = $(this);
+        var $row  = $(this).closest('.lib-row');
+        var type  = $row.data('type');
+        var id    = $row.data('id');
+        var label = $row.find('.lib-label-input').val().trim();
+        var $btn  = $(this);
 
         if (label === '') return;
 
@@ -167,18 +172,14 @@ exit;
                     showAlert(type, response.message || 'Update failed.', false);
                 }
             },
-            error: function() {
-                showAlert(type, 'Request failed. Please try again.', false);
-            },
-            complete: function() {
-                $btn.prop('disabled', false).text('Save');
-            }
+            error: function() { showAlert(type, 'Request failed. Please try again.', false); },
+            complete: function() { $btn.prop('disabled', false).text('Save'); }
         });
     });
 
     $(document).on('click', '.btn-add-new', function() {
-        var type   = $(this).data('type');
-        var tbody  = '#' + $(this).data('tbody');
+        var type  = $(this).data('type');
+        var tbody = '#' + $(this).data('tbody');
         if ($(tbody).find('.lib-add-row').length) return;
 
         var row = '<tr class="lib-add-row">' +
@@ -198,11 +199,11 @@ exit;
     });
 
     $(document).on('click', '.btn-add-save', function() {
-        var $row  = $(this).closest('.lib-add-row');
+        var $row   = $(this).closest('.lib-add-row');
         var $input = $row.find('.lib-new-label');
-        var type  = $input.data('type');
-        var label = $input.val().trim();
-        var $btn  = $(this);
+        var type   = $input.data('type');
+        var label  = $input.val().trim();
+        var $btn   = $(this);
 
         if (label === '') { $input.focus(); return; }
 
@@ -239,9 +240,7 @@ exit;
         $('#' + prefix + '-alert-msg').text(msg);
     }
 
-    function dismissAlert(type) {
-        $('#' + type + '-alert').css('display', 'none');
-    }
+    function dismissAlert(type) { $('#' + type + '-alert').css('display', 'none'); }
     window.dismissAlert = dismissAlert;
 
     loadLibrary();

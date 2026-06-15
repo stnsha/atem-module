@@ -1,6 +1,16 @@
 <?php
-header('Location: /odb/atem/access_control/index.php');
-exit;
+ob_start();
+
+$page_title = 'Access Control';
+$extra_css  = '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">';
+
+include('../header.php');
+
+if ($atem_permission < 1) {
+    ob_end_clean();
+    header('Location: /odb/atem/index.php');
+    exit;
+}
 
 ob_end_flush();
 
@@ -23,6 +33,10 @@ $grade_badges = array(
     5 => 'bg-danger',
     6 => 'bg-dark'
 );
+
+$show_edit       = ($atem_permission > 1);
+$requester_dept  = isset($department) ? (int)$department : 0;
+$table_cols      = $show_edit ? 5 : 4;
 ?>
 
 <style>
@@ -61,6 +75,13 @@ $grade_badges = array(
     border: 1px solid #dee2e6;
     border-radius: 4px;
     padding: 4px 8px;
+}
+
+.select2-results__option,
+.select2-results__message {
+    text-align: left !important;
+    font-size: 12px !important;
+    font-family: 'Inter', sans-serif;
 }
 
 .staff-info-box {
@@ -120,25 +141,27 @@ $grade_badges = array(
 
 <div class="row g-4">
 
-    <!-- Left:  -->
-    <div class="col-md-7">
+    <!-- Left: staff table -->
+    <div class="<?php echo $show_edit ? 'col-md-7' : 'col-md-12'; ?>">
         <div class="bento-card">
             <p class="mb-3 text-muted"
-                style="font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600;">Staff with
-                Active Grades</p>
+                style="font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600;">
+                <?php echo $show_edit ? '' : 'Your Grade &amp; Evaluation Structure'; ?>
+            </p>
             <div class="table-responsive">
-                <table class="table table-hover mb-0" style="font-size: 12px;">
+                <table class="table table-hover align-middle atem-view-tbl mb-0">
                     <thead>
                         <tr>
                             <th>Staff Name</th>
                             <th>Department</th>
                             <th>Grade</th>
-                            <th></th>
+                            <th>Eval Structure</th>
+                            <?php if ($show_edit): ?><th></th><?php endif; ?>
                         </tr>
                     </thead>
                     <tbody id="active-staff-tbody">
                         <tr>
-                            <td colspan="4" class="text-center text-muted py-3">Loading...</td>
+                            <td colspan="<?php echo $table_cols; ?>" class="text-center text-muted py-3">Loading...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -147,12 +170,13 @@ $grade_badges = array(
         </div>
     </div>
 
+    <?php if ($show_edit): ?>
     <!-- Right: update form -->
-    <div class="col-md-5">
+    <div class="col-md-5" id="update-form-col">
         <div class="bento-card">
             <p class="mb-3 text-muted"
                 style="font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600;">Update
-                Grade</p>
+                Staff</p>
 
             <div id="form-alert" class="alert alert-dismissible fade show mb-3" role="alert"
                 style="display:none !important; font-size: 12px;">
@@ -169,7 +193,8 @@ $grade_badges = array(
                 <p><strong>Name:</strong> <span id="info-name"></span></p>
                 <p><strong>Department:</strong> <span id="info-dept"></span></p>
                 <p><strong>Status:</strong> <span id="info-status"></span></p>
-                <p class="mb-0"><strong>Current Grade:</strong> <span id="info-grade"></span></p>
+                <p><strong>Current Grade:</strong> <span id="info-grade"></span></p>
+                <p class="mb-0"><strong>Evaluation Structure:</strong> <span id="info-struct"></span></p>
             </div>
 
             <div class="mb-3 grade-list" id="grade-section" style="display:none;">
@@ -185,20 +210,30 @@ $grade_badges = array(
                 <?php endforeach; ?>
             </div>
 
+            <div class="mb-3 grade-list" id="struct-section" style="display:none;">
+                <label class="form-label" style="font-size: 12px;">Evaluation Structure</label>
+                <div id="struct-radio-list"></div>
+                <p id="struct-none-msg" class="text-muted mb-0" style="display:none; font-size:12px; margin-top:4px;">No evaluation structures defined.</p>
+            </div>
+
             <div class="d-flex justify-content-end" id="submit-section" style="display:none !important;">
-                <button type="button" class="btn btn-primary btn-sm" id="update-btn">Update Grade</button>
+                <button type="button" class="btn btn-primary btn-sm" id="update-btn">Update</button>
             </div>
         </div>
     </div>
+    <?php endif; ?>
 
 </div>
 
 </div><!-- /.atem-container -->
 
 <script>
-var GRADE_LABELS = <?php echo json_encode($grade_labels); ?>;
-var GRADE_BADGES = <?php echo json_encode($grade_badges); ?>;
-var BACKEND_URL = 'atem/admin/backend.php';
+var GRADE_LABELS    = <?php echo json_encode($grade_labels); ?>;
+var GRADE_BADGES    = <?php echo json_encode($grade_badges); ?>;
+var REQUESTER_GRADE = <?php echo (int)$atem_permission; ?>;
+var SHOW_EDIT       = <?php echo $show_edit ? 'true' : 'false'; ?>;
+var TABLE_COLS      = <?php echo $table_cols; ?>;
+var BACKEND_URL     = 'atem/access_control/backend.php';
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>

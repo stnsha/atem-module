@@ -70,10 +70,10 @@ $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 
 // Determine active class for each nav item
 $dashboard_active = ($current_page == 'index.php' && $current_dir == 'atem')  ? 'active' : '';
-$view_active      = ($current_page == 'view.php' || $current_page == 'edit.php' || $current_page == 'create.php') ? 'active' : '';
-$admin_active       = ($current_dir == 'admin' && $current_page == 'index.php') ? 'active' : '';
-$library_active     = ($current_dir == 'admin' && $current_page == 'library.php') ? 'active' : '';
-$performance_active = ($current_page == 'staff_performance.php') ? 'active' : '';
+$view_active      = ($current_dir == 'atem' && ($current_page == 'view.php' || $current_page == 'edit.php' || $current_page == 'create.php')) ? 'active' : '';
+$admin_active       = ($current_dir == 'access_control' && $current_page == 'index.php')   ? 'active' : '';
+$library_active     = ($current_dir == 'access_control' && $current_page == 'library.php') ? 'active' : '';
+$performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
 
 ?>
 <nav class="atem-nav navbar navbar-expand-lg navbar-light mb-3">
@@ -90,18 +90,20 @@ $performance_active = ($current_page == 'staff_performance.php') ? 'active' : ''
                 <li class="nav-item">
                     <a class="nav-link <?php echo $view_active; ?>" href="atem/view.php">ATEM</a>
                 </li>
+                <?php if ($atem_role >= 4): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $performance_active; ?>"
-                        href="atem/staff_performance.php">Performance</a>
+                        href="atem/staff_performance/index.php">Performance</a>
                 </li>
-                <?php if ($atem_role >= 3): ?>
+                <?php endif; ?>
+                <?php if ($atem_role >= 1): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $admin_active; ?>" href="atem/admin/index.php">Admin</a>
+                    <a class="nav-link <?php echo $admin_active; ?>" href="atem/access_control/index.php">Access Control</a>
                 </li>
                 <?php endif; ?>
                 <?php if ($atem_role === 6): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $library_active; ?>" href="atem/admin/library.php">Library</a>
+                    <a class="nav-link <?php echo $library_active; ?>" href="atem/access_control/library.php">Library</a>
                 </li>
                 <?php endif; ?>
             </ul>

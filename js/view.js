@@ -6,7 +6,7 @@
 
     var CFG = window.ATEM_VIEW || { rows: [], levels: [], statuses: [] };
     var rows = CFG.rows || [];
-    var PER_PAGE = 15;
+    var PER_PAGE = 30;
     var page = 1;
     var sortCol = 'end_date';
     var sortDir = 1; // earliest end date first
@@ -76,6 +76,8 @@
 
     // --------------------------------------------------------------- filtering
     function applyFilters() {
+        var year  = $('vf-year')  ? parseInt($('vf-year').value,  10) || 0 : 0;
+        var month = $('vf-month') ? parseInt($('vf-month').value, 10) || 0 : 0;
         var level = $('vf-level').value;
         var dept = $('vf-dept').value;
         var status = $('vf-status').value;
@@ -85,6 +87,8 @@
         var term = $('vf-search').value.toLowerCase().trim();
 
         return rows.filter(function (r) {
+            if (year  && (!r.start_date || parseInt(r.start_date.substring(0, 4), 10) !== year))  { return false; }
+            if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
             if (level && r.level_label !== level) { return false; }
             if (dept && r.department_name !== dept) { return false; }
             if (status && r.status !== status) { return false; }
@@ -214,16 +218,26 @@
     function renderPager(total, pages, startIdx, shown) {
         var pager = $('atem-pager');
         if (total === 0) { pager.innerHTML = ''; return; }
-        var info = '<span class="atem-pager-info">Showing ' + (startIdx + 1) + '-' + (startIdx + shown) + ' of ' + total + '</span>';
-        var btns = '<button type="button" class="atem-pager-btn" data-page="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + '>Prev</button>';
+
+        var opts = [10, 30, 50, 100];
+        var selHtml = '<select class="atem-perpage-select">';
+        for (var oi = 0; oi < opts.length; oi++) {
+            selHtml += '<option value="' + opts[oi] + '"' + (PER_PAGE === opts[oi] ? ' selected' : '') + '>' + opts[oi] + '</option>';
+        }
+        selHtml += '</select>';
+        var leftHtml = '<div class="atem-pager-left">Show ' + selHtml + ' entries</div>';
+
+        var info = '<span class="atem-pager-info">Showing ' + (startIdx + 1) + ' to ' + (startIdx + shown) + ' of ' + total + ' entries</span>';
+        var btns = '<button type="button" class="atem-pager-btn" data-page="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + '>Previous</button>';
 
         var win = 2, from = Math.max(1, page - win), to = Math.min(pages, page + win);
         if (from > 1) { btns += pageBtn(1) + (from > 2 ? '<span class="atem-pager-gap">...</span>' : ''); }
         for (var p = from; p <= to; p++) { btns += pageBtn(p); }
         if (to < pages) { btns += (to < pages - 1 ? '<span class="atem-pager-gap">...</span>' : '') + pageBtn(pages); }
-
         btns += '<button type="button" class="atem-pager-btn" data-page="' + (page + 1) + '"' + (page >= pages ? ' disabled' : '') + '>Next</button>';
-        pager.innerHTML = info + '<div class="atem-pager-bar">' + btns + '</div>';
+
+        var rightHtml = '<div class="d-flex align-items-center gap-2">' + info + '<div class="atem-pager-bar">' + btns + '</div></div>';
+        pager.innerHTML = leftHtml + rightHtml;
     }
 
     function pageBtn(p) {
@@ -232,12 +246,14 @@
 
     // --------------------------------------------------------------- wiring
     function bind() {
-        ['vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
-            $(id).addEventListener('change', function () { page = 1; render(); });
+        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
+            var el = $(id);
+            if (el) { el.addEventListener('change', function () { page = 1; render(); }); }
         });
         $('vf-search').addEventListener('keyup', function () { page = 1; render(); });
         $('vf-reset').addEventListener('click', function () {
-            ['vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { $(id).value = ''; });
+            ['vf-year', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
             page = 1; render();
         });
 
@@ -277,6 +293,14 @@
             if (!btn || btn.disabled) { return; }
             var p = parseInt(btn.getAttribute('data-page'), 10);
             if (p >= 1) { page = p; render(); }
+        });
+
+        $('atem-pager').addEventListener('change', function (e) {
+            if (e.target.classList.contains('atem-perpage-select')) {
+                PER_PAGE = parseInt(e.target.value, 10);
+                page = 1;
+                render();
+            }
         });
     }
 

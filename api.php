@@ -336,7 +336,7 @@ function getAuthToken($staff_id)
  * @param int $staff_id Staff ID for authentication
  * @return array API response
  */
-function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id = null)
+function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id = null, $curlTimeout = 30)
 {
     logJWTOperation(
         'getApiDataWithJWT',
@@ -384,7 +384,7 @@ function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id =
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $curlTimeout);
 
     if ($method === 'GET') {
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -600,6 +600,24 @@ function getAtemList($staff_id)
             'data' => array()
         );
     }
+}
+
+/**
+ * Get ATEM list for a specific staff member (admin use).
+ * Falls back to PHP-side filtering if backend ignores the staff_id param.
+ * @param int $target_staff_id The staff whose ATEMs to fetch
+ * @param int $staff_id Current user's staff ID for JWT auth
+ * @return array Result with data array
+ */
+function getStaffAtemList($target_staff_id, $staff_id)
+{
+    $result = getApiDataWithJWT('atem?staff_id=' . (int)$target_staff_id, null, 'GET', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode == 200) {
+        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : array());
+    }
+    return array('success' => false, 'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to retrieve ATEM list', 'data' => array());
 }
 
 /**
@@ -1661,6 +1679,32 @@ if (!defined('API_JWT_INCLUDED')) {
                     $response = array('success' => true);
                     break;
 
+                case 'update-staff-field':
+                    if ((int)$atem_permission < 4) {
+                        $response = array('success' => false, 'message' => 'Insufficient permission');
+                        break;
+                    }
+                    $usf_sid   = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
+                    $usf_field = isset($jsonData['field'])    ? $jsonData['field']          : '';
+                    $usf_value = isset($jsonData['value'])    ? $jsonData['value']          : null;
+                    if (!$usf_sid || !in_array($usf_field, array('grade', 'struct'))) {
+                        $response = array('success' => false, 'message' => 'Invalid parameters');
+                        break;
+                    }
+                    $usf_col = ($usf_field === 'grade') ? 'grade' : 'struct';
+                    if ($usf_value === null || $usf_value === '') {
+                        $usf_sql = "UPDATE staff SET `$usf_col` = NULL WHERE id = $usf_sid AND recycle != 1";
+                    } else {
+                        $usf_int = (int)$usf_value;
+                        $usf_sql = "UPDATE staff SET `$usf_col` = $usf_int WHERE id = $usf_sid AND recycle != 1";
+                    }
+                    if (mysqli_query($conn, $usf_sql) && mysqli_affected_rows($conn) >= 0) {
+                        $response = array('success' => true);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Database update failed');
+                    }
+                    break;
+
                 case 'bonus-update-remark':
                     if (isset($jsonData['id'])) {
                         $remark = isset($jsonData['remark']) ? $jsonData['remark'] : null;
@@ -1670,13 +1714,25 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     break;
 
+                case 'bonus-calculate-status':
+                    $prog = getApiDataWithJWT('bonus-eligibility/progress', null, 'GET', $staff_id);
+                    $prog_body = json_decode($prog['response'], true);
+                    $response = array(
+                        'success' => true,
+                        'current' => isset($prog_body['current']) ? (int)$prog_body['current'] : 0,
+                        'total'   => isset($prog_body['total'])   ? (int)$prog_body['total']   : 0,
+                        'stage'   => isset($prog_body['stage'])   ? $prog_body['stage']         : '',
+                    );
+                    break;
+
                 case 'bonus-trigger-calculate':
                     if (isset($jsonData['month']) && isset($jsonData['year'])) {
                         $result = getApiDataWithJWT(
                             'bonus-eligibility/calculate',
                             array('month' => (int)$jsonData['month'], 'year' => (int)$jsonData['year']),
                             'POST',
-                            $staff_id
+                            $staff_id,
+                            300
                         );
                         if ($result['success']) {
                             $body = json_decode($result['response'], true);
@@ -1687,6 +1743,196 @@ if (!defined('API_JWT_INCLUDED')) {
                     } else {
                         $response = array('success' => false, 'message' => 'Missing month or year');
                     }
+                    break;
+
+                case 'get-performance-list':
+                    $pl_perm = 0;
+                    if (isset($atem_permission)) {
+                        $pl_perm = (int)$atem_permission;
+                    } elseif ($staff_id) {
+                        $_pp_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        if ($_pp_res && ($_pp_row = mysqli_fetch_assoc($_pp_res))) {
+                            $pl_perm = ((int)$_pp_row['atem'] === 1) ? 6 : (int)$_pp_row['grade'];
+                        }
+                    }
+                    if ($pl_perm < 4) {
+                        $response = array('success' => false, 'message' => 'Insufficient permissions');
+                        break;
+                    }
+
+                    $pl_month   = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
+                    $pl_year    = isset($jsonData['year'])    ? (int)$jsonData['year']    : (int)date('Y');
+                    $pl_quarter = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
+                    $pl_dept    = isset($jsonData['dept'])    ? (int)$jsonData['dept']    : 0;
+                    $pl_grade   = isset($jsonData['grade'])   ? (int)$jsonData['grade']   : 0;
+                    $pl_struct  = isset($jsonData['struct'])  ? (int)$jsonData['struct']  : 0;
+
+                    if ($pl_quarter < 1 || $pl_quarter > 4) { $pl_quarter = 0; }
+                    if ($pl_quarter > 0) { $pl_month = 0; }
+                    if ($pl_month < 1 || $pl_month > 12) { $pl_month = 0; }
+                    if ($pl_month === 0 && $pl_quarter === 0) { $pl_month = (int)date('n'); }
+
+                    $pl_qm_map  = array(1=>array(1,2,3), 2=>array(4,5,6), 3=>array(7,8,9), 4=>array(10,11,12));
+                    $pl_records = array();
+                    $pl_ok      = true;
+
+                    if ($pl_quarter > 0) {
+                        foreach ($pl_qm_map[$pl_quarter] as $pl_qm) {
+                            $pl_res = getBonusEligibilityList($pl_qm, $pl_year, null, $staff_id);
+                            if (empty($pl_res['success'])) { $pl_ok = false; break; }
+                            if (!empty($pl_res['data'])) {
+                                foreach ($pl_res['data'] as $pl_r) { $pl_records[] = $pl_r; }
+                            }
+                        }
+                    } else {
+                        $pl_res  = getBonusEligibilityList($pl_month, $pl_year, null, $staff_id);
+                        $pl_ok   = !empty($pl_res['success']);
+                        $pl_records = ($pl_ok && isset($pl_res['data'])) ? $pl_res['data'] : array();
+                    }
+
+                    if (!$pl_ok) {
+                        $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
+                        break;
+                    }
+
+                    $pl_staff_names   = array();
+                    $pl_dept_names    = array();
+                    $pl_grade_labels  = array();
+                    $pl_struct_labels = array();
+                    $pl_caller_dept   = isset($department) ? (int)$department : 0;
+
+                    $pl_sr = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1");
+                    if ($pl_sr) { while ($pl_r = mysqli_fetch_assoc($pl_sr)) { $pl_staff_names[(int)$pl_r['id']] = $pl_r['nama_staff']; } }
+                    $pl_dr = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
+                    if ($pl_dr) { while ($pl_r = mysqli_fetch_assoc($pl_dr)) { $pl_dept_names[(int)$pl_r['id']] = $pl_r['depart_name']; } }
+                    $pl_gr = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade ORDER BY id ASC");
+                    if ($pl_gr) { while ($pl_r = mysqli_fetch_assoc($pl_gr)) { $pl_grade_labels[(int)$pl_r['id']] = $pl_r['grade_name']; } }
+                    $pl_str = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
+                    if ($pl_str) { while ($pl_r = mysqli_fetch_assoc($pl_str)) { $pl_struct_labels[(int)$pl_r['id']] = $pl_r['struct_name']; } }
+
+                    $pl_out = array();
+                    foreach ($pl_records as $pl_rec) {
+                        $pl_rec_dept   = isset($pl_rec['staff_dept_id']) ? (int)$pl_rec['staff_dept_id'] : 0;
+                        $pl_rec_grade  = isset($pl_rec['staff_grade'])   ? (int)$pl_rec['staff_grade']   : 0;
+                        $pl_rec_struct = isset($pl_rec['staff_struct'])  ? (int)$pl_rec['staff_struct']  : 0;
+
+                        if ($pl_perm < 3 && $pl_rec_dept !== $pl_caller_dept) { continue; }
+                        if ($pl_dept   > 0 && $pl_rec_dept   !== $pl_dept)   { continue; }
+                        if ($pl_grade  > 0 && $pl_rec_grade  !== $pl_grade)  { continue; }
+                        if ($pl_struct > 0 && $pl_rec_struct !== $pl_struct) { continue; }
+
+                        $pl_sid       = isset($pl_rec['staff_id']) ? (int)$pl_rec['staff_id'] : 0;
+                        $pl_grade_id  = isset($pl_rec['staff_grade'])  ? (int)$pl_rec['staff_grade']  : null;
+                        $pl_struct_id = isset($pl_rec['staff_struct']) ? (int)$pl_rec['staff_struct'] : null;
+
+                        $pl_out[] = array(
+                            'id'           => isset($pl_rec['id'])             ? (int)$pl_rec['id'] : 0,
+                            'staff_id'     => $pl_sid,
+                            'staff_name'   => isset($pl_staff_names[$pl_sid]) ? $pl_staff_names[$pl_sid] : ('Staff #' . $pl_sid),
+                            'dept_id'      => $pl_rec_dept,
+                            'dept_name'    => ($pl_rec_dept && isset($pl_dept_names[$pl_rec_dept])) ? $pl_dept_names[$pl_rec_dept] : '-',
+                            'grade_id'     => $pl_grade_id,
+                            'grade_label'  => ($pl_grade_id !== null && isset($pl_grade_labels[$pl_grade_id])) ? $pl_grade_labels[$pl_grade_id] : '-',
+                            'struct_id'    => $pl_struct_id,
+                            'struct_label' => ($pl_struct_id !== null && isset($pl_struct_labels[$pl_struct_id])) ? $pl_struct_labels[$pl_struct_id] : '-',
+                            'total_atem'      => isset($pl_rec['total_atem'])      ? (int)$pl_rec['total_atem']        : 0,
+                            'complete_count'  => isset($pl_rec['complete_count'])  ? (int)$pl_rec['complete_count']    : 0,
+                            'active_count'    => isset($pl_rec['active_count'])    ? (int)$pl_rec['active_count']      : 0,
+                            'extend_count'    => isset($pl_rec['extend_count'])    ? (int)$pl_rec['extend_count']      : 0,
+                            'failed_count'    => isset($pl_rec['failed_count'])    ? (int)$pl_rec['failed_count']      : 0,
+                            'total_incentive' => isset($pl_rec['total_incentive']) ? (float)$pl_rec['total_incentive'] : 0.0,
+                        );
+                    }
+                    $response = array('success' => true, 'data' => $pl_out);
+                    break;
+
+                case 'get-staff-atem-list':
+                    // Resolve caller permission — $atem_permission is set when included from a page, not in direct-access mode.
+                    $caller_perm = 0;
+                    if (isset($atem_permission)) {
+                        $caller_perm = (int)$atem_permission;
+                    } elseif ($staff_id) {
+                        $_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        if ($_perm_res && ($_perm_row = mysqli_fetch_assoc($_perm_res))) {
+                            $caller_perm = ((int)$_perm_row['atem'] === 1) ? 6 : (int)$_perm_row['grade'];
+                        }
+                    }
+                    if ($caller_perm < 3) {
+                        $response = array('success' => false, 'message' => 'Insufficient permissions');
+                        break;
+                    }
+                    if (!isset($jsonData['target_staff_id'])) {
+                        $response = array('success' => false, 'message' => 'Missing target_staff_id');
+                        break;
+                    }
+                    $target_sid = (int)$jsonData['target_staff_id'];
+                    $list_result = getStaffAtemList($target_sid, $staff_id);
+                    if (!$list_result['success']) {
+                        $response = array('success' => false, 'message' => isset($list_result['message']) ? $list_result['message'] : 'Failed');
+                        break;
+                    }
+
+                    // Build name lookup maps for enrichment.
+                    $_s_names = array();
+                    $_d_names = array();
+                    $_s_res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1");
+                    if ($_s_res) { while ($_r = mysqli_fetch_assoc($_s_res)) { $_s_names[(int)$_r['id']] = $_r['nama_staff']; } }
+                    $_d_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
+                    if ($_d_res) { while ($_r = mysqli_fetch_assoc($_d_res)) { $_d_names[(int)$_r['id']] = $_r['depart_name']; } }
+
+                    // Filter to ATEMs where the target staff is issuer or ARCI member, then enrich.
+                    $_enriched = array();
+                    foreach ($list_result['data'] as $_a) {
+                        $issuer_id = isset($_a['issuer_staff_id']) ? (int)$_a['issuer_staff_id'] : 0;
+                        $involved  = ($issuer_id === $target_sid);
+                        if (!$involved && isset($_a['arci']) && is_array($_a['arci'])) {
+                            foreach ($_a['arci'] as $_m) {
+                                if (!empty($_m['staff_id']) && (int)$_m['staff_id'] === $target_sid) {
+                                    $involved = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!$involved) { continue; }
+
+                        $_level  = isset($_a['level_structure']) && $_a['level_structure'] ? $_a['level_structure'] : null;
+                        $_status = isset($_a['status']) && $_a['status'] ? $_a['status'] : null;
+                        $_accountable = array();
+                        $_role_parts = array();
+                        if ($issuer_id === $target_sid) {
+                            $_role_parts[] = 'Issuer';
+                        }
+                        if (isset($_a['arci']) && is_array($_a['arci'])) {
+                            foreach ($_a['arci'] as $_m) {
+                                if (isset($_m['role']) && $_m['role'] === 'A' && !empty($_m['staff_id'])) {
+                                    $_aid  = (int)$_m['staff_id'];
+                                    $_adid = isset($_m['staff_dept_id']) ? (int)$_m['staff_dept_id'] : 0;
+                                    $_accountable[] = array(
+                                        'name' => isset($_s_names[$_aid]) ? $_s_names[$_aid] : ('Staff #' . $_aid),
+                                        'dept' => ($_adid && isset($_d_names[$_adid])) ? $_d_names[$_adid] : '-',
+                                    );
+                                }
+                                if (!empty($_m['staff_id']) && (int)$_m['staff_id'] === $target_sid && isset($_m['role'])) {
+                                    $_role_parts[] = $_m['role'];
+                                }
+                            }
+                        }
+                        $_my_role = !empty($_role_parts) ? $_role_parts : null;
+                        $_enriched[] = array(
+                            'id'          => (int)$_a['id'],
+                            'title'       => isset($_a['title']) ? $_a['title'] : '',
+                            'level_label' => $_level ? $_level['level'] : '',
+                            'system_name' => $_level ? (isset($_level['system_name']) ? $_level['system_name'] : '') : '',
+                            'start_date'  => isset($_a['start_date']) ? $_a['start_date'] : '',
+                            'end_date'    => isset($_a['end_date']) ? $_a['end_date'] : '',
+                            'status'      => $_status ? $_status['value'] : '',
+                            'accountable' => $_accountable,
+                            'is_extended' => !empty($_a['is_extended']),
+                            'extended_date_1' => isset($_a['extended_date_1']) ? $_a['extended_date_1'] : '',
+                            'my_role'     => $_my_role,
+                        );
+                    }
+                    $response = array('success' => true, 'data' => $_enriched);
                     break;
 
                 case 'save-atem':
