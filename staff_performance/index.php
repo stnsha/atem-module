@@ -71,6 +71,19 @@ for ($y = 2026; $y <= $init_year; $y++) {
 #recalc-progress-wrap span {
     font-size: 12px;
 }
+
+#export-progress-wrap span { font-size: 12px; color: #6c757d; }
+
+@keyframes atem-export-slide {
+    0%   { transform: translateX(-150%); }
+    100% { transform: translateX(400%); }
+}
+.atem-export-bar-anim {
+    background: #198754;
+    height: 100%;
+    width: 35%;
+    animation: atem-export-slide 1.2s ease-in-out infinite;
+}
 </style>
 
 <!-- Filter Card -->
@@ -168,6 +181,15 @@ for ($y = 2026; $y <= $init_year; $y++) {
     <div class="atem-form-error mt-1" id="recalc-error" style="font-size:12px;"></div>
 </div>
 <?php endif; ?>
+
+<div id="export-progress-wrap" style="display:none;margin-bottom:12px;max-width:400px;">
+    <div style="margin-bottom:4px;">
+        <span id="export-progress-msg">Preparing export...</span>
+    </div>
+    <div style="background:#e9ecef;border-radius:4px;height:8px;overflow:hidden;">
+        <div class="atem-export-bar-anim"></div>
+    </div>
+</div>
 
 <!-- Table -->
 <div class="atem-card">
@@ -491,7 +513,7 @@ function renderTable(data, payload) {
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '">Edit</a>' +
-            '<a class="btn btn-sm btn-outline-success" href="' + escHtml(exportUrl) + '">Export</a>' +
+            '<a class="btn btn-sm btn-outline-success perf-row-export" href="' + escHtml(exportUrl) + '">Export</a>' +
             '</td>' +
             '</tr>';
     }
@@ -655,7 +677,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var quarter = _currentPayload.quarter || 0;
             var qs = 'type=performance&ids=' + ids.join(',') +
                 '&month=' + month + '&year=' + year + '&quarter=' + quarter;
-            window.location.href = '/odb/atem/staff_performance/export.php?' + qs;
+            triggerExport('/odb/atem/staff_performance/export.php?' + qs);
         });
     }
 
@@ -786,6 +808,42 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // Export progress helper
+    function triggerExport(url) {
+        var token = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+        var sep   = url.indexOf('?') >= 0 ? '&' : '?';
+        var wrap  = document.getElementById('export-progress-wrap');
+        var msg   = document.getElementById('export-progress-msg');
+        if (wrap) { wrap.style.display = 'block'; }
+        if (msg)  { msg.textContent = 'Preparing export...'; }
+
+        window.location.href = url + sep + 'dl_token=' + token;
+
+        var cookieName = 'export_done_' + token;
+        var pollTimer  = setInterval(function() {
+            if (document.cookie.indexOf(cookieName) >= 0) {
+                clearInterval(pollTimer);
+                document.cookie = cookieName + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+                if (msg) { msg.textContent = 'Done.'; }
+                setTimeout(function() { if (wrap) { wrap.style.display = 'none'; } }, 1500);
+            }
+        }, 500);
+        setTimeout(function() { clearInterval(pollTimer); if (wrap) { wrap.style.display = 'none'; } }, 60000);
+    }
+
+    var exportAllBtn = document.getElementById('perf-export-all-btn');
+    if (exportAllBtn) {
+        exportAllBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            triggerExport(this.href);
+        });
+    }
+
+    document.addEventListener('click', function(e) {
+        var a = e.target.closest ? e.target.closest('.perf-row-export') : null;
+        if (a) { e.preventDefault(); triggerExport(a.href); }
+    });
 
     // Recalculate button
     var recalcBtn = document.getElementById('recalc-btn');

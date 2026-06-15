@@ -191,7 +191,15 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
     </div>
     <div class="d-flex justify-content-end gap-2 mt-3">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="ef-reset">Reset Filters</button>
-        <a href="<?php echo htmlspecialchars($export_atem_url); ?>" class="btn btn-outline-success btn-sm">Export All ATEMs</a>
+        <a id="export-atem-btn" href="<?php echo htmlspecialchars($export_atem_url); ?>" class="btn btn-outline-success btn-sm">Export All ATEMs</a>
+    </div>
+    <div id="export-progress-wrap" style="display:none;margin-top:8px;max-width:400px;">
+        <div style="margin-bottom:4px;">
+            <span id="export-progress-msg">Preparing export...</span>
+        </div>
+        <div style="background:#e9ecef;border-radius:4px;height:8px;overflow:hidden;">
+            <div class="atem-export-bar-anim"></div>
+        </div>
     </div>
 </div>
 
@@ -543,7 +551,51 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function triggerExport(url) {
+        var token = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+        var sep   = url.indexOf('?') >= 0 ? '&' : '?';
+        var wrap  = document.getElementById('export-progress-wrap');
+        var msg   = document.getElementById('export-progress-msg');
+        if (wrap) { wrap.style.display = 'block'; }
+        if (msg)  { msg.textContent = 'Preparing export...'; }
+
+        window.location.href = url + sep + 'dl_token=' + token;
+
+        var cookieName = 'export_done_' + token;
+        var pollTimer  = setInterval(function() {
+            if (document.cookie.indexOf(cookieName) >= 0) {
+                clearInterval(pollTimer);
+                document.cookie = cookieName + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+                if (msg) { msg.textContent = 'Done.'; }
+                setTimeout(function() { if (wrap) { wrap.style.display = 'none'; } }, 1500);
+            }
+        }, 500);
+        setTimeout(function() { clearInterval(pollTimer); if (wrap) { wrap.style.display = 'none'; } }, 60000);
+    }
+
+    var exportAtemBtn = document.getElementById('export-atem-btn');
+    if (exportAtemBtn) {
+        exportAtemBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            triggerExport(this.href);
+        });
+    }
+
 });
 </script>
+
+<style>
+#export-progress-wrap span { font-size: 12px; color: #6c757d; }
+@keyframes atem-export-slide {
+    0%   { transform: translateX(-150%); }
+    100% { transform: translateX(400%); }
+}
+.atem-export-bar-anim {
+    background: #198754;
+    height: 100%;
+    width: 35%;
+    animation: atem-export-slide 1.2s ease-in-out infinite;
+}
+</style>
 
 <?php include('../footer.php'); ?>

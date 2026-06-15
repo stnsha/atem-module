@@ -51,6 +51,14 @@ if ($ids_raw !== '') {
     }
 }
 
+// Download completion cookie for progress bar detection
+$dl_token = (isset($_GET['dl_token']) && $_GET['dl_token'] !== '')
+    ? preg_replace('/[^a-zA-Z0-9]/', '', $_GET['dl_token'])
+    : '';
+if ($dl_token !== '') {
+    setcookie('export_done_' . $dl_token, '1', time() + 120, '/');
+}
+
 // Build ODB lookup maps
 $staff_names   = array();
 $dept_names    = array();

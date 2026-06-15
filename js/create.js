@@ -269,6 +269,66 @@
         return null;
     }
 
+    function getRuleLimits(rule) {
+        var map = {
+            'rule 1': { maxA: 2, maxR: 0 },
+            'rule 2': { maxA: 1, maxR: 0 },
+            'rule 3': { maxA: 1, maxR: 2 },
+            'rule 4': { maxA: 2, maxR: 2 },
+            'rule 5': { maxA: 1, maxR: 1 },
+            'rule 6': { maxA: 2, maxR: 1 }
+        };
+        if (!rule) { return { maxA: 2, maxR: 2 }; }
+        var code = String(rule.code).toLowerCase().trim();
+        return map[code] || { maxA: 2, maxR: 2 };
+    }
+
+    function updateArciWarning() {
+        var level = selectedLevel();
+        var rule = selectedRule();
+
+        if (!level || Number(level.incentive_value) === 0 || !rule) {
+            setError('arci-error', '');
+            return;
+        }
+
+        var limits = getRuleLimits(rule);
+        var incA = countIncentivised('A');
+        var incR = countIncentivised('R');
+        var msg = '';
+
+        if (!arciState.A || arciState.A.length === 0) {
+            msg = 'An Accountable (A) member is mandatory.';
+        } else if (incA !== limits.maxA) {
+            msg = 'This rule requires exactly ' + limits.maxA + ' Accountable (A) member(s) to be incentivised.';
+        } else if (limits.maxR > 0 && incR === 0) {
+            msg = 'This rule requires at least one Responsible (R) member marked as incentivised.';
+        } else if (limits.maxR > 0 && incR > limits.maxR) {
+            msg = 'Too many R members incentivised for this rule (max ' + limits.maxR + ').';
+        }
+
+        setError('arci-error', msg);
+    }
+
+    function enforceRuleLimitsOnState() {
+        var limits = getRuleLimits(selectedRule());
+        var aInc = 0;
+        (arciState['A'] || []).forEach(function (m) {
+            if (m.is_incentivised) {
+                aInc++;
+                if (aInc > limits.maxA) { m.is_incentivised = false; }
+            }
+        });
+        var rInc = 0;
+        (arciState['R'] || []).forEach(function (m) {
+            if (m.is_incentivised) {
+                if (limits.maxR === 0) { m.is_incentivised = false; return; }
+                rInc++;
+                if (rInc > limits.maxR) { m.is_incentivised = false; }
+            }
+        });
+    }
+
     // --------------------------------------------------------- incentive calc
     function recalcIncentive() {
         var level = selectedLevel();
@@ -295,23 +355,25 @@
         var a = 0, r = 0, rDisplay = 0;
         if (base > 0 && rule) {
             if (code === 'rule 1') {
-                // Each incentivised A gets 50% of base (up to 2)
                 a = base * 0.5 * incentivisedA;
                 rDisplay = incentivisedA > 0 ? base * 0.5 : 0;
                 r = 0;
             } else if (code === 'rule 2') {
-                // Each incentivised A gets 100%; no R payout
                 a = base * incentivisedA;
                 r = 0;
             } else if (code === 'rule 3') {
-                // Each incentivised A gets 100%; incentivised R members share a 50% pool
                 a = base * incentivisedA;
                 r = incentivisedR > 0 ? base * 0.5 : 0;
                 rDisplay = r;
             } else if (code === 'rule 4') {
-                // Each incentivised A gets 50%; incentivised R members share a 50% pool
                 a = base * 0.5 * incentivisedA;
                 r = incentivisedR > 0 ? base * 0.5 : 0;
+            } else if (code === 'rule 5') {
+                a = base * incentivisedA;
+                r = base * incentivisedR;
+            } else if (code === 'rule 6') {
+                a = base * 0.5 * incentivisedA;
+                r = base * incentivisedR;
             }
         }
         var total = a + r;
@@ -326,6 +388,8 @@
                 rLabel.textContent = 'A · Accountable (50% each)';
             } else if ((code === 'rule 3' || code === 'rule 4') && incentivisedR > 1) {
                 rLabel.textContent = 'R · Responsible ×' + incentivisedR + ' (pooled 50%)';
+            } else if (code === 'rule 5' || code === 'rule 6') {
+                rLabel.textContent = 'R · Responsible (100%)';
             } else {
                 rLabel.textContent = 'R · Responsible';
             }
@@ -367,16 +431,20 @@
                 continue;
             }
             var html = '';
+            var _arciRule = selectedRule();
+            var _arciLimits = getRuleLimits(_arciRule);
             for (var m = 0; m < members.length; m++) {
                 var mem = members[m];
                 var incentivisedHtml = '';
-                var _arciRule = selectedRule();
-                var _arciRuleCode = _arciRule ? _arciRule.code.toLowerCase() : '';
-                if (role === 'A' || (role === 'R' && (_arciRuleCode === 'rule 3' || _arciRuleCode === 'rule 4'))) {
+                var showChk = (role === 'A') || (role === 'R' && _arciLimits.maxR > 0);
+                if (showChk) {
+                    var maxForRole = (role === 'A') ? _arciLimits.maxA : _arciLimits.maxR;
+                    var atMax = !mem.is_incentivised && countIncentivised(role) >= maxForRole;
                     incentivisedHtml = '<label class="atem-arci-incentivised">'
                         + '<input type="checkbox" class="atem-arci-incentivised-chk"'
                         + ' data-staff="' + parseInt(mem.staff_id, 10) + '" data-role="' + role + '"'
-                        + (mem.is_incentivised ? ' checked' : '') + '>'
+                        + (mem.is_incentivised ? ' checked' : '')
+                        + (atMax ? ' disabled' : '') + '>'
                         + ' Incentivised</label>';
                 }
                 html += '<div class="atem-arci-member">'
@@ -393,6 +461,7 @@
         // refresh staff picker so already-assigned people drop off
         renderStaffList();
         recalcIncentive();
+        updateArciWarning();
     }
 
     function populateDepartments() {
@@ -455,13 +524,20 @@
         var deptId = $('arci-dept-select').value;
         var checks = $('arci-staff-list').querySelectorAll('input[type="checkbox"]:checked');
         if (checks.length === 0) { setError('arci-error', 'Please select at least one staff member.'); return; }
-        if (role === 'A' && (arciState.A.length + checks.length > 2)) {
-            setError('arci-error', 'Role A (Accountable) is limited to 2 members.');
+        var _addLimits = getRuleLimits(selectedRule());
+        if (role === 'A' && (arciState.A.length + checks.length > _addLimits.maxA)) {
+            setError('arci-error', 'Role A (Accountable) is limited to ' + _addLimits.maxA + ' member(s) for this rule.');
             return;
         }
-        if (role === 'R' && (arciState.R.length + checks.length > 2)) {
-            setError('arci-error', 'Role R (Responsible) is limited to 2 members.');
-            return;
+        if (role === 'R') {
+            if (_addLimits.maxR === 0) {
+                setError('arci-error', 'This rule does not include R (Responsible) incentive.');
+                return;
+            }
+            if (arciState.R.length + checks.length > _addLimits.maxR) {
+                setError('arci-error', 'Role R (Responsible) is limited to ' + _addLimits.maxR + ' member(s) for this rule.');
+                return;
+            }
         }
 
         var deptName = departmentName(deptId);
@@ -719,13 +795,19 @@
         }
         var rule = selectedRule();
         if (level && Number(level.incentive_value) > 0 && rule) {
-            var ruleCode = rule.code.toLowerCase();
-            if (countIncentivised('A') === 0) {
-                setError('arci-error', 'Please mark at least one Accountable (A) member as incentivised.');
+            var limits = getRuleLimits(rule);
+            var incA = countIncentivised('A');
+            var incR = countIncentivised('R');
+            if (incA !== limits.maxA) {
+                setError('arci-error', 'This rule requires exactly ' + limits.maxA + ' Accountable (A) member(s) to be incentivised.');
                 return false;
             }
-            if ((ruleCode === 'rule 3' || ruleCode === 'rule 4') && countIncentivised('R') === 0) {
+            if (limits.maxR > 0 && incR === 0) {
                 setError('arci-error', 'This rule requires at least one Responsible (R) member marked as incentivised.');
+                return false;
+            }
+            if (limits.maxR > 0 && incR > limits.maxR) {
+                setError('arci-error', 'Too many R members are marked incentivised for this rule (max ' + limits.maxR + ').');
                 return false;
             }
         }
@@ -847,14 +929,12 @@
     // --------------------------------------------------------------- wiring
     function bind() {
         $('atem-title').addEventListener('input', markChanged);
-        $('atem-level').addEventListener('change', function () { recalcIncentive(); markChanged(); });
+        $('atem-level').addEventListener('change', function () { recalcIncentive(); updateArciWarning(); markChanged(); });
         $('atem-rule').addEventListener('change', function () {
-            var _rule = selectedRule();
-            var _code = _rule ? _rule.code.toLowerCase() : '';
-            if (_code !== 'rule 3' && _code !== 'rule 4') {
-                (arciState['R'] || []).forEach(function (m) { m.is_incentivised = false; });
-            }
+            enforceRuleLimitsOnState();
             renderArci();
+            recalcIncentive();
+            updateArciWarning();
             markChanged();
         });
         $('tl-start').addEventListener('change', markChanged);
@@ -876,10 +956,19 @@
             } else if (t.classList.contains('atem-arci-incentivised-chk')) {
                 var chkStaff = parseInt(t.getAttribute('data-staff'), 10);
                 var chkRole = t.getAttribute('data-role');
-                var rule = selectedRule();
-                var code = rule ? String(rule.code).toLowerCase() : '';
+                var chkVal = t.checked;
+                if (chkVal) {
+                    var chkLimits = getRuleLimits(selectedRule());
+                    var chkMax = (chkRole === 'A') ? chkLimits.maxA : chkLimits.maxR;
+                    if (countIncentivised(chkRole) >= chkMax) {
+                        t.checked = false;
+                        setError('arci-error', 'Maximum incentivised ' + chkRole + ' members (' + chkMax + ') already reached for this rule.');
+                        return;
+                    }
+                }
+                setError('arci-error', '');
                 (arciState[chkRole] || []).forEach(function (m) {
-                    if (parseInt(m.staff_id, 10) === chkStaff) { m.is_incentivised = t.checked; }
+                    if (parseInt(m.staff_id, 10) === chkStaff) { m.is_incentivised = chkVal; }
                 });
                 recalcIncentive();
                 markChanged();
@@ -912,6 +1001,7 @@
         bind();
         recalcIncentive();
         renderArci();
+        updateArciWarning();
         renderReferenceLinks();
         renderStagedFiles();
         var today = new Date().toISOString().substring(0, 10);
