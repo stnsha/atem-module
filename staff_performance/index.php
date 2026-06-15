@@ -55,6 +55,18 @@ for ($y = 2026; $y <= $init_year; $y++) {
 .perf-count-cell:hover .perf-count-link {
     color: #0a58ca;
 }
+
+.perf-role-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+#atem-detail-tbody td:first-child,
+#atem-detail-tbody td:nth-child(4),
+#atem-detail-tbody td:nth-child(5) {
+    white-space: nowrap;
+}
 </style>
 
 <!-- Filter Card -->
@@ -198,7 +210,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
                 <div id="atem-detail-loading" class="text-center py-4" style="display:none;">Loading...</div>
                 <div id="atem-detail-error" class="text-danger px-3 py-2" style="display:none;"></div>
                 <div class="table-responsive" id="atem-detail-table-wrap">
-                    <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+                    <table class="table table-hover align-middle atem-view-tbl mb-0">
                         <thead>
                             <tr>
                                 <th>ATEM ID</th>
@@ -713,8 +725,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     for (var i = 0; i < data.length; i++) {
                         var row = data[i];
                         var color = STATUS_COLOR[row.status] || '#6c757d';
-                        var statusBadge = '<span style="background:' + escHtml(color) +
-                            ';color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;">' +
+                        var statusBadge = '<span class="atem-pill" style="background-color:' + escHtml(color) + ';">' +
                             escHtml(row.status || '-') + '</span>';
                         var endDate = row.is_extended && row.extended_date_1 ? formatDate(row
                             .extended_date_1) : formatDate(row.end_date);
@@ -724,20 +735,17 @@ document.addEventListener('DOMContentLoaded', function() {
                             for (var ri = 0; ri < row.my_role.length; ri++) {
                                 var rname = row.my_role[ri];
                                 var rc = ROLE_COLOR[rname] || '#6c757d';
-                                badges.push('<span style="background:' + escHtml(rc) +
-                                    ';color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;display:inline-block;">' +
+                                badges.push('<span class="atem-pill" style="background-color:' + escHtml(rc) + ';">' +
                                     escHtml(rname) + '</span>');
                             }
-                            roleCell = '<div style="display:flex;flex-wrap:wrap;gap:4px;">' + badges
-                                .join('') + '</div>';
+                            roleCell = '<div class="perf-role-cell">' + badges.join('') + '</div>';
                         }
                         html += '<tr>' +
-                            '<td style="white-space:nowrap;">#AT' + row.id + '</td>' +
+                            '<td>#AT' + row.id + '</td>' +
                             '<td>' + escHtml(row.title) + '</td>' +
                             '<td>' + escHtml(row.level_label || '-') + '</td>' +
-                            '<td style="white-space:nowrap;">' + formatDate(row.start_date) +
-                            '</td>' +
-                            '<td style="white-space:nowrap;">' + endDate + '</td>' +
+                            '<td>' + formatDate(row.start_date) + '</td>' +
+                            '<td>' + endDate + '</td>' +
                             '<td>' + statusBadge + '</td>' +
                             '<td>' + roleCell + '</td>' +
                             '</tr>';

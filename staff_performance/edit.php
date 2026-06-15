@@ -124,32 +124,12 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
                     <td><?php echo htmlspecialchars($t_dept); ?></td>
                 </tr>
                 <tr>
-                    <td style="color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:middle;padding-right:12px;">Grade</td>
-                    <td>
-                        <select class="form-select form-select-sm" id="grade-select" style="font-size:13px;">
-                            <option value="">-- None --</option>
-                            <?php foreach ($grade_labels as $gid => $gname): ?>
-                            <option value="<?php echo $gid; ?>"<?php if ($t_grade_id === $gid) echo ' selected'; ?>>
-                                <?php echo htmlspecialchars($gname); ?>
-                            </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="atem-form-error mt-1" id="grade-error" style="font-size:11px;"></div>
-                    </td>
+                    <td style="color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:top;padding-right:12px;">Grade</td>
+                    <td><?php echo htmlspecialchars($t_grade); ?></td>
                 </tr>
                 <tr>
-                    <td style="color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:middle;padding-right:12px;">Evaluation Structure</td>
-                    <td>
-                        <select class="form-select form-select-sm" id="struct-select" style="font-size:13px;">
-                            <option value="">-- None --</option>
-                            <?php foreach ($struct_labels as $stid => $stname): ?>
-                            <option value="<?php echo $stid; ?>"<?php if ($t_struct_id === $stid) echo ' selected'; ?>>
-                                <?php echo htmlspecialchars($stname); ?>
-                            </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="atem-form-error mt-1" id="struct-error" style="font-size:11px;"></div>
-                    </td>
+                    <td style="color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:top;padding-right:12px;">Evaluation Structure</td>
+                    <td><?php echo htmlspecialchars($t_struct); ?></td>
                 </tr>
             </table>
         </div>
@@ -519,26 +499,6 @@ function renderEditAtemTable() {
     renderEditAtemPager(total);
 }
 
-function saveStaffField(field, value, errorElId) {
-    var errorEl = document.getElementById(errorElId);
-    errorEl.textContent = '';
-    fetch(PERF_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update-staff-field', staff_id: editTargetSid, field: field, value: value })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(res) {
-        if (!res.success) {
-            errorEl.style.color = '#dc3545';
-            errorEl.textContent = res.message || 'Save failed.';
-        }
-    })
-    .catch(function() {
-        errorEl.style.color = '#dc3545';
-        errorEl.textContent = 'Request failed.';
-    });
-}
 
 document.addEventListener('DOMContentLoaded', function() {
     buildEditFilters();
@@ -583,19 +543,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    var gradeSelect  = document.getElementById('grade-select');
-    var structSelect = document.getElementById('struct-select');
-
-    if (gradeSelect) {
-        gradeSelect.addEventListener('change', function() {
-            saveStaffField('grade', this.value ? parseInt(this.value, 10) : null, 'grade-error');
-        });
-    }
-    if (structSelect) {
-        structSelect.addEventListener('change', function() {
-            saveStaffField('struct', this.value ? parseInt(this.value, 10) : null, 'struct-error');
-        });
-    }
 });
 </script>
 
