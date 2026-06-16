@@ -370,10 +370,10 @@
                 r = incentivisedR > 0 ? base * 0.5 : 0;
             } else if (code === 'rule 5') {
                 a = base * incentivisedA;
-                r = base * incentivisedR;
+                r = base * 0.5 * incentivisedR;
             } else if (code === 'rule 6') {
                 a = base * 0.5 * incentivisedA;
-                r = base * incentivisedR;
+                r = base * 0.5 * incentivisedR;
             }
         }
         var total = a + r;
@@ -389,7 +389,7 @@
             } else if ((code === 'rule 3' || code === 'rule 4') && incentivisedR > 1) {
                 rLabel.textContent = 'R · Responsible ×' + incentivisedR + ' (pooled 50%)';
             } else if (code === 'rule 5' || code === 'rule 6') {
-                rLabel.textContent = 'R · Responsible (100%)';
+                rLabel.textContent = 'R · Responsible (50%)';
             } else {
                 rLabel.textContent = 'R · Responsible';
             }
