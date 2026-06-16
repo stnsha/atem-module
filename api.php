@@ -1739,7 +1739,6 @@ if (!defined('API_JWT_INCLUDED')) {
                     if ($pl_quarter < 1 || $pl_quarter > 4) { $pl_quarter = 0; }
                     if ($pl_quarter > 0) { $pl_month = 0; }
                     if ($pl_month < 1 || $pl_month > 12) { $pl_month = 0; }
-                    if ($pl_month === 0 && $pl_quarter === 0) { $pl_month = (int)date('n'); }
 
                     $pl_qm_map  = array(1=>array(1,2,3), 2=>array(4,5,6), 3=>array(7,8,9), 4=>array(10,11,12));
                     $pl_records = array();
