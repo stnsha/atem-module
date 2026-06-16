@@ -78,6 +78,18 @@
         });
     }
 
+    function scrollToFirstError() {
+        var ids = ['atem-title-error', 'atem-level-error', 'atem-rule-error', 'tl-start-error',
+                   'tl-end-error', 'arci-error', 'atem-file-error', 'atem-save-error'];
+        for (var i = 0; i < ids.length; i++) {
+            var el = $(ids[i]);
+            if (el && el.textContent.trim() !== '') {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+        }
+    }
+
     // Shared confirmation modal for Attachment / Reference Link removals.
     var _confirmModal = null, _confirmCb = null;
     function getConfirmModal() {
@@ -301,10 +313,8 @@
             msg = 'An Accountable (A) member is mandatory.';
         } else if (incA !== limits.maxA) {
             msg = 'This rule requires exactly ' + limits.maxA + ' Accountable (A) member(s) to be incentivised.';
-        } else if (limits.maxR > 0 && incR === 0) {
-            msg = 'This rule requires at least one Responsible (R) member marked as incentivised.';
-        } else if (limits.maxR > 0 && incR > limits.maxR) {
-            msg = 'Too many R members incentivised for this rule (max ' + limits.maxR + ').';
+        } else if (limits.maxR > 0 && incR !== limits.maxR) {
+            msg = 'This rule requires exactly ' + limits.maxR + ' Responsible (R) member(s) to be incentivised.';
         }
 
         setError('arci-error', msg);
@@ -524,21 +534,6 @@
         var deptId = $('arci-dept-select').value;
         var checks = $('arci-staff-list').querySelectorAll('input[type="checkbox"]:checked');
         if (checks.length === 0) { setError('arci-error', 'Please select at least one staff member.'); return; }
-        var _addLimits = getRuleLimits(selectedRule());
-        if (role === 'A' && (arciState.A.length + checks.length > _addLimits.maxA)) {
-            setError('arci-error', 'Role A (Accountable) is limited to ' + _addLimits.maxA + ' member(s) for this rule.');
-            return;
-        }
-        if (role === 'R') {
-            if (_addLimits.maxR === 0) {
-                setError('arci-error', 'This rule does not include R (Responsible) incentive.');
-                return;
-            }
-            if (arciState.R.length + checks.length > _addLimits.maxR) {
-                setError('arci-error', 'Role R (Responsible) is limited to ' + _addLimits.maxR + ' member(s) for this rule.');
-                return;
-            }
-        }
 
         var deptName = departmentName(deptId);
         for (var i = 0; i < checks.length; i++) {
@@ -802,12 +797,8 @@
                 setError('arci-error', 'This rule requires exactly ' + limits.maxA + ' Accountable (A) member(s) to be incentivised.');
                 return false;
             }
-            if (limits.maxR > 0 && incR === 0) {
-                setError('arci-error', 'This rule requires at least one Responsible (R) member marked as incentivised.');
-                return false;
-            }
-            if (limits.maxR > 0 && incR > limits.maxR) {
-                setError('arci-error', 'Too many R members are marked incentivised for this rule (max ' + limits.maxR + ').');
+            if (limits.maxR > 0 && incR !== limits.maxR) {
+                setError('arci-error', 'This rule requires exactly ' + limits.maxR + ' Responsible (R) member(s) to be incentivised.');
                 return false;
             }
         }
@@ -836,7 +827,7 @@
 
     // Upload the staged files (multipart) against a saved ATEM id, then continue.
     function saveAtem(mode, navUrl) {
-        if (mode === 'final' && !validateFinal()) { return; }
+        if (mode === 'final' && !validateFinal()) { scrollToFirstError(); return; }
         setError('atem-save-error', '');
 
         var btn = $('atem-save-btn');
@@ -854,10 +845,12 @@
                 });
             } else {
                 setError('atem-save-error', res && res.message ? res.message : 'Failed to save ATEM.');
+                scrollToFirstError();
                 if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
             }
         }).catch(function () {
             setError('atem-save-error', 'Network error while saving.');
+            scrollToFirstError();
             if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
         });
     }
