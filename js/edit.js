@@ -7,6 +7,7 @@
 
     var CFG = window.ATEM_CONFIG || {};
     var READ = (CFG.mode !== 'edit');
+    var PROGRESS_MODE = (CFG.mode === 'progress');
     var REC = CFG.record || {};
     var IS_ISSUER = !!(CFG.staffId && REC.issuer_staff_id && CFG.staffId == REC.issuer_staff_id);
     var IS_A_ARCI = (function () {
@@ -706,7 +707,7 @@
             var p = sorted[i];
             var pillClass = 'atem-pill atem-pill-' + p.status;
             var isOwn = String(p.created_by) === String(CFG.staffId);
-            var actionsHtml = (!READ && isOwn) ? '<div class="atem-progress-item-actions">'
+            var actionsHtml = ((!READ || PROGRESS_MODE) && isOwn) ? '<div class="atem-progress-item-actions">'
                 + '<button type="button" class="btn btn-outline-secondary btn-sm atem-progress-edit" data-id="' + p.id + '">Edit</button>'
                 + '<button type="button" class="btn btn-outline-danger btn-sm atem-progress-delete" data-id="' + p.id + '">Delete</button>'
                 + '</div>' : '';

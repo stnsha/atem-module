@@ -88,42 +88,42 @@ window.ATEM_DASH = <?php echo json_encode(array(
 <!-- Stat Cards -->
 <div class="row g-3 mb-4">
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card h-100">
+        <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Total ATEM Cards</div>
             <div class="atem-stat-value atem-stat-value--blue" id="dash-total">---</div>
             <div class="atem-stat-label">created YTD</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card h-100">
+        <div class="atem-card atem-dash-stat h-100" data-status="Active" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Active / On Hand</div>
             <div class="atem-stat-value atem-stat-value--blue" id="dash-active">---</div>
             <div class="atem-stat-label">not yet closed</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card h-100">
+        <div class="atem-card atem-dash-stat h-100" data-status="Completed" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Complete + Excellence</div>
             <div class="atem-stat-value atem-stat-value--green" id="dash-closed">---</div>
             <div class="atem-stat-label">eligible for completion count</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card h-100">
+        <div class="atem-card atem-dash-stat h-100" data-status="Failed" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Failed ATEM</div>
             <div class="atem-stat-value atem-stat-value--red" id="dash-failed">---</div>
             <div class="atem-stat-label" id="dash-fail-rate">failure rate</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card h-100">
+        <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Overdue Cards</div>
             <div class="atem-stat-value atem-stat-value--red" id="dash-overdue">---</div>
             <div class="atem-stat-label">active/extended past end date</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card h-100">
+        <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Est. Incentive Forecast</div>
             <div class="atem-stat-value atem-stat-value--orange" id="dash-incentive">---</div>
             <div class="atem-stat-label">Level 2-4 payout</div>

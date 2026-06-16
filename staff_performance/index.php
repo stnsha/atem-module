@@ -162,25 +162,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
 <!-- Action Buttons -->
 <div class="d-flex gap-2 mb-3 justify-content-end">
     <button class="btn btn-outline-success btn-sm" id="export-selected-btn" disabled>Export Selected</button>
-    <?php if ($atem_permission >= 4): ?>
-    <button class="btn btn-outline-secondary btn-sm" id="recalc-btn" data-month="<?php echo $init_month; ?>"
-        data-year="<?php echo $init_year; ?>">
-        Recalculate
-    </button>
-    <?php endif; ?>
 </div>
-<?php if ($atem_permission >= 4): ?>
-<div id="recalc-progress-wrap" style="display:none;margin-bottom:12px;max-width:400px;">
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:#6c757d;margin-bottom:4px;">
-        <span id="recalc-progress-stage">Starting...</span>
-        <span><span id="recalc-progress-cur">0</span> / <span id="recalc-progress-tot">5</span></span>
-    </div>
-    <div style="background:#e9ecef;border-radius:4px;height:8px;overflow:hidden;">
-        <div id="recalc-progress-bar" style="background:#0d6efd;height:100%;width:0%;transition:width .3s ease;"></div>
-    </div>
-    <div class="atem-form-error mt-1" id="recalc-error" style="font-size:12px;"></div>
-</div>
-<?php endif; ?>
 
 <div id="export-progress-wrap" style="display:none;margin-bottom:12px;max-width:400px;">
     <div style="margin-bottom:4px;">
@@ -845,122 +827,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (a) { e.preventDefault(); triggerExport(a.href); }
     });
 
-    // Recalculate button
-    var recalcBtn = document.getElementById('recalc-btn');
-    if (recalcBtn) {
-        recalcBtn.addEventListener('click', function() {
-            var btn = this;
-            var month = parseInt(btn.getAttribute('data-month'), 10);
-            var year = parseInt(btn.getAttribute('data-year'), 10);
-            var wrap = document.getElementById('recalc-progress-wrap');
-            var bar = document.getElementById('recalc-progress-bar');
-            var stageEl = document.getElementById('recalc-progress-stage');
-            var curEl = document.getElementById('recalc-progress-cur');
-            var totEl = document.getElementById('recalc-progress-tot');
-            var errEl = document.getElementById('recalc-error');
-
-            btn.disabled = true;
-            btn.textContent = 'Calculating...';
-            if (wrap) {
-                wrap.style.display = 'block';
-            }
-            if (errEl) {
-                errEl.textContent = '';
-            }
-
-            var pollInterval = setInterval(function() {
-                fetch(PERF_API_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            action: 'bonus-calculate-status'
-                        })
-                    })
-                    .then(function(r) {
-                        return r.json();
-                    })
-                    .then(function(p) {
-                        if (p.total > 0) {
-                            var pct = Math.round((p.current / p.total) * 100);
-                            if (bar) {
-                                bar.style.width = pct + '%';
-                            }
-                            if (stageEl) {
-                                stageEl.textContent = p.stage || '';
-                            }
-                            if (curEl) {
-                                curEl.textContent = p.current;
-                            }
-                            if (totEl) {
-                                totEl.textContent = p.total;
-                            }
-                        }
-                    })
-                    .catch(function() {});
-            }, 1500);
-
-            fetch(PERF_API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        action: 'bonus-trigger-calculate',
-                        month: month,
-                        year: year
-                    })
-                })
-                .then(function(r) {
-                    return r.json();
-                })
-                .then(function(res) {
-                    clearInterval(pollInterval);
-                    if (res.success) {
-                        if (bar) {
-                            bar.style.width = '100%';
-                        }
-                        if (stageEl) {
-                            stageEl.textContent = 'Done.';
-                        }
-                        if (curEl) {
-                            curEl.textContent = 5;
-                        }
-                        setTimeout(function() {
-                            if (wrap) {
-                                wrap.style.display = 'none';
-                            }
-                            btn.disabled = false;
-                            btn.textContent = 'Recalculate';
-                            loadPerformance(_currentPayload);
-                        }, 800);
-                    } else {
-                        if (wrap) {
-                            wrap.style.display = 'none';
-                        }
-                        btn.disabled = false;
-                        btn.textContent = 'Recalculate';
-                        if (errEl) {
-                            errEl.textContent = res.message || 'Calculation failed.';
-                        }
-                    }
-                })
-                .catch(function() {
-                    clearInterval(pollInterval);
-                    if (wrap) {
-                        wrap.style.display = 'none';
-                    }
-                    btn.disabled = false;
-                    btn.textContent = 'Recalculate';
-                    if (errEl) {
-                        errEl.textContent = 'Request failed. Please try again.';
-                    }
-                });
-        });
-    }
-
 });
+
 </script>
 
 <?php include('../footer.php'); ?>

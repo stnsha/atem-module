@@ -1714,37 +1714,6 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     break;
 
-                case 'bonus-calculate-status':
-                    $prog = getApiDataWithJWT('bonus-eligibility/progress', null, 'GET', $staff_id);
-                    $prog_body = json_decode($prog['response'], true);
-                    $response = array(
-                        'success' => true,
-                        'current' => isset($prog_body['current']) ? (int)$prog_body['current'] : 0,
-                        'total'   => isset($prog_body['total'])   ? (int)$prog_body['total']   : 0,
-                        'stage'   => isset($prog_body['stage'])   ? $prog_body['stage']         : '',
-                    );
-                    break;
-
-                case 'bonus-trigger-calculate':
-                    if (isset($jsonData['month']) && isset($jsonData['year'])) {
-                        $result = getApiDataWithJWT(
-                            'bonus-eligibility/calculate',
-                            array('month' => (int)$jsonData['month'], 'year' => (int)$jsonData['year']),
-                            'POST',
-                            $staff_id,
-                            300
-                        );
-                        if ($result['success']) {
-                            $body = json_decode($result['response'], true);
-                            $response = array('success' => true, 'message' => isset($body['message']) ? $body['message'] : 'Done');
-                        } else {
-                            $response = array('success' => false, 'message' => 'Calculation failed');
-                        }
-                    } else {
-                        $response = array('success' => false, 'message' => 'Missing month or year');
-                    }
-                    break;
-
                 case 'get-performance-list':
                     $pl_perm = 0;
                     if (isset($atem_permission)) {

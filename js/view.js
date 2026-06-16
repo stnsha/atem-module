@@ -132,7 +132,7 @@
         if (CFG.isSuperAdmin) { return true; }
         if (!CFG.staffId) { return false; }
         if (r.issuer_staff_id == CFG.staffId) { return true; }
-        if (r.arci_staff_ids && r.arci_staff_ids.indexOf(CFG.staffId) !== -1) {
+        if (r.user_arci_roles && r.user_arci_roles.indexOf('A') !== -1) {
             if (r.status === 'Active') { return true; }
             if (r.status === 'Extended') {
                 var today = new Date().toISOString().substring(0, 10);
@@ -141,6 +141,13 @@
             return false;
         }
         return false;
+    }
+
+    function canUpdateProgress(r) {
+        if (!CFG.staffId) { return false; }
+        if (r.issuer_staff_id == CFG.staffId) { return false; }
+        if (!r.user_arci_roles || r.user_arci_roles.length === 0) { return false; }
+        return r.user_arci_roles.indexOf('A') === -1;
     }
 
     // --------------------------------------------------------------- rendering
@@ -204,6 +211,9 @@
                     + '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
                     + (canEdit(r)
                         ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
+                        : '')
+                    + (canUpdateProgress(r)
+                        ? ' <a href="atem/edit.php?id=' + r.id + '&mode=progress" class="btn btn-sm btn-outline-info" title="Update Progress"><i class="bi bi-bar-chart-steps"></i></a>'
                         : '')
                     + (CFG.staffId && r.issuer_staff_id == CFG.staffId && r.status === 'Draft'
                         ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>'
@@ -306,7 +316,28 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         buildFilters();
-        $('vf-status').value = 'Active';
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('status')) { $('vf-status').value = params.get('status'); }
+        if (params.get('year'))  { var ye = $('vf-year');  if (ye) { ye.value = params.get('year'); } }
+        if (params.get('month')) { var mo = $('vf-month'); if (mo) { mo.value = params.get('month'); } }
+        if (params.get('level')) { var lv = $('vf-level'); if (lv) { lv.value = params.get('level'); } }
+        if (params.get('level_id')) {
+            var levelIdNum = parseInt(params.get('level_id'), 10);
+            var lvEl = $('vf-level');
+            if (lvEl && levelIdNum > 0) {
+                var opts = lvEl.options;
+                for (var li = 0; li < opts.length; li++) {
+                    var lm = opts[li].value.match(/\d+/);
+                    if (lm && parseInt(lm[0], 10) === levelIdNum) {
+                        lvEl.value = opts[li].value;
+                        break;
+                    }
+                }
+            }
+        }
+        if (params.get('dept'))  { var de = $('vf-dept');  if (de) { de.value = params.get('dept'); } }
+        if (params.get('from'))  { var fr = $('vf-from');  if (fr) { fr.value = params.get('from'); } }
+        if (params.get('to'))    { var to = $('vf-to');    if (to) { to.value = params.get('to'); } }
         bind();
         render();
     });

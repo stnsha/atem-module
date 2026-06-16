@@ -1,7 +1,7 @@
 <?php
 ob_start();
 
-$page_title = 'Staff Grade & Evaluation Structure Library';
+$page_title = 'Staff Grade & Evaluation Structure Masterlist';
 include('../header.php');
 
 if ($atem_permission < 4) {
@@ -63,12 +63,12 @@ ob_end_flush();
 
 <div class="row g-4">
 
-    <!-- Grade Library -->
+    <!-- Grade Masterlist -->
     <div class="col-md-6">
         <div class="bento-card">
             <p class="mb-3 text-muted"
                 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Staff Grade
-                Library</p>
+                Masterlist</p>
             <div id="grade-alert" class="alert alert-dismissible fade show mb-3" role="alert"
                 style="display:none !important;font-size:13px;">
                 <span id="grade-alert-msg"></span>
@@ -97,12 +97,12 @@ ob_end_flush();
         </div>
     </div>
 
-    <!-- Structure Library -->
+    <!-- Structure Masterlist -->
     <div class="col-md-6">
         <div class="bento-card">
             <p class="mb-3 text-muted"
                 style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Evaluation
-                Structure Library
+                Structure Masterlist
             </p>
             <div id="struct-alert" class="alert alert-dismissible fade show mb-3" role="alert"
                 style="display:none !important;font-size:13px;">

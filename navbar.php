@@ -72,7 +72,7 @@ $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 $dashboard_active = ($current_page == 'index.php' && $current_dir == 'atem')  ? 'active' : '';
 $view_active      = ($current_dir == 'atem' && ($current_page == 'view.php' || $current_page == 'edit.php' || $current_page == 'create.php')) ? 'active' : '';
 $admin_active       = ($current_dir == 'access_control' && $current_page == 'index.php')   ? 'active' : '';
-$library_active     = ($current_dir == 'access_control' && $current_page == 'library.php') ? 'active' : '';
+$masterlist_active  = ($current_dir == 'access_control' && $current_page == 'masterlist.php') ? 'active' : '';
 $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
 
 ?>
@@ -103,7 +103,7 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                 <?php endif; ?>
                 <?php if ($atem_role === 6): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $library_active; ?>" href="atem/access_control/library.php">Library</a>
+                    <a class="nav-link <?php echo $masterlist_active; ?>" href="atem/access_control/masterlist.php">Masterlist</a>
                 </li>
                 <?php endif; ?>
             </ul>

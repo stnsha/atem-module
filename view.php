@@ -112,8 +112,8 @@ if ((int)$atem_permission === 1) {
         }
     }
     $view_rows = $filtered;
-} elseif ((int)$atem_permission >= 2 && (int)$atem_permission <= 3) {
-    // Grades 2–3: cards where issuer or any ARCI member belongs to the user's department.
+} elseif ((int)$atem_permission === 2) {
+    // Grade 2: cards where issuer or any ARCI member belongs to the user's department.
     $filtered = array();
     foreach ($view_rows as $idx => $r) {
         if ($r['department_id'] === $user_dept_id
@@ -126,7 +126,7 @@ if ((int)$atem_permission === 1) {
 // Grades 4–6: no server-side row filtering.
 
 $dept_list = array();
-if ((int)$atem_permission <= 3) {
+if ((int)$atem_permission <= 2) {
     if ($user_dept_id && isset($dept_names[$user_dept_id])) {
         $dept_list[] = $dept_names[$user_dept_id];
     }

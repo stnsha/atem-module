@@ -1,7 +1,10 @@
 <?php
-$mode = (isset($_GET['mode']) && $_GET['mode'] === 'edit') ? 'edit' : 'read';
-$is_read = ($mode === 'read');
-$page_title = $is_read ? 'ATEM' : 'Edit ATEM';
+$mode = 'read';
+if (isset($_GET['mode']) && $_GET['mode'] === 'edit')         { $mode = 'edit'; }
+elseif (isset($_GET['mode']) && $_GET['mode'] === 'progress') { $mode = 'progress'; }
+$is_read     = ($mode !== 'edit');
+$is_progress = ($mode === 'progress');
+$page_title  = ($mode === 'edit') ? 'Edit ATEM' : 'ATEM';
 include('header.php');
 
 // header.php bootstrapped $conn and the current staff. Build id -> name maps so
@@ -135,6 +138,10 @@ if ($record && isset($record['status']['value'])) {
 if (!$is_read && in_array($current_status_value, $terminal_statuses)) {
     $mode    = 'read';
     $is_read = true;
+}
+if ($is_progress && in_array($current_status_value, $terminal_statuses)) {
+    $mode        = 'read';
+    $is_progress = false;
 }
 
 // Extended ATEMs are locked once today is past the closure date (= extended_date_1).
@@ -343,7 +350,7 @@ $atem_config = array(
         <div class="atem-card">
             <div class="atem-card-title-row">
                 <h6 class="atem-card-title"><i class="bi bi-bar-chart-steps"></i> Progress Update</h6>
-                <?php if (!$is_read): ?>
+                <?php if (!$is_read || $is_progress): ?>
                 <button type="button" class="btn btn-primary btn-sm" id="atem-add-progress-btn">Add Progress</button>
                 <?php endif; ?>
             </div>

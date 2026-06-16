@@ -43,6 +43,40 @@
         }
     }
 
+    var QUARTER_RANGES = {
+        '1': ['01-01', '03-31'],
+        '2': ['04-01', '06-30'],
+        '3': ['07-01', '09-30'],
+        '4': ['10-01', '12-31']
+    };
+
+    function buildViewUrl(statusOverride, levelIdOverride, deptOverride) {
+        var yearEl    = document.getElementById('dash-filter-year');
+        var monthEl   = document.getElementById('dash-filter-month');
+        var quarterEl = document.getElementById('dash-filter-quarter');
+        var deptEl    = document.getElementById('dash-filter-dept');
+
+        var year    = yearEl    ? yearEl.value    : '';
+        var month   = monthEl   ? monthEl.value   : '';
+        var quarter = quarterEl ? quarterEl.value  : '';
+        var deptName = deptOverride || ((deptEl && deptEl.selectedIndex > 0)
+                       ? deptEl.options[deptEl.selectedIndex].text : '');
+
+        var params = [];
+        if (statusOverride) { params.push('status='   + encodeURIComponent(statusOverride)); }
+        if (levelIdOverride) { params.push('level_id=' + encodeURIComponent(levelIdOverride)); }
+        if (year)   { params.push('year='  + encodeURIComponent(year)); }
+        if (month)  { params.push('month=' + encodeURIComponent(month)); }
+        if (!month && quarter && year && QUARTER_RANGES[quarter]) {
+            var range = QUARTER_RANGES[quarter];
+            params.push('from=' + encodeURIComponent(year + '-' + range[0]));
+            params.push('to='   + encodeURIComponent(year + '-' + range[1]));
+        }
+        if (deptName) { params.push('dept=' + encodeURIComponent(deptName)); }
+
+        return 'atem/view.php' + (params.length ? '?' + params.join('&') : '');
+    }
+
     function renderDashboard(data) {
         var s = data.by_status;
         var total  = data.total || 0;
@@ -67,14 +101,24 @@
                 var forecast = l.level_id === 1 ? 'RM0' : formatRM(l.forecast);
                 html += '<tr>' +
                     '<td style="font-size:12px;font-weight:600;">' + l.label + '</td>' +
-                    '<td style="font-size:12px;">' + l.cards + '</td>' +
-                    '<td style="font-size:12px;color:#0d6efd;">' + l.complete + '</td>' +
-                    '<td style="font-size:12px;color:#198754;">' + l.excellence + '</td>' +
-                    '<td style="font-size:12px;color:#dc3545;">' + l.fail + '</td>' +
+                    '<td style="font-size:12px;cursor:pointer;text-decoration:underline;" data-nav-level-id="' + l.level_id + '" data-nav-status="">' + l.cards + '</td>' +
+                    '<td style="font-size:12px;color:#0d6efd;cursor:pointer;text-decoration:underline;" data-nav-level-id="' + l.level_id + '" data-nav-status="Completed">' + l.complete + '</td>' +
+                    '<td style="font-size:12px;color:#198754;cursor:pointer;text-decoration:underline;" data-nav-level-id="' + l.level_id + '" data-nav-status="Completed with Excellence">' + l.excellence + '</td>' +
+                    '<td style="font-size:12px;color:#dc3545;cursor:pointer;text-decoration:underline;" data-nav-level-id="' + l.level_id + '" data-nav-status="Failed">' + l.fail + '</td>' +
                     '<td style="font-size:12px;">' + forecast + '</td>' +
                     '</tr>';
             }
             tbody.innerHTML = html;
+            tbody.onclick = function (e) {
+                var td = e.target;
+                while (td && td !== tbody) {
+                    if (td.tagName === 'TD' && td.hasAttribute('data-nav-level-id')) {
+                        window.location.href = buildViewUrl(td.getAttribute('data-nav-status'), td.getAttribute('data-nav-level-id'), '');
+                        return;
+                    }
+                    td = td.parentNode;
+                }
+            };
         }
 
         if (total > 0) {
@@ -100,15 +144,25 @@
                     var dForecast = dept.forecast > 0 ? formatRM(dept.forecast) : 'RM0';
                     dHtml += '<tr>' +
                         '<td style="font-size:12px;font-weight:600;">' + dept.dept_name + '</td>' +
-                        '<td style="font-size:12px;">' + dCards + '</td>' +
-                        '<td style="font-size:12px;color:#0d6efd;">' + (dept.complete || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#198754;">' + (dept.excellence || 0) + '</td>' +
-                        '<td style="font-size:12px;color:#dc3545;">' + dFail + '</td>' +
+                        '<td style="font-size:12px;cursor:pointer;text-decoration:underline;" data-nav-dept="' + dept.dept_name + '" data-nav-status="">' + dCards + '</td>' +
+                        '<td style="font-size:12px;color:#0d6efd;cursor:pointer;text-decoration:underline;" data-nav-dept="' + dept.dept_name + '" data-nav-status="Completed">' + (dept.complete || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#198754;cursor:pointer;text-decoration:underline;" data-nav-dept="' + dept.dept_name + '" data-nav-status="Completed with Excellence">' + (dept.excellence || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#dc3545;cursor:pointer;text-decoration:underline;" data-nav-dept="' + dept.dept_name + '" data-nav-status="Failed">' + dFail + '</td>' +
                         '<td style="font-size:12px;">' + dFailRate + '</td>' +
                         '<td style="font-size:12px;">' + dForecast + '</td>' +
                         '</tr>';
                 }
                 deptTbody.innerHTML = dHtml;
+                deptTbody.onclick = function (e) {
+                    var td = e.target;
+                    while (td && td !== deptTbody) {
+                        if (td.tagName === 'TD' && td.hasAttribute('data-nav-dept')) {
+                            window.location.href = buildViewUrl(td.getAttribute('data-nav-status'), '', td.getAttribute('data-nav-dept'));
+                            return;
+                        }
+                        td = td.parentNode;
+                    }
+                };
             } else {
                 deptTbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="font-size:12px;">No data for the selected period.</td></tr>';
             }
@@ -266,5 +320,15 @@
 
         // Default load: 2026 data
         loadDashboard({ filter_year: 2026 });
+
+        // Stat card click navigation
+        var dashStats = document.querySelectorAll('.atem-dash-stat');
+        for (var si = 0; si < dashStats.length; si++) {
+            (function (card) {
+                card.addEventListener('click', function () {
+                    window.location.href = buildViewUrl(card.getAttribute('data-status') || '', '', '');
+                });
+            }(dashStats[si]));
+        }
     });
 }());
