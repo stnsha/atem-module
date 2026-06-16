@@ -38,6 +38,9 @@ $connect = 1;
 include(dirname(__FILE__) . '/../common/index_adv.php');
 
 $atem_permission = isset($grade) ? (int)$grade : 0;
+if ($atem_permission >= 6 && (!isset($atem) || (int)$atem !== 1)) {
+    $atem_permission = 5;
+}
 if (isset($_SESSION['atem_dev_role_override'])) {
     $atem_permission = (int)$_SESSION['atem_dev_role_override'];
 } elseif (isset($atem) && (int)$atem === 1) {

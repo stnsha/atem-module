@@ -34,9 +34,26 @@ $grade_badges = array(
     6 => 'bg-dark'
 );
 
-$show_edit       = ($atem_permission > 1);
-$requester_dept  = isset($department) ? (int)$department : 0;
-$table_cols      = $show_edit ? 5 : 4;
+$show_edit          = ($atem_permission > 1);
+$table_cols         = $show_edit ? 5 : 4;
+$requester_dept_ids = array();
+
+$_is_superadmin      = (isset($atem) && (int)$atem === 1);
+$struct_window_open  = false;
+if ($_is_superadmin) {
+    $cfg_r = mysqli_query($conn, "SELECT setting_value FROM atem_config WHERE setting_key = 'struct_window_override'");
+    if ($cfg_r && ($cfg_row = mysqli_fetch_assoc($cfg_r))) {
+        $struct_window_open = ($cfg_row['setting_value'] === '1');
+    }
+}
+if (isset($department) && $department !== '') {
+    foreach (explode(',', (string)$department) as $_rd) {
+        $_rd = (int)trim($_rd);
+        if ($_rd > 0) {
+            $requester_dept_ids[] = $_rd;
+        }
+    }
+}
 ?>
 
 <style>
@@ -175,14 +192,30 @@ $table_cols      = $show_edit ? 5 : 4;
     <?php if ($show_edit): ?>
     <!-- Right: update form -->
     <div class="col-md-5" id="update-form-col">
+
+        <?php if ($_is_superadmin): ?>
+        <div class="bento-card mb-3" id="struct-window-panel">
+            <p class="mb-1" style="font-size:12px;font-weight:600;">Evaluation Structure Update Window</p>
+            <p class="mb-2 text-muted" style="font-size:11px;">When enabled, all users may update evaluation structure regardless of the quarterly date window.</p>
+            <div class="d-flex align-items-center gap-2">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch" id="struct-window-toggle"
+                        <?php echo $struct_window_open ? 'checked' : ''; ?>
+                        style="width:2.5em;height:1.25em;cursor:pointer;">
+                </div>
+                <span id="struct-window-status" style="font-size:12px;"></span>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div class="bento-card">
             <p class="mb-3 text-muted"
                 style="font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600;">Update
                 Staff</p>
 
             <div id="form-alert" class="alert alert-dismissible fade show mb-3" role="alert"
-                style="display:none !important; font-size: 12px;">
-                <span id="form-alert-msg"></span>
+                style="display:none !important; font-size: 12px !important;">
+                <span id="form-alert-msg" style="font-size:12px;"></span>
                 <button type="button" class="btn-close" onclick="dismissAlert()"></button>
             </div>
 
@@ -196,7 +229,11 @@ $table_cols      = $show_edit ? 5 : 4;
                 <p><strong>Department:</strong> <span id="info-dept"></span></p>
                 <p><strong>Status:</strong> <span id="info-status"></span></p>
                 <p><strong>Current Grade:</strong> <span id="info-grade"></span></p>
-                <p class="mb-0"><strong>Evaluation Structure:</strong> <span id="info-struct"></span></p>
+                <p><strong>Evaluation Structure:</strong> <span id="info-struct"></span></p>
+                <div id="struct-history-section" style="display:none; margin-top:6px; padding-top:6px; border-top:1px solid #dee2e6;">
+                    <p class="mb-1" style="color:#6c757d;">History</p>
+                    <div id="struct-history-list"></div>
+                </div>
             </div>
 
             <div class="mb-3 grade-list" id="grade-section" style="display:none;">
@@ -211,6 +248,8 @@ $table_cols      = $show_edit ? 5 : 4;
                 </div>
                 <?php endforeach; ?>
             </div>
+
+            <div id="struct-lock-notice" class="mb-2" style="display:none; font-size:12px; color:#dc3545;"></div>
 
             <div class="mb-3 grade-list" id="struct-section" style="display:none;">
                 <label class="form-label" style="font-size: 12px;">Evaluation Structure</label>
@@ -233,10 +272,13 @@ $table_cols      = $show_edit ? 5 : 4;
 <script>
 var GRADE_LABELS    = <?php echo json_encode($grade_labels); ?>;
 var GRADE_BADGES    = <?php echo json_encode($grade_badges); ?>;
-var REQUESTER_GRADE = <?php echo (int)$atem_permission; ?>;
-var SHOW_EDIT       = <?php echo $show_edit ? 'true' : 'false'; ?>;
-var TABLE_COLS      = <?php echo $table_cols; ?>;
-var BACKEND_URL     = 'atem/access_control/backend.php';
+var REQUESTER_GRADE    = <?php echo (int)$atem_permission; ?>;
+var REQUESTER_DEPT_IDS = <?php echo json_encode(array_values($requester_dept_ids)); ?>;
+var IS_SUPERADMIN        = <?php echo $_is_superadmin ? 'true' : 'false'; ?>;
+var STRUCT_WINDOW_OPEN   = <?php echo $struct_window_open ? 'true' : 'false'; ?>;
+var SHOW_EDIT          = <?php echo $show_edit ? 'true' : 'false'; ?>;
+var TABLE_COLS         = <?php echo $table_cols; ?>;
+var BACKEND_URL        = 'atem/access_control/backend.php';
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>

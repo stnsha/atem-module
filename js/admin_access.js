@@ -47,14 +47,83 @@
     }
 
     // -----------------------------------------------------------------------
+    // Returns true when the requester is allowed to edit staff in deptRaw
+    // -----------------------------------------------------------------------
+    function canEditStaff(deptRaw) {
+        if (REQUESTER_GRADE >= 4) return true;
+        if (!REQUESTER_DEPT_IDS || REQUESTER_DEPT_IDS.length === 0) return false;
+        var targetIds = String(deptRaw || '').split(',').map(function (d) {
+            return parseInt(d.trim(), 10);
+        }).filter(function (d) { return !isNaN(d) && d > 0; });
+        for (var i = 0; i < REQUESTER_DEPT_IDS.length; i++) {
+            for (var j = 0; j < targetIds.length; j++) {
+                if (REQUESTER_DEPT_IDS[i] === targetIds[j]) return true;
+            }
+        }
+        return false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Struct history & lock
+    // -----------------------------------------------------------------------
+    function loadStructHistory(staffId) {
+        $('#struct-history-section').hide();
+        $('#struct-history-list').html('');
+        $.ajax({
+            url: BACKEND_URL + '?action=getStructHistory&staff_id=' + staffId,
+            type: 'GET',
+            dataType: 'json',
+            success: function (res) {
+                if (!res.success) return;
+                renderStructHistory(res.history);
+                applyStructLock(res.struct_locked, res.lock_reason);
+            }
+        });
+    }
+
+    function renderStructHistory(history) {
+        if (!history || history.length === 0) {
+            $('#struct-history-section').hide();
+            return;
+        }
+        var quarterLabel = ['Q1', 'Q2', 'Q3', 'Q4'];
+        var html = '';
+        for (var i = 0; i < history.length; i++) {
+            var h = history[i];
+            var ql = (h.quarter >= 1 && h.quarter <= 4) ? quarterLabel[h.quarter - 1] : ('Q' + h.quarter);
+            html += '<p class="mb-0">' +
+                '<span style="color:#6c757d;margin-right:8px;">' + ql + ' ' + h.year + '</span>' +
+                $('<span>').text(h.struct_name).html() +
+                '</p>';
+        }
+        $('#struct-history-list').html(html);
+        $('#struct-history-section').show();
+    }
+
+    function applyStructLock(locked, reason) {
+        if (locked) {
+            $('input[name="struct"]').prop('disabled', true);
+            $('#struct-lock-notice').text(reason).show();
+        } else {
+            $('input[name="struct"]').prop('disabled', false);
+            $('#struct-lock-notice').hide();
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Reset form — clears search, hides all right-side panels
     // -----------------------------------------------------------------------
     function resetForm() {
         selectedStaffId = null;
+        $('#struct-history-section').hide();
+        $('#struct-history-list').html('');
         $('#staff-info').hide();
+        $('#struct-lock-notice').hide();
         $('#grade-section').hide();
         $('#struct-section').hide();
+        $('input[name="struct"]').prop('disabled', false);
         $('#submit-section').css('display', 'none');
+        $('#update-btn').prop('disabled', false);
         $('#staff-search').val(null).trigger('change');
     }
 
@@ -117,6 +186,9 @@
         $('#struct-section').show();
 
         $('#submit-section').css('display', 'flex');
+        $('#update-btn').prop('disabled', !canEditStaff(staff.dept_raw));
+
+        loadStructHistory(staff.id);
     }
 
     // Grade radio change → ensure struct section is visible
@@ -129,6 +201,7 @@
         var staffId       = $(this).data('staff-id');
         var staffName     = $(this).data('staff-name');
         var staffDept     = $(this).data('staff-dept');
+        var staffDeptRaw  = $(this).data('staff-dept-raw') || '0';
         var staffStatus   = $(this).data('staff-status')      || '-';
         var staffGrade    = parseInt($(this).data('staff-grade'),     10) || 0;
         var staffStructId = parseInt($(this).data('staff-struct-id'), 10) || 0;
@@ -143,6 +216,7 @@
             id:              staffId,
             nama_staff:      staffName,
             department_name: staffDept,
+            dept_raw:        staffDeptRaw,
             status_semasa:   staffStatus,
             grade:           staffGrade,
             struct_id:       staffStructId,
@@ -194,6 +268,7 @@
             var gradeBadge = GRADE_BADGES[grade] !== undefined ? GRADE_BADGES[grade] : 'bg-secondary';
             var structName = s.struct_name || '-';
             var structId   = s.struct_id   || 0;
+            var canEdit    = canEditStaff(s.dept_raw);
 
             html += '<tr>' +
                 '<td>' + $('<span>').text(s.nama_staff).html() + '</td>' +
@@ -203,9 +278,11 @@
 
             if (SHOW_EDIT) {
                 html += '<td><button type="button" class="btn btn-sm btn-outline-secondary edit-btn"' +
+                    (canEdit ? '' : ' disabled') +
                     ' data-staff-id="' + s.id + '"' +
                     ' data-staff-name="' + $('<span>').text(s.nama_staff).html() + '"' +
                     ' data-staff-dept="' + $('<span>').text(s.department_name).html() + '"' +
+                    ' data-staff-dept-raw="' + $('<span>').text(s.dept_raw || '0').html() + '"' +
                     ' data-staff-status="' + $('<span>').text(s.status_semasa).html() + '"' +
                     ' data-staff-grade="' + grade + '"' +
                     ' data-staff-struct-id="' + structId + '"' +
@@ -324,6 +401,45 @@
 
     function dismissAlert() { $('#form-alert').css('display', 'none'); }
     window.dismissAlert = dismissAlert;
+
+    // -----------------------------------------------------------------------
+    // Struct window toggle (SuperAdmin only)
+    // -----------------------------------------------------------------------
+    if (IS_SUPERADMIN) {
+        function renderStructWindowStatus(open) {
+            var statusEl = $('#struct-window-status');
+            if (open) {
+                statusEl.text('Open').css('color', '#198754');
+            } else {
+                statusEl.text('Closed').css('color', '#6c757d');
+            }
+        }
+
+        renderStructWindowStatus(STRUCT_WINDOW_OPEN);
+
+        $('#struct-window-toggle').on('change', function () {
+            var newVal  = $(this).prop('checked') ? 1 : 0;
+            var toggle  = $(this);
+            toggle.prop('disabled', true);
+            $.ajax({
+                url: BACKEND_URL + '?action=toggleStructWindow',
+                type: 'POST',
+                dataType: 'json',
+                data: { value: newVal },
+                success: function (res) {
+                    if (res.success) {
+                        renderStructWindowStatus(res.value === 1);
+                    } else {
+                        toggle.prop('checked', !toggle.prop('checked'));
+                    }
+                },
+                error: function () {
+                    toggle.prop('checked', !toggle.prop('checked'));
+                },
+                complete: function () { toggle.prop('disabled', false); }
+            });
+        });
+    }
 
     // -----------------------------------------------------------------------
     // Init
