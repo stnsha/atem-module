@@ -4,7 +4,7 @@ ob_start();
 $page_title = 'Staff Grade & Evaluation Structure Masterlist';
 include('../header.php');
 
-if ($atem_permission < 4) {
+if ($atem_permission < 4 && !$_is_superadmin) {
     ob_end_clean();
     header('Location: /odb/atem/index.php');
     exit;

@@ -1680,7 +1680,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'update-staff-field':
-                    if ((int)$atem_permission < 4) {
+                    if ((int)$atem_permission < 4 && (!isset($atem) || (int)$atem !== 1)) {
                         $response = array('success' => false, 'message' => 'Insufficient permission');
                         break;
                     }

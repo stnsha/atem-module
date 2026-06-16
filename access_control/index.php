@@ -34,11 +34,10 @@ $grade_badges = array(
     6 => 'bg-dark'
 );
 
-$show_edit          = ($atem_permission > 1);
+$show_edit          = ($atem_permission > 1 || $_is_superadmin);
 $table_cols         = $show_edit ? 5 : 4;
 $requester_dept_ids = array();
 
-$_is_superadmin      = (isset($atem) && (int)$atem === 1);
 $struct_window_open  = false;
 if ($_is_superadmin) {
     $cfg_r = mysqli_query($conn, "SELECT setting_value FROM atem_config WHERE setting_key = 'struct_window_override'");

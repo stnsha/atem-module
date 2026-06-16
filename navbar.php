@@ -90,7 +90,7 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                 <li class="nav-item">
                     <a class="nav-link <?php echo $view_active; ?>" href="atem/view.php">ATEM</a>
                 </li>
-                <?php if ($atem_role >= 4): ?>
+                <?php if ($atem_role >= 4 || $_is_superadmin): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $performance_active; ?>"
                         href="atem/staff_performance/index.php">Performance</a>

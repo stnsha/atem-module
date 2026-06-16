@@ -102,7 +102,7 @@ foreach ($rows as $a) {
 }
 
 // Apply server-side visibility filtering based on grade.
-if ((int)$atem_permission === 1) {
+if ((int)$atem_permission === 1 && !$_is_superadmin) {
     // Grade 1: own cards only (issuer or any ARCI role).
     $filtered = array();
     foreach ($view_rows as $r) {
@@ -112,7 +112,7 @@ if ((int)$atem_permission === 1) {
         }
     }
     $view_rows = $filtered;
-} elseif ((int)$atem_permission === 2) {
+} elseif ((int)$atem_permission === 2 && !$_is_superadmin) {
     // Grade 2: cards where issuer or any ARCI member belongs to the user's department.
     $filtered = array();
     foreach ($view_rows as $idx => $r) {
@@ -126,7 +126,7 @@ if ((int)$atem_permission === 1) {
 // Grades 4–6: no server-side row filtering.
 
 $dept_list = array();
-if ((int)$atem_permission <= 2) {
+if ((int)$atem_permission <= 2 && !$_is_superadmin) {
     if ($user_dept_id && isset($dept_names[$user_dept_id])) {
         $dept_list[] = $dept_names[$user_dept_id];
     }

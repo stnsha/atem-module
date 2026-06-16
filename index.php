@@ -12,7 +12,7 @@ $dash_dept_options = array();
 $_dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department ORDER BY depart_name");
 if ($_dept_res) {
     while ($_drow = mysqli_fetch_assoc($_dept_res)) {
-        if ((int)$atem_permission >= 3) {
+        if ((int)$atem_permission >= 3 || $_is_superadmin) {
             $dash_dept_options[] = array('id' => (int)$_drow['id'], 'name' => $_drow['depart_name']);
         } elseif ((int)$atem_permission === 2 && (int)$_drow['id'] === (int)$department) {
             $dash_dept_options[] = array('id' => (int)$_drow['id'], 'name' => $_drow['depart_name']);

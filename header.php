@@ -38,16 +38,13 @@ $connect = 1;
 include(dirname(__FILE__) . '/../common/index_adv.php');
 
 $atem_permission = isset($grade) ? (int)$grade : 0;
-if ($atem_permission >= 6 && (!isset($atem) || (int)$atem !== 1)) {
-    $atem_permission = 5;
-}
 if (isset($_SESSION['atem_dev_role_override'])) {
     $atem_permission = (int)$_SESSION['atem_dev_role_override'];
-} elseif (isset($atem) && (int)$atem === 1) {
-    $atem_permission = 6;
 }
 
-if ((int)$atem_permission === 0) {
+$_is_superadmin = (!isset($_SESSION['atem_dev_role_override']) && isset($atem) && (int)$atem === 1);
+
+if ((int)$atem_permission === 0 && !$_is_superadmin) {
     if (isset($_SESSION['atem_dev_role_override'])) {
         unset($_SESSION['atem_dev_role_override']);
         header('Location: /odb/atem/index.php');
