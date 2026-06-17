@@ -707,7 +707,7 @@
             var p = sorted[i];
             var pillClass = 'atem-pill atem-pill-' + p.status;
             var isOwn = String(p.created_by) === String(CFG.staffId);
-            var actionsHtml = ((!READ || PROGRESS_MODE) && isOwn) ? '<div class="atem-progress-item-actions">'
+            var actionsHtml = ((!READ || PROGRESS_MODE) && IS_ISSUER) ? '<div class="atem-progress-item-actions">'
                 + '<button type="button" class="btn btn-outline-secondary btn-sm atem-progress-edit" data-id="' + p.id + '">Edit</button>'
                 + '<button type="button" class="btn btn-outline-danger btn-sm atem-progress-delete" data-id="' + p.id + '">Delete</button>'
                 + '</div>' : '';
@@ -734,6 +734,7 @@
 
     function startAddProgressRow() {
         if (_progressEditing) { return; }
+        if (!IS_ISSUER) { return; }
         _progressEditing = true;
         var addBtn = $('atem-add-progress-btn');
         if (addBtn) { addBtn.disabled = true; }
