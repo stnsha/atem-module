@@ -357,6 +357,7 @@ button {
   line-height: 1.4;
   color: #ffffff;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .atem-page-title .atem-pill {
