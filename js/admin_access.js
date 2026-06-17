@@ -229,16 +229,22 @@
     // -----------------------------------------------------------------------
     // Active staff table
     // -----------------------------------------------------------------------
-    var currentPage  = 1;
-    var adminPerPage = 30;
+    var currentPage     = 1;
+    var adminPerPage    = 30;
+    var activeNameFilter = '';
+    var activeDeptFilter = 0;
 
     function loadActiveStaff(page) {
         currentPage = page || 1;
         var colSpan = TABLE_COLS;
         $('#active-staff-tbody').html('<tr><td colspan="' + colSpan + '" class="text-center text-muted py-3">Loading...</td></tr>');
 
+        var url = BACKEND_URL + '?action=getActiveStaff&page=' + currentPage + '&per_page=' + adminPerPage;
+        if (activeDeptFilter > 0) { url += '&dept_filter=' + activeDeptFilter; }
+        if (activeNameFilter !== '') { url += '&name_filter=' + encodeURIComponent(activeNameFilter); }
+
         $.ajax({
-            url: BACKEND_URL + '?action=getActiveStaff&page=' + currentPage + '&per_page=' + adminPerPage,
+            url: url,
             type: 'GET',
             dataType: 'json',
             success: function (response) {
@@ -348,6 +354,27 @@
             }
         });
     }
+
+    // -----------------------------------------------------------------------
+    // Filter bar (grade 2+ only)
+    // -----------------------------------------------------------------------
+    $('#ac-apply-filter').on('click', function () {
+        activeDeptFilter = HAS_DEPT_FILTER ? (parseInt($('#ac-filter-dept').val(), 10) || 0) : 0;
+        activeNameFilter = $.trim($('#ac-filter-name').val());
+        loadActiveStaff(1);
+    });
+
+    $('#ac-reset-filter').on('click', function () {
+        activeDeptFilter = 0;
+        activeNameFilter = '';
+        if (HAS_DEPT_FILTER) { $('#ac-filter-dept').val('0'); }
+        $('#ac-filter-name').val('');
+        loadActiveStaff(1);
+    });
+
+    $('#ac-filter-name').on('keydown', function (e) {
+        if (e.key === 'Enter') { $('#ac-apply-filter').trigger('click'); }
+    });
 
     // -----------------------------------------------------------------------
     // Update staff (grade + struct)

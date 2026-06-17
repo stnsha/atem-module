@@ -53,6 +53,21 @@ if (isset($department) && $department !== '') {
         }
     }
 }
+
+$dept_filter_options = array();
+if ($atem_permission >= 2 || $_is_superadmin) {
+    $all_depts_r = mysqli_query($conn, "SELECT id, depart_name FROM staff_department ORDER BY depart_name ASC");
+    if ($all_depts_r) {
+        while ($dr = mysqli_fetch_assoc($all_depts_r)) {
+            $did = (int)$dr['id'];
+            if ($atem_permission >= 3 || $_is_superadmin) {
+                $dept_filter_options[$did] = $dr['depart_name'];
+            } elseif (in_array($did, $requester_dept_ids)) {
+                $dept_filter_options[$did] = $dr['depart_name'];
+            }
+        }
+    }
+}
 ?>
 
 <style>
@@ -157,6 +172,33 @@ if (isset($department) && $department !== '') {
 
 <p class="atem-card-hint mb-3">Manage staff grades and evaluation structures</p>
 
+<?php if ($atem_permission >= 2 || $_is_superadmin): ?>
+<div class="atem-card atem-filter mb-3">
+    <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
+    <div class="row g-2 mt-1 align-items-end">
+        <?php if (!empty($dept_filter_options)): ?>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Department</label>
+            <select id="ac-filter-dept" class="form-select form-select-sm">
+                <option value="0">All Department</option>
+                <?php foreach ($dept_filter_options as $did => $dname): ?>
+                <option value="<?php echo $did; ?>"><?php echo htmlspecialchars($dname); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php endif; ?>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Staff Name</label>
+            <input type="text" id="ac-filter-name" class="form-control form-control-sm" placeholder="Search name...">
+        </div>
+        <div class="col-auto d-flex align-items-end gap-2">
+            <button class="btn btn-sm btn-primary" id="ac-apply-filter">Apply</button>
+            <button class="btn btn-sm btn-outline-secondary" id="ac-reset-filter">Reset</button>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="row g-4">
 
     <!-- Left: staff table -->
@@ -173,7 +215,7 @@ if (isset($department) && $department !== '') {
                             <th>Staff Name</th>
                             <th>Department</th>
                             <th>Grade</th>
-                            <th>Eval Structure</th>
+                            <th>Evaluation Structure</th>
                             <?php if ($show_edit): ?><th></th><?php endif; ?>
                         </tr>
                     </thead>
@@ -184,7 +226,8 @@ if (isset($department) && $department !== '') {
                     </tbody>
                 </table>
             </div>
-            <div class="atem-pager" id="admin-staff-pager" style="margin-top:12px;padding-top:12px;border-top:1px solid #e9ecef;"></div>
+            <div class="atem-pager" id="admin-staff-pager"
+                style="margin-top:12px;padding-top:12px;border-top:1px solid #e9ecef;"></div>
         </div>
     </div>
 
@@ -195,7 +238,8 @@ if (isset($department) && $department !== '') {
         <?php if ($_is_superadmin): ?>
         <div class="bento-card mb-3" id="struct-window-panel">
             <p class="mb-1" style="font-size:12px;font-weight:600;">Evaluation Structure Update Window</p>
-            <p class="mb-2 text-muted" style="font-size:11px;">When enabled, all users may update evaluation structure regardless of the quarterly date window.</p>
+            <p class="mb-2 text-muted" style="font-size:11px;">When enabled, all users may update evaluation structure
+                regardless of the quarterly date window.</p>
             <div class="d-flex align-items-center gap-2">
                 <div class="form-check form-switch mb-0">
                     <input class="form-check-input" type="checkbox" role="switch" id="struct-window-toggle"
@@ -229,7 +273,8 @@ if (isset($department) && $department !== '') {
                 <p><strong>Status:</strong> <span id="info-status"></span></p>
                 <p><strong>Current Grade:</strong> <span id="info-grade"></span></p>
                 <p><strong>Evaluation Structure:</strong> <span id="info-struct"></span></p>
-                <div id="struct-history-section" style="display:none; margin-top:6px; padding-top:6px; border-top:1px solid #dee2e6;">
+                <div id="struct-history-section"
+                    style="display:none; margin-top:6px; padding-top:6px; border-top:1px solid #dee2e6;">
                     <p class="mb-1" style="color:#6c757d;">History</p>
                     <div id="struct-history-list"></div>
                 </div>
@@ -253,7 +298,8 @@ if (isset($department) && $department !== '') {
             <div class="mb-3 grade-list" id="struct-section" style="display:none;">
                 <label class="form-label" style="font-size: 12px;">Evaluation Structure</label>
                 <div id="struct-radio-list"></div>
-                <p id="struct-none-msg" class="text-muted mb-0" style="display:none; font-size:12px; margin-top:4px;">No evaluation structures defined.</p>
+                <p id="struct-none-msg" class="text-muted mb-0" style="display:none; font-size:12px; margin-top:4px;">No
+                    evaluation structures defined.</p>
             </div>
 
             <div class="d-flex justify-content-end gap-2" id="submit-section" style="display:none !important;">
@@ -269,15 +315,16 @@ if (isset($department) && $department !== '') {
 </div><!-- /.atem-container -->
 
 <script>
-var GRADE_LABELS    = <?php echo json_encode($grade_labels); ?>;
-var GRADE_BADGES    = <?php echo json_encode($grade_badges); ?>;
-var REQUESTER_GRADE    = <?php echo (int)$atem_permission; ?>;
+var GRADE_LABELS = <?php echo json_encode($grade_labels); ?>;
+var GRADE_BADGES = <?php echo json_encode($grade_badges); ?>;
+var REQUESTER_GRADE = <?php echo (int)$atem_permission; ?>;
 var REQUESTER_DEPT_IDS = <?php echo json_encode(array_values($requester_dept_ids)); ?>;
-var IS_SUPERADMIN        = <?php echo $_is_superadmin ? 'true' : 'false'; ?>;
-var STRUCT_WINDOW_OPEN   = <?php echo $struct_window_open ? 'true' : 'false'; ?>;
-var SHOW_EDIT          = <?php echo $show_edit ? 'true' : 'false'; ?>;
-var TABLE_COLS         = <?php echo $table_cols; ?>;
-var BACKEND_URL        = 'atem/access_control/backend.php';
+var IS_SUPERADMIN = <?php echo $_is_superadmin ? 'true' : 'false'; ?>;
+var STRUCT_WINDOW_OPEN = <?php echo $struct_window_open ? 'true' : 'false'; ?>;
+var SHOW_EDIT = <?php echo $show_edit ? 'true' : 'false'; ?>;
+var TABLE_COLS = <?php echo $table_cols; ?>;
+var BACKEND_URL = 'atem/access_control/backend.php';
+var HAS_DEPT_FILTER = <?php echo !empty($dept_filter_options) ? 'true' : 'false'; ?>;
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>

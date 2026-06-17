@@ -127,6 +127,20 @@ if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $perPage = isset($_GET['per_page']) ? max(5, min(100, (int)$_GET['per_page'])) : 30;
     $offset  = ($page - 1) * $perPage;
 
+    $name_filter_raw = isset($_GET['name_filter']) ? trim($_GET['name_filter']) : '';
+    $name_filter     = ($name_filter_raw !== '') ? mysqli_real_escape_string($conn, $name_filter_raw) : '';
+    $dept_filter     = isset($_GET['dept_filter']) ? (int)$_GET['dept_filter'] : 0;
+
+    $name_sql       = ($name_filter !== '') ? "AND s.nama_staff LIKE '%$name_filter%'" : '';
+    $name_sql_count = ($name_filter !== '') ? "AND nama_staff LIKE '%$name_filter%'"   : '';
+
+    // For grade 2, silently discard dept_filter that falls outside their allowed departments
+    if ($dept_filter > 0 && $requester_grade === 2 && !in_array($dept_filter, $requester_dept_ids)) {
+        $dept_filter = 0;
+    }
+    $dept_filter_sql       = ($dept_filter > 0) ? "AND FIND_IN_SET($dept_filter, s.department)"   : '';
+    $dept_filter_sql_count = ($dept_filter > 0) ? "AND FIND_IN_SET($dept_filter, department)"     : '';
+
     if ($requester_grade === 2) {
         $dept_conds       = array();
         $dept_conds_count = array();
@@ -136,11 +150,11 @@ if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         }
         $dept_sql           = count($dept_conds)       ? '(' . implode(' OR ', $dept_conds) . ')'       : '1=0';
         $dept_sql_count     = count($dept_conds_count) ? '(' . implode(' OR ', $dept_conds_count) . ')' : '1=0';
-        $where_clause       = "s.recycle != 1 AND s.grade > 0 AND $dept_sql";
-        $where_clause_count = "recycle != 1 AND grade > 0 AND $dept_sql_count";
+        $where_clause       = "s.recycle != 1 AND s.grade > 0 AND $dept_sql $name_sql $dept_filter_sql";
+        $where_clause_count = "recycle != 1 AND grade > 0 AND $dept_sql_count $name_sql_count $dept_filter_sql_count";
     } else {
-        $where_clause       = "s.recycle != 1 AND s.grade > 0";
-        $where_clause_count = "recycle != 1 AND grade > 0";
+        $where_clause       = "s.recycle != 1 AND s.grade > 0 $name_sql $dept_filter_sql";
+        $where_clause_count = "recycle != 1 AND grade > 0 $name_sql_count $dept_filter_sql_count";
     }
 
     $count_result = mysqli_query($conn, "SELECT COUNT(*) as total FROM staff WHERE $where_clause_count");
