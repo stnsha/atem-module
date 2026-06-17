@@ -1359,9 +1359,9 @@ if (!defined('API_JWT_INCLUDED')) {
 
                     foreach ($items as $item) {
                         if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
-                            $createdAt = isset($item['created_at']) ? $item['created_at'] : '';
-                            if ($createdAt) {
-                                $ts        = strtotime($createdAt);
+                            $startDate = isset($item['start_date']) ? $item['start_date'] : '';
+                            if ($startDate) {
+                                $ts        = strtotime($startDate);
                                 $itemYear  = (int)date('Y', $ts);
                                 $itemMonth = (int)date('n', $ts);
                                 if ($filterYear > 0 && $itemYear !== $filterYear) { continue; }
