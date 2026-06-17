@@ -401,6 +401,7 @@
                 if (response.success) {
                     showAlert(response.message, true);
                     loadActiveStaff(currentPage);
+                    loadStructHistory(selectedStaffId);
 
                     var g      = parseInt(grade, 10);
                     var label  = GRADE_LABELS[g] !== undefined ? GRADE_LABELS[g] + ' (' + g + ')' : grade;
@@ -456,6 +457,9 @@
                 success: function (res) {
                     if (res.success) {
                         renderStructWindowStatus(res.value === 1);
+                        if (selectedStaffId) {
+                            loadStructHistory(selectedStaffId);
+                        }
                     } else {
                         toggle.prop('checked', !toggle.prop('checked'));
                     }

@@ -299,14 +299,20 @@ if ($action === 'updateAccess' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $cur_row         = $cur_result ? mysqli_fetch_assoc($cur_result) : null;
     $struct_changing = ($cur_row !== null && (int)$cur_row['struct'] !== $struct_id_safe);
 
+    // Check history existence once; reused for quota enforcement and insert decision
+    $hist_exists = false;
+    if ($struct_changing) {
+        $hist_check  = mysqli_query($conn, "SELECT id FROM staff_struct_history WHERE staff_id = $target_id AND year = $current_year AND quarter = $current_quarter");
+        $hist_exists = ($hist_check && mysqli_num_rows($hist_check) > 0);
+    }
+
     // Quarter lock: grade 2-5 (non-superadmin) may only change struct once per quarter, within window
     if ($struct_changing && !$requester_is_superadmin) {
         if (!$in_window) {
             echo json_encode(array('success' => false, 'message' => 'Evaluation structure can only be updated between the 1st and 10th of each quarter.'));
             exit;
         }
-        $hist_check = mysqli_query($conn, "SELECT id FROM staff_struct_history WHERE staff_id = $target_id AND year = $current_year AND quarter = $current_quarter");
-        if ($hist_check && mysqli_num_rows($hist_check) > 0) {
+        if ($hist_exists) {
             echo json_encode(array('success' => false, 'message' => 'Evaluation structure has already been updated this quarter.'));
             exit;
         }
@@ -315,7 +321,11 @@ if ($action === 'updateAccess' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $update = "UPDATE staff SET grade = $grade, struct = $struct_id_safe WHERE id = $target_id AND recycle != 1";
     if (mysqli_query($conn, $update)) {
         if ($struct_changing) {
-            mysqli_query($conn, "INSERT INTO staff_struct_history (staff_id, struct, year, quarter) VALUES ($target_id, $struct_id_safe, $current_year, $current_quarter)");
+            if (!$hist_exists) {
+                mysqli_query($conn, "INSERT INTO staff_struct_history (staff_id, struct, year, quarter) VALUES ($target_id, $struct_id_safe, $current_year, $current_quarter)");
+            } else {
+                mysqli_query($conn, "UPDATE staff_struct_history SET struct = $struct_id_safe WHERE staff_id = $target_id AND year = $current_year AND quarter = $current_quarter");
+            }
         }
         echo json_encode(array('success' => true, 'message' => 'Updated successfully.'));
     } else {
