@@ -170,8 +170,6 @@ if ($atem_permission >= 2 || $_is_superadmin) {
 }
 </style>
 
-<p class="atem-card-hint mb-3">Manage staff grades and evaluation structures</p>
-
 <?php if ($atem_permission >= 2 || $_is_superadmin): ?>
 <div class="atem-card atem-filter mb-3">
     <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
