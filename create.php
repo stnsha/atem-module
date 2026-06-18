@@ -207,7 +207,7 @@ $api_unavailable = empty($lookup_result['success']);
         <!-- Reference Link -->
         <div class="atem-card">
             <div class="atem-card-title-row">
-                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link</h6>
+                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link <span class="atem-req">*</span></h6>
                 <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference
                     Link</button>
             </div>
@@ -215,6 +215,7 @@ $api_unavailable = empty($lookup_result['success']);
             <div id="atem-reflink-list" class="atem-reflink-list">
                 <div class="atem-empty-state">No Reference Link added.</div>
             </div>
+            <div class="atem-form-error" id="reflink-section-error"></div>
         </div>
     </div>
 

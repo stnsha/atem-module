@@ -73,14 +73,15 @@
 
     function clearFormErrors() {
         ['atem-title-error', 'atem-level-error', 'atem-rule-error', 'tl-start-error',
-            'tl-end-error', 'arci-error', 'atem-save-error', 'atem-file-error'].forEach(function (id) {
+            'tl-end-error', 'arci-error', 'atem-save-error', 'atem-file-error',
+            'reflink-section-error'].forEach(function (id) {
             setError(id, '');
         });
     }
 
     function scrollToFirstError() {
         var ids = ['atem-title-error', 'atem-level-error', 'atem-rule-error', 'tl-start-error',
-                   'tl-end-error', 'arci-error', 'atem-file-error', 'atem-save-error'];
+                   'tl-end-error', 'arci-error', 'reflink-section-error', 'atem-file-error', 'atem-save-error'];
         for (var i = 0; i < ids.length; i++) {
             var el = $(ids[i]);
             if (el && el.textContent.trim() !== '') {
@@ -801,6 +802,10 @@
                 setError('arci-error', 'This rule requires exactly ' + limits.maxR + ' Responsible (R) member(s) to be incentivised.');
                 return false;
             }
+        }
+        if (!reflinks || reflinks.length === 0) {
+            setError('reflink-section-error', 'At least one Reference Link is required.');
+            return false;
         }
         return true;
     }

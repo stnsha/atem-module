@@ -55,7 +55,7 @@
 
     function scrollToFirstError() {
         var ids = ['atem-title-error', 'atem-level-error', 'atem-rule-error', 'tl-start-error',
-                   'tl-end-error', 'tl-status-error', 'arci-error', 'atem-save-error'];
+                   'tl-end-error', 'tl-status-error', 'arci-error', 'reflink-section-error', 'atem-save-error'];
         for (var i = 0; i < ids.length; i++) {
             var el = $(ids[i]);
             if (el && el.textContent.trim() !== '') {
@@ -879,7 +879,7 @@
     function validateFinal() {
         setError('atem-title-error', ''); setError('atem-level-error', ''); setError('atem-rule-error', '');
         setError('tl-start-error', ''); setError('tl-end-error', ''); setError('tl-status-error', '');
-        setError('atem-save-error', '');
+        setError('reflink-section-error', ''); setError('atem-save-error', '');
         if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return false; }
         if (!$('atem-level').value) { setError('atem-level-error', 'ATEM Complexity Levelis required.'); return false; }
         if (!$('tl-start').value) { setError('tl-start-error', 'Start Date is required.'); return false; }
@@ -921,6 +921,10 @@
         if (level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
             var _arciErr = validateArciIncentive();
             if (_arciErr) { setError('arci-error', _arciErr); return false; }
+        }
+        if (!reflinks || reflinks.length === 0) {
+            setError('reflink-section-error', 'At least one Reference Link is required.');
+            return false;
         }
         return true;
     }
