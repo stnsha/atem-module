@@ -50,6 +50,7 @@
     // Returns true when the requester is allowed to edit staff in deptRaw
     // -----------------------------------------------------------------------
     function canEditStaff(deptRaw) {
+        if (IS_SUPERADMIN) return true;
         if (REQUESTER_GRADE >= 4) return true;
         if (!REQUESTER_DEPT_IDS || REQUESTER_DEPT_IDS.length === 0) return false;
         var targetIds = String(deptRaw || '').split(',').map(function (d) {
