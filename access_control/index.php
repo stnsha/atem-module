@@ -53,7 +53,7 @@ if ($atem_permission >= 2 || $_is_superadmin) {
     if ($all_depts_r) {
         while ($dr = mysqli_fetch_assoc($all_depts_r)) {
             $did = (int)$dr['id'];
-            if ($atem_permission >= 3 || $_is_superadmin) {
+            if ($atem_permission >= 4 || $_is_superadmin) {
                 $dept_filter_options[$did] = $dr['depart_name'];
             } elseif (in_array($did, $requester_dept_ids)) {
                 $dept_filter_options[$did] = $dr['depart_name'];

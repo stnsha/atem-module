@@ -327,9 +327,9 @@
         (CFG.statuses || []).forEach(function (s) {
             if (String(s.id) === String(selId)) { selVal = s.value; }
         });
-        var isActive  = selVal === 'Active';
-        var extFilled = !!($('tl-ext1') && $('tl-ext1').value);
-        if (isActive && !extFilled) {
+        var isActive = selVal === 'Active';
+        var extChecked = !!($('tl-extended') && $('tl-extended').checked);
+        if (isActive && !extChecked) {
             endEl.removeAttribute('disabled');
         } else {
             endEl.setAttribute('disabled', 'disabled');
@@ -339,22 +339,15 @@
     function syncStatusOptions() {
         var statusEl = $('tl-status');
         if (!statusEl) { return; }
-        var isExtended = !!($('tl-extended') && $('tl-extended').checked && $('tl-ext1') && $('tl-ext1').value);
-        var current    = statusEl.value;
+        var current = statusEl.value;
         statusEl.innerHTML = '<option value="">Select status</option>';
         (CFG.statuses || []).forEach(function (s) {
-            if (isExtended && s.value !== 'Extended' && s.value !== 'Failed') { return; }
-            var opt         = document.createElement('option');
-            opt.value       = s.id;
+            var opt = document.createElement('option');
+            opt.value = s.id;
             opt.textContent = s.value;
             statusEl.appendChild(opt);
         });
         statusEl.value = current;
-        if (!statusEl.value && isExtended) {
-            (CFG.statuses || []).forEach(function (s) {
-                if (s.value === 'Extended') { statusEl.value = s.id; }
-            });
-        }
         recalcClosureDate();
     }
 
@@ -366,8 +359,7 @@
     function syncIncentiveApproval() {
         var wrap = $('tl-incentive-approval-wrap');
         if (!wrap) { return; }
-        var isExtended = !!($('tl-extended') && $('tl-extended').checked && $('tl-ext1') && $('tl-ext1').value);
-        wrap.style.display = (isExtended && !READ && IS_ISSUER) ? '' : 'none';
+        wrap.style.display = 'none'; // hidden until further notice
         var amountEl = $('tl-approval-amount');
         if (amountEl) {
             var incTotal = _lastCalcIncentive;
@@ -901,17 +893,6 @@
             setError('tl-status-error', 'The current status is "' + originalStatusValue + '". Please change the status before saving.');
             return false;
         }
-        if ($('tl-extended').checked && $('tl-ext1').value && originalStatusValue !== 'Extended') {
-            var selStatusId = $('tl-status').value;
-            var selStatusValue = '';
-            (CFG.statuses || []).forEach(function (s) {
-                if (String(s.id) === String(selStatusId)) { selStatusValue = s.value; }
-            });
-            if (selStatusValue !== 'Extended') {
-                setError('tl-status-error', 'Status must be changed to "Extended" when an extension date is applied.');
-                return false;
-            }
-        }
         if ($('tl-extended').checked && !$('tl-ext1').value) {
             setError('atem-save-error', 'Extended Date 1 is required when the extended option is checked.');
             return false;
@@ -1163,36 +1144,12 @@
         var selId = $('tl-status') ? $('tl-status').value : '';
         var selVal = '';
         (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(selId)) { selVal = s.value; } });
-        if (selVal === 'Extended') {
-            if (!extEl.checked) {
-                extEl.checked = true;
-                syncExtensionFields();
-            }
-            if (!REC.extended_date_1) {
-                extEl.removeAttribute('disabled');
-            }
-        } else if (selVal === 'Failed' && extEl.checked) {
-            // Failed on an extended ATEM — preserve the extended state, lock the checkbox.
+        if (selVal === 'Draft') {
             extEl.setAttribute('disabled', 'disabled');
         } else {
-            // Active / Draft / Completed — only clear extension if ext1 was not already saved to DB.
             var ext1El = $('tl-ext1');
             var extLocked = ext1El && ext1El.disabled && ext1El.value;
-            if (!extLocked && extEl.checked) {
-                extEl.checked = false;
-                if (ext1El && !ext1El.disabled) { ext1El.value = ''; }
-                var w1 = $('tl-ext1-wrap');
-                if (w1) { w1.style.display = 'none'; }
-                var reqEl = $('tl-ext1-req');
-                if (reqEl) { reqEl.style.display = 'none'; }
-                syncIncentiveApproval();
-                recalcFinalDue();
-            }
-            if (selVal === 'Draft') {
-                extEl.setAttribute('disabled', 'disabled');
-            } else {
-                extEl.removeAttribute('disabled');
-            }
+            if (!extLocked) { extEl.removeAttribute('disabled'); }
         }
     }
 
@@ -1271,22 +1228,6 @@
         if ($('tl-extended')) {
             $('tl-extended').addEventListener('change', function () {
                 syncExtensionFields();
-                var statusSel = $('tl-status');
-                if (!statusSel) { return; }
-                if (this.checked) {
-                    // Auto-select Extended status when the checkbox is ticked.
-                    (CFG.statuses || []).forEach(function (s) {
-                        if (s.value === 'Extended') { statusSel.value = s.id; }
-                    });
-                    syncStatusOptions();
-                    syncEndDateLock(); // re-evaluate after status is now Extended
-                } else {
-                    syncStatusOptions();
-                    (CFG.statuses || []).forEach(function (s) {
-                        if (s.value === 'Active') { statusSel.value = s.id; }
-                    });
-                    syncEndDateLock(); // re-evaluate after status is back to Active
-                }
                 recalcClosureDate();
                 applyExtMins();
                 showTimelineReminder();
@@ -1381,8 +1322,6 @@
                 (CFG.statuses || []).forEach(function (s) {
                     if (String(s.id) === String(selId)) { selVal = s.value; }
                 });
-                var origStatusVal = (REC.status && REC.status.value) ? REC.status.value : '';
-                var isRevertingFromExtended = (origStatusVal === 'Extended' && selVal !== 'Extended' && selVal !== '');
                 if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
                     var msgEl = $('atem-terminal-warn-msg');
                     if (msgEl) {
@@ -1399,22 +1338,6 @@
                         okBtn.addEventListener('click', handler);
                     }
                     warnModal.show();
-                } else if (isRevertingFromExtended) {
-                    var msgEl2 = $('atem-terminal-warn-msg');
-                    if (msgEl2) {
-                        msgEl2.textContent = 'This ATEM was previously set to "Extended". Saving it as "' + selVal + '" will remove the extension. Do you want to proceed?';
-                    }
-                    var warnModal2 = new bootstrap.Modal($('atem-terminal-warn-modal'));
-                    var okBtn2 = $('atem-terminal-warn-ok');
-                    if (okBtn2) {
-                        var handler2 = function () {
-                            okBtn2.removeEventListener('click', handler2);
-                            warnModal2.hide();
-                            saveAtem();
-                        };
-                        okBtn2.addEventListener('click', handler2);
-                    }
-                    warnModal2.show();
                 } else {
                     saveAtem();
                 }

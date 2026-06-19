@@ -134,14 +134,14 @@ if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $name_sql       = ($name_filter !== '') ? "AND s.nama_staff LIKE '%$name_filter%'" : '';
     $name_sql_count = ($name_filter !== '') ? "AND nama_staff LIKE '%$name_filter%'"   : '';
 
-    // For grade 2, silently discard dept_filter that falls outside their allowed departments
-    if ($dept_filter > 0 && $requester_grade === 2 && !in_array($dept_filter, $requester_dept_ids)) {
+    // For grades 2-3, silently discard dept_filter that falls outside their allowed departments
+    if ($dept_filter > 0 && $requester_grade <= 3 && !$requester_is_superadmin && !in_array($dept_filter, $requester_dept_ids)) {
         $dept_filter = 0;
     }
     $dept_filter_sql       = ($dept_filter > 0) ? "AND FIND_IN_SET($dept_filter, s.department)"   : '';
     $dept_filter_sql_count = ($dept_filter > 0) ? "AND FIND_IN_SET($dept_filter, department)"     : '';
 
-    if ($requester_grade === 2) {
+    if ($requester_grade <= 3 && !$requester_is_superadmin) {
         $dept_conds       = array();
         $dept_conds_count = array();
         foreach ($requester_dept_ids as $_did) {
@@ -213,7 +213,7 @@ if ($action === 'searchStaff' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    if ($requester_grade === 2) {
+    if ($requester_grade <= 3 && !$requester_is_superadmin) {
         $dept_conds = array();
         foreach ($requester_dept_ids as $_did) {
             $dept_conds[] = "FIND_IN_SET($_did, s.department)";

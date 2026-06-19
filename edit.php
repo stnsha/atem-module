@@ -144,14 +144,6 @@ if ($is_progress && in_array($current_status_value, $terminal_statuses)) {
     $is_progress = false;
 }
 
-// Extended ATEMs are locked once today is past the closure date (= extended_date_1).
-if (!$is_read && $current_status_value === 'Extended') {
-    $ext_closure = ($record && isset($record['closure_date'])) ? $record['closure_date'] : '';
-    if ($ext_closure && date('Y-m-d') > $ext_closure) {
-        $mode    = 'read';
-        $is_read = true;
-    }
-}
 
 $is_draft      = ($current_status_value === 'Draft');
 $is_issuer_now = ($record && (int)$staff_id === (int)$record['issuer_staff_id']);
@@ -242,7 +234,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 
     <!-- Right column: Incentive + Attachment + Reference Link -->
     <div class="atem-bento-item atem-span-4">
-        <div class="atem-card mb-3">
+        <div class="atem-card mb-3" style="display:none;">
             <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
             <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The
                 company reserves the right to determine the final payout under its incentive scheme. C and I roles are
@@ -551,6 +543,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         </div>
     </div>
 </div>
+
 
 <script>
 var ATEM_CONFIG = <?php echo json_encode($atem_config); ?>;
