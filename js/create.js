@@ -1004,9 +1004,11 @@
         updateArciWarning();
         renderReferenceLinks();
         renderStagedFiles();
-        var _d = new Date();
-        var today = _d.getFullYear() + '-' + (_d.getMonth() + 1 < 10 ? '0' + (_d.getMonth() + 1) : '' + (_d.getMonth() + 1)) + '-' + (_d.getDate() < 10 ? '0' + _d.getDate() : '' + _d.getDate());
-        if ($('tl-start')) { $('tl-start').setAttribute('min', today); }
-        if ($('tl-end')) { $('tl-end').setAttribute('min', today); }
+        if (!(CFG.backdate && CFG.backdate.enabled)) {
+            var _d = new Date();
+            var today = _d.getFullYear() + '-' + (_d.getMonth() + 1 < 10 ? '0' + (_d.getMonth() + 1) : '' + (_d.getMonth() + 1)) + '-' + (_d.getDate() < 10 ? '0' + _d.getDate() : '' + _d.getDate());
+            if ($('tl-start')) { $('tl-start').setAttribute('min', today); }
+            if ($('tl-end')) { $('tl-end').setAttribute('min', today); }
+        }
     });
 })();

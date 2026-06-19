@@ -6,3 +6,6 @@ CREATE TABLE IF NOT EXISTS atem_config (
 
 INSERT IGNORE INTO atem_config (setting_key, setting_value)
 VALUES ('struct_window_override', '0');
+
+INSERT IGNORE INTO atem_config (setting_key, setting_value)
+VALUES ('backdate_enabled', '0');

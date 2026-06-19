@@ -71,8 +71,9 @@ $current_dir  = basename(dirname($_SERVER['PHP_SELF']));
 // Determine active class for each nav item
 $dashboard_active = ($current_page == 'index.php' && $current_dir == 'atem')  ? 'active' : '';
 $view_active      = ($current_dir == 'atem' && ($current_page == 'view.php' || $current_page == 'edit.php' || $current_page == 'create.php')) ? 'active' : '';
-$admin_active       = ($current_dir == 'access_control' && $current_page == 'index.php')   ? 'active' : '';
-$masterlist_active  = ($current_dir == 'access_control' && $current_page == 'masterlist.php') ? 'active' : '';
+$admin_active          = ($current_dir == 'access_control' && $current_page == 'index.php')   ? 'active' : '';
+$masterlist_active     = ($current_dir == 'access_control' && $current_page == 'masterlist.php') ? 'active' : '';
+$admin_settings_active = ($current_dir == 'admin' && $current_page == 'index.php') ? 'active' : '';
 $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
 
 ?>
@@ -104,6 +105,11 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                 <?php if ($_is_superadmin || $atem_permission >= 4): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $masterlist_active; ?>" href="atem/access_control/masterlist.php">Masterlist</a>
+                </li>
+                <?php endif; ?>
+                <?php if ($_is_superadmin): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?php echo $admin_settings_active; ?>" href="atem/admin/index.php">Admin</a>
                 </li>
                 <?php endif; ?>
             </ul>

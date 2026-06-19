@@ -471,18 +471,4 @@ if ($action === 'addLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-if ($action === 'toggleStructWindow' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!$db_is_superadmin) {
-        echo json_encode(array('success' => false, 'message' => 'Unauthorized.'));
-        exit;
-    }
-    $new_value = (isset($_POST['value']) && (int)$_POST['value'] === 1) ? '1' : '0';
-    mysqli_query($conn,
-        "INSERT INTO atem_config (setting_key, setting_value) VALUES ('struct_window_override', '$new_value')
-         ON DUPLICATE KEY UPDATE setting_value = '$new_value'"
-    );
-    echo json_encode(array('success' => true, 'value' => (int)$new_value));
-    exit;
-}
-
 echo json_encode(array('error' => 'Unknown action'));

@@ -1141,6 +1141,9 @@
     }
 
     function applyExtMins() {
+        var ext1El = $('tl-ext1');
+        if (!ext1El) { return; }
+        if (CFG.backdate && CFG.backdate.enabled) { return; }
         var _d = new Date();
         var todayStr = _d.getFullYear() + '-' + (_d.getMonth() + 1 < 10 ? '0' + (_d.getMonth() + 1) : '' + (_d.getMonth() + 1)) + '-' + (_d.getDate() < 10 ? '0' + _d.getDate() : '' + _d.getDate());
         var endVal = $('tl-end') ? ($('tl-end').value || '') : '';
@@ -1151,8 +1154,7 @@
             var endNextStr = endNext.getFullYear() + '-' + (endNext.getMonth() + 1 < 10 ? '0' + (endNext.getMonth() + 1) : '' + (endNext.getMonth() + 1)) + '-' + (endNext.getDate() < 10 ? '0' + endNext.getDate() : '' + endNext.getDate());
             if (endNextStr > todayStr) { ext1Min = endNextStr; }
         }
-        var ext1El = $('tl-ext1');
-        if (ext1El) { ext1El.setAttribute('min', ext1Min); }
+        ext1El.setAttribute('min', ext1Min);
     }
 
     function syncExtendedByStatus() {

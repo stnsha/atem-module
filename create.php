@@ -91,6 +91,14 @@ $atem_config = array(
     'draft'         => $session_draft,
 );
 
+// Read backdate config so the JS can skip the today-min restriction when enabled.
+$_bd_enabled = false;
+$_bd_result  = mysqli_query($conn, "SELECT setting_value FROM atem_config WHERE setting_key = 'backdate_enabled'");
+if ($_bd_result && ($r = mysqli_fetch_assoc($_bd_result))) {
+    $_bd_enabled = ($r['setting_value'] === '1');
+}
+$atem_config['backdate'] = array('enabled' => $_bd_enabled);
+
 // Saving is available as long as the atem-api service answered the lookups call.
 $api_unavailable = empty($lookup_result['success']);
 ?>

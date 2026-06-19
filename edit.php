@@ -176,6 +176,13 @@ $atem_config = array(
     'record'      => $record,
     'isIssuer'    => (bool) $is_issuer_now,
 );
+
+$_bd_enabled = false;
+$_bd_result  = mysqli_query($conn, "SELECT setting_value FROM atem_config WHERE setting_key = 'backdate_enabled'");
+if ($_bd_result && ($r = mysqli_fetch_assoc($_bd_result))) {
+    $_bd_enabled = ($r['setting_value'] === '1');
+}
+$atem_config['backdate'] = array('enabled' => $_bd_enabled);
 ?>
 
 <?php if ($api_unavailable): ?>

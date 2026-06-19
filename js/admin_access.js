@@ -431,48 +431,6 @@
     window.dismissAlert = dismissAlert;
 
     // -----------------------------------------------------------------------
-    // Struct window toggle (SuperAdmin only)
-    // -----------------------------------------------------------------------
-    if (IS_SUPERADMIN) {
-        function renderStructWindowStatus(open) {
-            var statusEl = $('#struct-window-status');
-            if (open) {
-                statusEl.text('Open').css('color', '#198754');
-            } else {
-                statusEl.text('Closed').css('color', '#6c757d');
-            }
-        }
-
-        renderStructWindowStatus(STRUCT_WINDOW_OPEN);
-
-        $('#struct-window-toggle').on('change', function () {
-            var newVal  = $(this).prop('checked') ? 1 : 0;
-            var toggle  = $(this);
-            toggle.prop('disabled', true);
-            $.ajax({
-                url: BACKEND_URL + '?action=toggleStructWindow',
-                type: 'POST',
-                dataType: 'json',
-                data: { value: newVal },
-                success: function (res) {
-                    if (res.success) {
-                        renderStructWindowStatus(res.value === 1);
-                        if (selectedStaffId) {
-                            loadStructHistory(selectedStaffId);
-                        }
-                    } else {
-                        toggle.prop('checked', !toggle.prop('checked'));
-                    }
-                },
-                error: function () {
-                    toggle.prop('checked', !toggle.prop('checked'));
-                },
-                complete: function () { toggle.prop('disabled', false); }
-            });
-        });
-    }
-
-    // -----------------------------------------------------------------------
     // Init
     // -----------------------------------------------------------------------
     loadAllStructData(function () { loadActiveStaff(1); });
