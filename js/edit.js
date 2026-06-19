@@ -28,6 +28,7 @@
     var attachments = [];
     var progressUpdates = [];
     var _inlineSaveTimer = null;
+    var _lastCalcIncentive = 'RM0.00';
 
     function $(id) { return document.getElementById(id); }
     function money(n) { return 'RM' + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
@@ -246,10 +247,13 @@
                 r = base * 0.5 * incentivisedR;
             }
         }
-        $('inc-base').textContent = money(base);
-        $('inc-a').textContent = money(a);
-        $('inc-r').textContent = money(code === 'rule 1' ? rDisplay : r);
-        $('inc-total').textContent = money(a + r);
+        _lastCalcIncentive = money(a + r);
+        var _isExtended = !!($('tl-extended') && $('tl-extended').checked && $('tl-ext1') && $('tl-ext1').value);
+        var _noIncentive = (_isExtended && !READ && IS_ISSUER) && !!($('tl-incentive-approve-no') && $('tl-incentive-approve-no').checked);
+        $('inc-base').textContent  = _noIncentive ? money(0) : money(base);
+        $('inc-a').textContent     = _noIncentive ? money(0) : money(a);
+        $('inc-r').textContent     = _noIncentive ? money(0) : money(code === 'rule 1' ? rDisplay : r);
+        $('inc-total').textContent = _noIncentive ? money(0) : money(a + r);
         var rLabel = $('inc-r-label');
         if (rLabel) {
             if (code === 'rule 1') {
@@ -366,7 +370,7 @@
         wrap.style.display = (isExtended && !READ && IS_ISSUER) ? '' : 'none';
         var amountEl = $('tl-approval-amount');
         if (amountEl) {
-            var incTotal = $('inc-total') ? $('inc-total').textContent : 'RM 0.00';
+            var incTotal = _lastCalcIncentive;
             amountEl.textContent = incTotal;
         }
     }
@@ -1304,7 +1308,10 @@
         }
         var approvalRadios = document.querySelectorAll('input[name="tl-incentive-approval"]');
         for (var _r = 0; _r < approvalRadios.length; _r++) {
-            approvalRadios[_r].addEventListener('change', showTimelineReminder);
+            approvalRadios[_r].addEventListener('change', function () {
+                recalcIncentive();
+                showTimelineReminder();
+            });
         }
 
         if ($('arci-dept-search')) { $('arci-dept-search').addEventListener('keyup', filterDepartments); }
