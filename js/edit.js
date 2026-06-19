@@ -288,7 +288,8 @@
             closureEl.value = ($('tl-ext1') && $('tl-ext1').value) ? $('tl-ext1').value : '';
         } else if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
             if (!closureEl.value) {
-                closureEl.value = new Date().toISOString().substring(0, 10);
+                var _cd = new Date();
+                closureEl.value = _cd.getFullYear() + '-' + (_cd.getMonth() + 1 < 10 ? '0' + (_cd.getMonth() + 1) : '' + (_cd.getMonth() + 1)) + '-' + (_cd.getDate() < 10 ? '0' + _cd.getDate() : '' + _cd.getDate());
             }
         } else {
             closureEl.value = '';
@@ -412,7 +413,9 @@
                 var incentivisedHtml = '';
                 var _arciRule = selectedRule();
                 var _arciLimits = getRuleLimits(_arciRule);
-                var showChk = (role === 'A') || (role === 'R' && _arciLimits.maxR > 0);
+                var _lvl = selectedLevel();
+                var _isLevel1 = _lvl && Number(_lvl.incentive_value) === 0;
+                var showChk = !_isLevel1 && ((role === 'A') || (role === 'R' && _arciLimits.maxR > 0));
                 if (showChk) {
                     if (READ) {
                         if (mem.is_incentivised) {
@@ -1134,13 +1137,14 @@
     }
 
     function applyExtMins() {
-        var todayStr = new Date().toISOString().substring(0, 10);
+        var _d = new Date();
+        var todayStr = _d.getFullYear() + '-' + (_d.getMonth() + 1 < 10 ? '0' + (_d.getMonth() + 1) : '' + (_d.getMonth() + 1)) + '-' + (_d.getDate() < 10 ? '0' + _d.getDate() : '' + _d.getDate());
         var endVal = $('tl-end') ? ($('tl-end').value || '') : '';
         var ext1Min = todayStr;
         if (endVal) {
             var endNext = new Date(endVal + 'T00:00:00');
             endNext.setDate(endNext.getDate() + 1);
-            var endNextStr = endNext.toISOString().substring(0, 10);
+            var endNextStr = endNext.getFullYear() + '-' + (endNext.getMonth() + 1 < 10 ? '0' + (endNext.getMonth() + 1) : '' + (endNext.getMonth() + 1)) + '-' + (endNext.getDate() < 10 ? '0' + endNext.getDate() : '' + endNext.getDate());
             if (endNextStr > todayStr) { ext1Min = endNextStr; }
         }
         var ext1El = $('tl-ext1');

@@ -447,7 +447,9 @@
             for (var m = 0; m < members.length; m++) {
                 var mem = members[m];
                 var incentivisedHtml = '';
-                var showChk = (role === 'A') || (role === 'R' && _arciLimits.maxR > 0);
+                var _lvl = selectedLevel();
+                var _isLevel1 = _lvl && Number(_lvl.incentive_value) === 0;
+                var showChk = !_isLevel1 && ((role === 'A') || (role === 'R' && _arciLimits.maxR > 0));
                 if (showChk) {
                     var maxForRole = (role === 'A') ? _arciLimits.maxA : _arciLimits.maxR;
                     var atMax = !mem.is_incentivised && countIncentivised(role) >= maxForRole;
@@ -927,7 +929,7 @@
     // --------------------------------------------------------------- wiring
     function bind() {
         $('atem-title').addEventListener('input', markChanged);
-        $('atem-level').addEventListener('change', function () { recalcIncentive(); updateArciWarning(); markChanged(); });
+        $('atem-level').addEventListener('change', function () { recalcIncentive(); renderArci(); updateArciWarning(); markChanged(); });
         $('atem-rule').addEventListener('change', function () {
             enforceRuleLimitsOnState();
             renderArci();
@@ -1002,7 +1004,8 @@
         updateArciWarning();
         renderReferenceLinks();
         renderStagedFiles();
-        var today = new Date().toISOString().substring(0, 10);
+        var _d = new Date();
+        var today = _d.getFullYear() + '-' + (_d.getMonth() + 1 < 10 ? '0' + (_d.getMonth() + 1) : '' + (_d.getMonth() + 1)) + '-' + (_d.getDate() < 10 ? '0' + _d.getDate() : '' + _d.getDate());
         if ($('tl-start')) { $('tl-start').setAttribute('min', today); }
         if ($('tl-end')) { $('tl-end').setAttribute('min', today); }
     });
