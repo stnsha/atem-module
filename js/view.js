@@ -15,7 +15,8 @@
     var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
     var STATUS_COLOR = {
         'Draft': '#6c757d', 'Active': '#0d6efd',
-        'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Extended': '#fd7e14', 'Failed': '#dc3545'
+        'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Extended': '#fd7e14', 'Failed': '#dc3545',
+        'Deleted': '#dc3545'
     };
     function $(id) { return document.getElementById(id); }
 
@@ -154,6 +155,14 @@
         }
     }
 
+    // --------------------------------------------------------------- delete permission
+    function canDelete(r) {
+        if (!CFG.staffId || r.is_deleted) { return false; }
+        if (r.issuer_staff_id != CFG.staffId) { return false; }
+        var terminal = ['Completed', 'Completed with Excellence', 'Failed'];
+        return terminal.indexOf(r.status) === -1;
+    }
+
     // --------------------------------------------------------------- edit permission
     function canEdit(r) {
         if (CFG.isSuperAdmin) { return true; }
@@ -224,9 +233,22 @@
                         + '<i class="bi bi-arrow-right" style="font-size:10px;"></i> Extended to '
                         + fmtDate(r.extended_date_1) + '</div>';
                 }
-                html += '<tr>'
+                var titleCell = escapeHtml(r.title);
+                if (r.is_deleted) {
+                    titleCell += ' <span class="badge bg-danger ms-1" style="font-size:10px;vertical-align:middle;">Deleted</span>';
+                }
+                var rowStyle = r.is_deleted ? ' style="opacity:0.55;"' : '';
+                var actionCell = r.is_deleted
+                    ? ((CFG.isSuperAdmin || CFG.userGrade >= 4)
+                        ? '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Deleted)"><i class="bi bi-eye"></i></a>'
+                        : '')
+                    : '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
+                    + (canEdit(r) ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
+                    + (canUpdateProgress(r) ? ' <a href="atem/edit.php?id=' + r.id + '&mode=progress" class="btn btn-sm btn-outline-info" title="Update Progress"><i class="bi bi-bar-chart-steps"></i></a>' : '')
+                    + (canDelete(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '');
+                html += '<tr' + rowStyle + '>'
                     + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
-                    + '<td>' + escapeHtml(r.title) + '</td>'
+                    + '<td>' + titleCell + '</td>'
                     + '<td><div style="font-size:13px;">' + escapeHtml(r.issuer_name) + '</div><div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.department_name) + '</div></td>'
                     + '<td>' + accountableCell + '</td>'
                     + '<td>' + arciCell + '</td>'
@@ -234,18 +256,7 @@
                     + '<td>' + fmtDate(r.start_date) + '</td>'
                     + '<td>' + endCell + '</td>'
                     + '<td>' + statusCell + '</td>'
-                    + '<td class="atem-view-actions">'
-                    + '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
-                    + (canEdit(r)
-                        ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
-                        : '')
-                    + (canUpdateProgress(r)
-                        ? ' <a href="atem/edit.php?id=' + r.id + '&mode=progress" class="btn btn-sm btn-outline-info" title="Update Progress"><i class="bi bi-bar-chart-steps"></i></a>'
-                        : '')
-                    + (CFG.staffId && r.issuer_staff_id == CFG.staffId && r.status === 'Draft'
-                        ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>'
-                        : '')
-                    + '</td></tr>';
+                    + '<td class="atem-view-actions">' + actionCell + '</td></tr>';
             }
             body.innerHTML = html;
         }
@@ -294,25 +305,71 @@
             page = 1; render();
         });
 
+        var pendingDeleteId = null;
+        var _deleteModal = null;
+        function getDeleteModal() {
+            if (!_deleteModal && typeof bootstrap !== 'undefined') {
+                _deleteModal = new bootstrap.Modal(document.getElementById('atem-delete-modal'));
+            }
+            return _deleteModal;
+        }
+
         var body = $('atem-view-body');
         if (body) {
             body.addEventListener('click', function (e) {
                 var btn = e.target.closest ? e.target.closest('.atem-delete-row') : null;
                 if (!btn) { return; }
-                var atemId = parseInt(btn.getAttribute('data-id'), 10);
-                if (!confirm('Delete ATEM #AT' + atemId + '? This action is permanent and cannot be undone.')) { return; }
+                pendingDeleteId = parseInt(btn.getAttribute('data-id'), 10);
+                var msgEl = document.getElementById('atem-delete-modal-msg');
+                var remarkEl = document.getElementById('atem-delete-remark');
+                var errEl = document.getElementById('atem-delete-remark-err');
+                if (msgEl) { msgEl.textContent = 'You are about to permanently delete ATEM #AT' + pendingDeleteId + '. This action cannot be undone.'; }
+                if (remarkEl) { remarkEl.value = ''; }
+                if (errEl) { errEl.textContent = ''; }
+                var m = getDeleteModal();
+                if (m) { m.show(); }
+            });
+        }
+
+        var deleteConfirmBtn = document.getElementById('atem-delete-confirm');
+        if (deleteConfirmBtn) {
+            deleteConfirmBtn.addEventListener('click', function () {
+                var remarkEl = document.getElementById('atem-delete-remark');
+                var errEl = document.getElementById('atem-delete-remark-err');
+                var remark = remarkEl ? remarkEl.value.trim() : '';
+                if (!remark) {
+                    if (errEl) { errEl.textContent = 'Remark is required before deleting.'; }
+                    return;
+                }
+                if (errEl) { errEl.textContent = ''; }
+                var atemId = pendingDeleteId;
+                var m = getDeleteModal();
+                if (m) { m.hide(); }
                 fetch('atem/api.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'delete-atem', id: atemId })
+                    body: JSON.stringify({ action: 'delete-atem', id: atemId, remarks: remark })
                 }).then(function (r) { return r.json(); }).then(function (res) {
                     if (res && res.success) {
                         rows = rows.filter(function (r) { return r.id !== atemId; });
                         page = 1; render();
                     } else {
-                        alert(res && res.message ? res.message : 'Failed to delete ATEM.');
+                        var msg = res && res.message ? res.message : 'Failed to delete ATEM.';
+                        var msgEl2 = document.getElementById('atem-delete-modal-msg');
+                        var remarkEl2 = document.getElementById('atem-delete-remark');
+                        var errEl2 = document.getElementById('atem-delete-remark-err');
+                        if (msgEl2) { msgEl2.textContent = msg; }
+                        if (remarkEl2) { remarkEl2.value = ''; }
+                        if (errEl2) { errEl2.textContent = ''; }
+                        var m2 = getDeleteModal();
+                        if (m2) { m2.show(); }
                     }
-                }).catch(function () { alert('Network error while deleting.'); });
+                }).catch(function () {
+                    var msgEl3 = document.getElementById('atem-delete-modal-msg');
+                    if (msgEl3) { msgEl3.textContent = 'Network error. Please try again.'; }
+                    var m3 = getDeleteModal();
+                    if (m3) { m3.show(); }
+                });
             });
         }
 

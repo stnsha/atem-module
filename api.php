@@ -403,6 +403,9 @@ function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id =
     } elseif ($method === 'DELETE') {
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        if ($data !== null) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        }
     }
 
     // Log the outgoing request
@@ -580,11 +583,13 @@ function saveAtemCard($data, $staff_id)
 /**
  * Get the list of ATEM cards for the listing page.
  * @param int $staff_id Staff ID for authentication
+ * @param bool $include_deleted Whether to include soft-deleted cards (grade 4+/SA only)
  * @return array Result with the atem rows
  */
-function getAtemList($staff_id)
+function getAtemList($staff_id, $include_deleted = false)
 {
-    $result = getApiDataWithJWT('atem', null, 'GET', $staff_id);
+    $endpoint = $include_deleted ? 'atem?include_deleted=1' : 'atem';
+    $result = getApiDataWithJWT($endpoint, null, 'GET', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded = json_decode($result['response'], true);
 
@@ -674,17 +679,16 @@ function updateAtem($id, $data, $staff_id)
 }
 
 /**
- * Delete a Draft ATEM card (Issuer only)
+ * Soft-delete a Draft or Active ATEM card (Issuer only)
  * @param int $id ATEM ID
  * @param int $staff_id Staff ID for authentication
+ * @param string $remarks Mandatory deletion remark
  * @return array Result
  */
-function deleteAtem($id, $staff_id)
+function deleteAtem($id, $staff_id, $remarks)
 {
-    // Pass actor_id as a query parameter because the shared DELETE curl branch
-    // does not send a request body (CURLOPT_POSTFIELDS is omitted for DELETE).
-    $endpoint = 'atem/' . (int)$id . '?actor_id=' . (int)$staff_id;
-    $result   = getApiDataWithJWT($endpoint, null, 'DELETE', $staff_id);
+    $endpoint = 'atem/' . (int)$id;
+    $result   = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id, 'remarks' => $remarks), 'DELETE', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded  = json_decode($result['response'], true);
     if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
@@ -1538,7 +1542,8 @@ if (!defined('API_JWT_INCLUDED')) {
 
                 case 'delete-atem':
                     if (isset($jsonData['id'])) {
-                        $response = deleteAtem($jsonData['id'], $staff_id);
+                        $delete_remarks = isset($jsonData['remarks']) ? (string)$jsonData['remarks'] : '';
+                        $response = deleteAtem($jsonData['id'], $staff_id, $delete_remarks);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID');
                     }

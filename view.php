@@ -43,7 +43,8 @@ if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
 }
 
-$list_result = getAtemList($staff_id);
+$include_deleted = ($atem_permission >= 4 || $_is_superadmin);
+$list_result = getAtemList($staff_id, $include_deleted);
 $rows = (!empty($list_result['success']) && isset($list_result['data'])) ? $list_result['data'] : array();
 $api_unavailable = empty($list_result['success']);
 
@@ -105,6 +106,8 @@ foreach ($rows as $a) {
         'user_arci_roles' => $user_roles,
         'accountable'     => $accountable,
         'is_extended'     => !empty($a['is_extended']),
+        'is_deleted'      => !empty($a['deleted_at']),
+        'deleted_at'      => isset($a['deleted_at']) ? $a['deleted_at'] : null,
     );
     $row_arci_dept_ids[] = $arci_dept_ids;
 }
@@ -275,6 +278,28 @@ $view_config = array(
         </table>
     </div>
     <div class="atem-pager" id="atem-pager"></div>
+</div>
+
+<!-- Delete confirmation modal -->
+<div class="modal fade" id="atem-delete-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete ATEM Card</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-2">
+                <p id="atem-delete-modal-msg" style="font-size:13px;"></p>
+                <label class="form-label fw-semibold" style="font-size:13px;">Remark <span class="text-danger">*</span></label>
+                <textarea id="atem-delete-remark" class="form-control form-control-sm" rows="3" placeholder="State the reason for deletion..."></textarea>
+                <div id="atem-delete-remark-err" class="text-danger" style="font-size:12px;min-height:16px;margin-top:4px;"></div>
+            </div>
+            <div class="modal-footer pt-0">
+                <button type="button" id="atem-delete-cancel" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="atem-delete-confirm" class="btn btn-danger btn-sm">Confirm Delete</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>

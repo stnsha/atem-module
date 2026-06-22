@@ -136,8 +136,23 @@ if ($record) {
     }
 }
 
+// Detect soft-deleted cards and restrict access to grade 4+/SuperAdmin only.
+$record_is_deleted = ($record && !empty($record['deleted_at']));
+if ($record_is_deleted) {
+    if (!$_is_superadmin && (int)$atem_permission < 4) {
+        $_SESSION['atem_warning'] = 'This ATEM card has been deleted and is no longer accessible.';
+        echo '<script>window.location.replace("atem/view.php");</script>';
+        include('footer.php');
+        exit;
+    }
+    // Force read-only — deleted cards cannot be edited by anyone.
+    $mode        = 'read';
+    $is_read     = true;
+    $is_progress = false;
+}
+
 // ATEMs with a terminal status cannot be edited.
-$terminal_statuses = array('Failed', 'Completed', 'Completed with Excellence');
+$terminal_statuses = array('Failed', 'Completed', 'Completed with Excellence', 'Deleted');
 $current_status_value = '';
 if ($record && isset($record['status']['value'])) {
     $current_status_value = $record['status']['value'];
@@ -197,6 +212,27 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 <?php if ($api_unavailable): ?>
 <div class="alert alert-warning" role="alert" style="font-size:13px;">
     The ATEM could not be loaded. Make sure a valid id is supplied and the atem-api service is running.
+</div>
+<?php endif; ?>
+
+<?php if ($record_is_deleted): ?>
+<div class="alert alert-danger d-flex align-items-center gap-2" role="alert" style="font-size:13px;">
+    <i class="bi bi-trash3-fill flex-shrink-0"></i>
+    <div>
+        <strong>This ATEM card has been deleted.</strong>
+        It is displayed here in read-only mode for audit purposes. No changes can be made.
+        <?php
+        $deleted_by_id = isset($record['closed_by']) ? (int)$record['closed_by'] : 0;
+        $deleted_by_name = ($deleted_by_id && isset($staff_names[$deleted_by_id])) ? $staff_names[$deleted_by_id] : ('Staff #' . $deleted_by_id);
+        $deleted_at_raw  = isset($record['deleted_at']) ? $record['deleted_at'] : '';
+        $deleted_at_fmt  = $deleted_at_raw ? date('d-m-Y H:i', strtotime($deleted_at_raw)) : '';
+        if ($deleted_by_id || $deleted_at_fmt):
+        ?>
+        <span class="ms-2 text-muted" style="font-size:12px;">
+            Deleted by <?php echo htmlspecialchars($deleted_by_name); ?><?php echo $deleted_at_fmt ? ' on ' . htmlspecialchars($deleted_at_fmt) : ''; ?>.
+        </span>
+        <?php endif; ?>
+    </div>
 </div>
 <?php endif; ?>
 
