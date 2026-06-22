@@ -61,7 +61,6 @@
         for (var d = 0; d < depts.length; d++) { dh += '<option value="' + escapeHtml(depts[d]) + '">' + escapeHtml(depts[d]) + '</option>'; }
         dep.innerHTML = dh;
 
-
         var st = $('vf-status');
         var statuses = CFG.statuses || [];
         var sh = '<option value="">All statuses</option>';
@@ -73,6 +72,111 @@
         var rh = '<option value="">All roles</option>';
         for (var ri = 0; ri < roleOptions.length; ri++) { rh += '<option value="' + escapeHtml(roleOptions[ri]) + '">' + escapeHtml(roleOptions[ri]) + '</option>'; }
         roleEl.innerHTML = rh;
+
+        buildIssuerDropdown();
+    }
+
+    // ------------------------------------------------- issuer searchable dropdown
+    function buildIssuerDropdown() {
+        var listEl   = $('vf-issuer-list');
+        var searchEl = $('vf-issuer-search');
+        var btnEl    = $('vf-issuer-btn');
+        var dropEl   = $('vf-issuer-dropdown');
+        var valEl    = $('vf-issuer-value');
+        var labelEl  = btnEl; // button element is also the label
+        if (!listEl || !btnEl || !dropEl) { return; }
+
+        // Sync dimensions and border to adjacent form-select-sm exactly.
+        var refEl = $('vf-dept');
+        if (refEl && btnEl) {
+            var refStyle = window.getComputedStyle(refEl);
+            btnEl.style.height       = refEl.offsetHeight + 'px';
+            btnEl.style.border       = refStyle.border;
+            btnEl.style.borderRadius = refStyle.borderRadius;
+        }
+
+        var issuers = CFG.issuers || [];
+
+        // Build list items: "All issuers" first, then each issuer.
+        var html = '<li class="vf-s2-list-item" data-id="0">All issuers</li>';
+        for (var i = 0; i < issuers.length; i++) {
+            html += '<li class="vf-s2-list-item" data-id="' + issuers[i].id + '">' + escapeHtml(issuers[i].name) + '</li>';
+        }
+        listEl.innerHTML = html;
+
+        function openDropdown() {
+            dropEl.classList.add('open');
+            if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
+        }
+        function closeDropdown() { dropEl.classList.remove('open'); }
+
+        function filterList(term) {
+            var items = listEl.querySelectorAll('li');
+            var lower = term.toLowerCase();
+            var anyVisible = false;
+            for (var j = 0; j < items.length; j++) {
+                var text = items[j].textContent || '';
+                if (!lower || text.toLowerCase().indexOf(lower) >= 0) {
+                    items[j].classList.remove('hidden');
+                    anyVisible = true;
+                } else {
+                    items[j].classList.add('hidden');
+                }
+            }
+            var emptyEl = $('vf-issuer-empty');
+            if (!anyVisible) {
+                if (!emptyEl) {
+                    var em = document.createElement('div');
+                    em.className = 'vf-s2-empty';
+                    em.id = 'vf-issuer-empty';
+                    em.textContent = 'No results found';
+                    listEl.parentNode.appendChild(em);
+                }
+            } else {
+                if (emptyEl) { emptyEl.parentNode.removeChild(emptyEl); }
+            }
+        }
+
+        function selectIssuer(id, name) {
+            if (valEl) { valEl.value = id; }
+            if (labelEl) { labelEl.textContent = name; }
+            closeDropdown();
+            page = 1;
+            render();
+        }
+
+        btnEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
+        });
+
+        if (searchEl) {
+            searchEl.addEventListener('input', function () { filterList(this.value); });
+            searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
+
+        listEl.addEventListener('click', function (e) {
+            var li = e.target.closest ? e.target.closest('li') : null;
+            if (!li) { return; }
+            selectIssuer(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
+        });
+
+        document.addEventListener('click', function (e) {
+            var wrap = $('vf-issuer-wrap');
+            if (wrap && !wrap.contains(e.target)) { closeDropdown(); }
+        });
+    }
+
+    function resetIssuerDropdown() {
+        var valEl  = $('vf-issuer-value');
+        var btnEl  = $('vf-issuer-btn');
+        var dropEl = $('vf-issuer-dropdown');
+        if (valEl)  { valEl.value = '0'; }
+        if (btnEl)  { btnEl.textContent = 'All issuers'; }
+        if (dropEl) { dropEl.classList.remove('open'); }
     }
 
     // --------------------------------------------------------------- filtering
@@ -86,10 +190,13 @@
         var from = $('vf-from').value;
         var to = $('vf-to').value;
         var term = $('vf-search').value.toLowerCase().trim();
+        var issuerValEl = $('vf-issuer-value');
+        var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
 
         return rows.filter(function (r) {
             if (year  && (!r.start_date || parseInt(r.start_date.substring(0, 4), 10) !== year))  { return false; }
             if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
+            if (issuer && r.issuer_staff_id !== issuer) { return false; }
             if (level && r.level_label !== level) { return false; }
             if (dept && r.department_name !== dept) { return false; }
             if (status && r.status !== status) { return false; }
@@ -102,7 +209,12 @@
             }
             if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
             if (to && (!r.start_date || r.start_date.substring(0, 10) > to)) { return false; }
-            if (term && String(r.title).toLowerCase().indexOf(term) < 0) { return false; }
+            if (term) {
+                var atemIdStr = 'at' + r.id;
+                var matchesTitle = String(r.title).toLowerCase().indexOf(term) >= 0;
+                var matchesId    = atemIdStr.indexOf(term.replace(/^#/, '')) >= 0;
+                if (!matchesTitle && !matchesId) { return false; }
+            }
             return true;
         });
     }
@@ -302,6 +414,7 @@
         $('vf-reset').addEventListener('click', function () {
             ['vf-year', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
+            resetIssuerDropdown();
             page = 1; render();
         });
 

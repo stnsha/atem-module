@@ -1,6 +1,7 @@
 <?php
 $page_title = 'ATEM';
 $page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="atem/create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
+$extra_css = '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">';
 include('header.php');
 
 // header.php bootstrapped the odb connection ($conn) and current staff.
@@ -34,6 +35,35 @@ if (isset($department) && $department !== '') {
     foreach (explode(',', (string)$department) as $_dpart) {
         $_dpart = (int)trim($_dpart);
         if ($_dpart > 0) { $user_dept_ids[] = $_dpart; }
+    }
+}
+
+// Build grade-scoped issuer list for the filter dropdown.
+$issuer_list = array();
+if ((int)$atem_permission === 1 && !$_is_superadmin) {
+    $me_id = (int)$staff_id;
+    $issuer_list[] = array('id' => $me_id, 'name' => isset($staff_names[$me_id]) ? $staff_names[$me_id] : 'You');
+} elseif (((int)$atem_permission === 2 || (int)$atem_permission === 3) && !$_is_superadmin) {
+    if (!empty($user_dept_ids)) {
+        $dept_parts = array();
+        foreach ($user_dept_ids as $_did) {
+            $s = mysqli_real_escape_string($conn, (string)(int)$_did);
+            $dept_parts[] = "(department = '$s' OR department LIKE '$s,%' OR department LIKE '%,$s' OR department LIKE '%,$s,%')";
+        }
+        $i_sql = "SELECT id, nama_staff FROM staff WHERE recycle != 1 AND (" . implode(' OR ', $dept_parts) . ") ORDER BY nama_staff ASC";
+        $i_res = mysqli_query($conn, $i_sql);
+        if ($i_res) {
+            while ($ir = mysqli_fetch_assoc($i_res)) {
+                $issuer_list[] = array('id' => (int)$ir['id'], 'name' => $ir['nama_staff']);
+            }
+        }
+    }
+} else {
+    $i_res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+    if ($i_res) {
+        while ($ir = mysqli_fetch_assoc($i_res)) {
+            $issuer_list[] = array('id' => (int)$ir['id'], 'name' => $ir['nama_staff']);
+        }
     }
 }
 
@@ -163,8 +193,9 @@ $view_config = array(
     'levels'      => isset($lookups['levels']) ? $lookups['levels'] : array(),
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
     'departments' => $dept_list,
+    'issuers'     => $issuer_list,
     'staffId'     => (int) $staff_id,
-    'isSuperAdmin' => $_is_superadmin, // dev-override aware: false while simulating a grade
+    'isSuperAdmin' => $_is_superadmin,
     'userGrade'   => (int)$atem_permission,
 );
 ?>
@@ -183,11 +214,86 @@ $view_config = array(
 </div>
 <?php endif; ?>
 
+<style>
+.vf-issuer-wrap { position: relative; }
+.vf-s2-selection {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding-left: 0.5rem;
+    padding-right: 2.25rem;
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: #212529;
+    background-color: #fff;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 16px 12px;
+    border: var(--bs-border-width) solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius-sm);
+    cursor: pointer;
+    user-select: none;
+    outline: none;
+    box-sizing: border-box;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-family: 'Inter', sans-serif;
+}
+.vf-s2-selection:focus,
+.vf-s2-selection:hover { outline: none; box-shadow: none; border-color: var(--bs-border-color); }
+.vf-s2-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1);
+    z-index: 9999;
+    display: none;
+}
+.vf-s2-dropdown.open { display: block; }
+.vf-s2-search-wrap { padding: 6px 6px 4px; }
+.vf-s2-search {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 4px 8px;
+    outline: none;
+}
+.vf-s2-search:focus { border-color: #86b7fe; }
+.vf-s2-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.vf-s2-list li {
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+}
+.vf-s2-list li:hover,
+.vf-s2-list li.active { background: #0d6efd; color: #fff; }
+.vf-s2-list li.hidden { display: none; }
+.vf-s2-empty { padding: 8px 10px; font-size: 12px; color: #6c757d; font-family: 'Inter', sans-serif; }
+</style>
+
 <!-- Filter bar -->
 <div class="atem-card atem-filter mb-3">
     <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
-    <div class="row g-2 mt-1">
-        <div class="col-md-3">
+
+    <!-- Row 1: Year | Month | Start Date | End Date | Status -->
+    <div class="row row-cols-md-5 row-cols-2 g-2 mt-1">
+        <div class="col">
             <label class="form-label">Year</label>
             <select class="form-select form-select-sm" id="vf-year">
                 <option value="">All Year</option>
@@ -196,7 +302,7 @@ $view_config = array(
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="col-md-3">
+        <div class="col">
             <label class="form-label">Month</label>
             <select class="form-select form-select-sm" id="vf-month">
                 <option value="0">All Month</option>
@@ -214,44 +320,62 @@ $view_config = array(
                 <option value="12">December</option>
             </select>
         </div>
-        <div class="col-md-3">
+        <div class="col">
             <label class="form-label">Start Date</label>
             <input type="date" class="form-control form-control-sm" id="vf-from">
         </div>
-        <div class="col-md-3">
+        <div class="col">
             <label class="form-label">End Date</label>
             <input type="date" class="form-control form-control-sm" id="vf-to">
         </div>
-        <div class="col-md-3">
-            <label class="form-label">Level</label>
-            <select class="form-select form-select-sm" id="vf-level">
-                <option value="">All levels</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">Department</label>
-            <select class="form-select form-select-sm" id="vf-dept">
-                <option value="">All departments</option>
-            </select>
-        </div>
-        <div class="col-md-3">
+        <div class="col">
             <label class="form-label">Status</label>
             <select class="form-select form-select-sm" id="vf-status">
                 <option value="">All statuses</option>
             </select>
         </div>
-        <div class="col-md-3">
+    </div>
+
+    <!-- Row 2: Issuer | Department | Level | Role | Search -->
+    <div class="row row-cols-md-5 row-cols-2 g-2 mt-0">
+        <div class="col">
+            <label class="form-label">Issuer</label>
+            <div class="vf-issuer-wrap" id="vf-issuer-wrap">
+                <div class="vf-s2-selection" id="vf-issuer-btn" tabindex="0">All issuers</div>
+                <div class="vf-s2-dropdown" id="vf-issuer-dropdown">
+                    <div class="vf-s2-search-wrap">
+                        <input class="vf-s2-search" id="vf-issuer-search" type="search" placeholder="Search name...">
+                    </div>
+                    <ul class="vf-s2-list" id="vf-issuer-list"></ul>
+                </div>
+                <input type="hidden" id="vf-issuer-value" value="0">
+            </div>
+        </div>
+        <div class="col">
+            <label class="form-label">Department</label>
+            <select class="form-select form-select-sm" id="vf-dept">
+                <option value="">All departments</option>
+            </select>
+        </div>
+        <div class="col">
+            <label class="form-label">Level</label>
+            <select class="form-select form-select-sm" id="vf-level">
+                <option value="">All levels</option>
+            </select>
+        </div>
+        <div class="col">
             <label class="form-label">Your Role with ARCI</label>
             <select class="form-select form-select-sm" id="vf-role">
                 <option value="">All roles</option>
             </select>
         </div>
-    </div>
-    <div class="d-flex align-items-end gap-2 mt-3">
-        <div class="flex-grow-1">
-            <label class="form-label">Search title</label>
-            <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type to search...">
+        <div class="col">
+            <label class="form-label">Search title or ID</label>
+            <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type title or ATEM ID...">
         </div>
+    </div>
+
+    <div class="d-flex justify-content-end mt-2">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="vf-reset">Reset Filters</button>
     </div>
 </div>

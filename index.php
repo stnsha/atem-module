@@ -113,7 +113,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-status="Completed" style="cursor:pointer;">
+        <div class="atem-card atem-dash-stat h-100" data-preset="closed" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Complete + Excellence</div>
             <div class="atem-stat-value atem-stat-value--green" id="dash-closed">---</div>
             <div class="atem-stat-label">eligible for completion count</div>

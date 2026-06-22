@@ -146,6 +146,38 @@ Non-SuperAdmin users can only change their evaluation struct during the first 10
 - The override toggle is a checkbox on `access_control/index.php`, visible only when `$atem === 1`
 - `getStructHistory` returns the last 12 quarters of struct changes for display in `js/admin_access.js`; used to show lock reason when updating is blocked
 
+### ATEM Card Deletion
+
+Soft delete only — `atems.deleted_at` is set, the row remains in the DB.
+
+**Who can delete:** Issuer only. Allowed statuses: Draft, Active. Terminal statuses (Completed, Completed with Excellence, Failed) are permanently locked — no one can delete them.
+
+**Delete flow:**
+1. Issuer clicks Delete in `view.php` → Bootstrap modal opens (same fade animation as edit.php modals)
+2. User must enter a remark (required) before confirming
+3. Frontend posts `{ action: 'delete-atem', id, remarks }` to `api.php`
+4. `api.php` → `deleteAtem($id, $staff_id, $remarks)` → DELETE `/api/atem/{id}` with JSON body `{ actor_id, remarks }`
+5. Backend (`AtemController::destroy`): sets `atem_status_id` to "Deleted" status, saves `remarks` and `closed_by` (actor), writes audit log (`event = 'deleted'`), then calls `$atem->delete()` (soft delete)
+
+**"Deleted" status:** A real `atem_statuses` row (value = `'Deleted'`), added via migration `2026_06_22_105848_add_deleted_status_to_atem_statuses_table.php`. Always look this up via `DB::table('atem_statuses')->where('value', 'Deleted')->whereNull('deleted_at')->value('id')` in the backend — do NOT use `AtemStatus::where(...)` which may be affected by the SoftDeletes global scope.
+
+**Visibility of deleted cards:**
+- Grades 1–3: never see deleted cards (`getAtemList` does not pass `include_deleted`)
+- Grades 4, 5, SuperAdmin: see deleted cards with a red "Deleted" badge on the title and dimmed row opacity; no action buttons except View
+- `view.php` passes `include_deleted=true` to `getAtemList` for grade 4+/SA; backend uses `Atem::withTrashed()` when `?include_deleted=1`
+- Status filter in `view.js` includes "Deleted" naturally since it is a real status from the lookups
+
+**Viewing a deleted card (`edit.php`):**
+- `AtemController::show` uses `withTrashed()` so deleted cards can be fetched by ID
+- `edit.php` detects `$record['deleted_at']` and sets `$record_is_deleted`
+- Grades 1–3 hitting a deleted card URL are redirected to `view.php` with a warning
+- Grades 4+/SA: forced read-only, red alert banner shows who deleted it and when (resolved from `closed_by` + `deleted_at`)
+- `'Deleted'` is in `$terminal_statuses` in `edit.php` — can never enter edit/progress mode
+
+**Key columns written on delete:** `atems.deleted_at` (soft delete), `atems.atem_status_id` → Deleted, `atems.remarks` (deletion reason), `atems.closed_by` (actor staff_id)
+
+**Audit log:** `atem_audit_logs` row with `event = 'deleted'`, `actor_staff_id`, `summary` containing the remark. The `cascadeOnDelete` FK on `atem_audit_logs.atem_id` only fires on hard delete — audit logs survive soft delete.
+
 ## Key Files
 
 | File | Role |
@@ -153,6 +185,9 @@ Non-SuperAdmin users can only change their evaluation struct during the first 10
 | `header.php` | Base layout, auth gate, sets `$atem_permission` |
 | `navbar.php` | Nav + dev grade switcher toolbar |
 | `api.php` | JWT bridge to atem-api, all AJAX actions |
+| `view.php` | ATEM card list; passes `include_deleted` for grade 4+/SA |
+| `js/view.js` | Card list rendering; `canDelete()`, delete modal, deleted badge/dimming |
+| `edit.php` | Single card view/edit; detects `$record_is_deleted`, shows deleted banner |
 | `access_control/index.php` | Staff grade and struct management UI; struct window override toggle for SuperAdmin |
 | `access_control/backend.php` | Admin AJAX handler, direct ODB DB queries (replaces removed `admin/backend.php`) |
 | `access_control/masterlist.php` | Grade and struct library editor; accessible via SuperAdmin nav link only |
