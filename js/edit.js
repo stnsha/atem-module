@@ -291,7 +291,11 @@
         if (selVal === 'Extended') {
             closureEl.value = ($('tl-ext1') && $('tl-ext1').value) ? $('tl-ext1').value : '';
         } else if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
-            if (!closureEl.value) {
+            var _recStatusVal = '';
+            (CFG.statuses || []).forEach(function (s) {
+                if (String(s.id) === String(REC.atem_status_id)) { _recStatusVal = s.value; }
+            });
+            if (!closureEl.value || _recStatusVal === 'Extended') {
                 var _cd = new Date();
                 closureEl.value = _cd.getFullYear() + '-' + (_cd.getMonth() + 1 < 10 ? '0' + (_cd.getMonth() + 1) : '' + (_cd.getMonth() + 1)) + '-' + (_cd.getDate() < 10 ? '0' + _cd.getDate() : '' + _cd.getDate());
             }
@@ -341,7 +345,15 @@
         if (!statusEl) { return; }
         var current = statusEl.value;
         statusEl.innerHTML = '<option value="">Select status</option>';
+        var recStatusVal = '';
         (CFG.statuses || []).forEach(function (s) {
+            if (String(s.id) === String(REC.atem_status_id)) { recStatusVal = s.value; }
+        });
+        var extendedAllowed = ['Extended', 'Completed', 'Failed'];
+        var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
+        (CFG.statuses || []).forEach(function (s) {
+            if (recStatusVal === 'Extended' && extendedAllowed.indexOf(s.value) === -1) { return; }
+            if (s.value === 'Deleted' && !canSeeDeleted) { return; }
             var opt = document.createElement('option');
             opt.value = s.id;
             opt.textContent = s.value;

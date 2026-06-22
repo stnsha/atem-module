@@ -188,17 +188,19 @@ if (!$is_read && !$can_edit) {
 }
 
 $atem_config = array(
-    'atemId'      => $atem_id,
-    'apiUrl'      => 'atem/api.php',
-    'mode'        => $mode,
-    'staffId'     => (int) $staff_id,
-    'levels'      => $lookups['levels'],
-    'rules'       => $lookups['rules'],
-    'statuses'    => $lookups['statuses'],
-    'departments' => $departments_list,
-    'staffByDept' => $staff_by_dept,
-    'record'      => $record,
-    'isIssuer'    => (bool) $is_issuer_now,
+    'atemId'       => $atem_id,
+    'apiUrl'       => 'atem/api.php',
+    'mode'         => $mode,
+    'staffId'      => (int) $staff_id,
+    'userGrade'    => (int) $atem_permission,
+    'isSuperAdmin' => (bool) $_is_superadmin,
+    'levels'       => $lookups['levels'],
+    'rules'        => $lookups['rules'],
+    'statuses'     => $lookups['statuses'],
+    'departments'  => $departments_list,
+    'staffByDept'  => $staff_by_dept,
+    'record'       => $record,
+    'isIssuer'     => (bool) $is_issuer_now,
 );
 
 $_bd_enabled = false;
@@ -287,7 +289,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 
     <!-- Right column: Incentive + Attachment + Reference Link -->
     <div class="atem-bento-item atem-span-4">
-        <div class="atem-card mb-3" style="display:none;">
+        <div class="atem-card mb-3">
             <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
             <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The
                 company reserves the right to determine the final payout under its incentive scheme. C and I roles are

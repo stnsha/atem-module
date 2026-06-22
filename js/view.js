@@ -68,8 +68,12 @@
 
         var st = $('vf-status');
         var statuses = CFG.statuses || [];
+        var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         var sh = '<option value="">All statuses</option>';
-        for (var s = 0; s < statuses.length; s++) { sh += '<option value="' + escapeHtml(statuses[s].value) + '">' + escapeHtml(statuses[s].value) + '</option>'; }
+        for (var s = 0; s < statuses.length; s++) {
+            if (statuses[s].value === 'Deleted' && !canSeeDeleted) { continue; }
+            sh += '<option value="' + escapeHtml(statuses[s].value) + '">' + escapeHtml(statuses[s].value) + '</option>';
+        }
         st.innerHTML = sh;
 
         var roleEl = $('vf-role');
