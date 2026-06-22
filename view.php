@@ -27,7 +27,15 @@ if ($dept_res) {
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
 
-$user_dept_id = isset($department) ? (int)$department : 0;
+// staff.department is comma-separated (e.g. "3,7"); a user can belong to several
+// departments. Parse all of them so dept-scoped grades match any overlap.
+$user_dept_ids = array();
+if (isset($department) && $department !== '') {
+    foreach (explode(',', (string)$department) as $_dpart) {
+        $_dpart = (int)trim($_dpart);
+        if ($_dpart > 0) { $user_dept_ids[] = $_dpart; }
+    }
+}
 
 $lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array());
 $lr = getAtemLookups($staff_id);
@@ -112,12 +120,13 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
         }
     }
     $view_rows = $filtered;
-} elseif ((int)$atem_permission === 2 && !$_is_superadmin) {
-    // Grade 2: cards where issuer or any ARCI member belongs to the user's department.
+} elseif (((int)$atem_permission === 2 || (int)$atem_permission === 3) && !$_is_superadmin) {
+    // Grades 2 and 3: cards where issuer or any ARCI member belongs to ANY of the
+    // user's departments.
     $filtered = array();
     foreach ($view_rows as $idx => $r) {
-        if ($r['department_id'] === $user_dept_id
-                || in_array($user_dept_id, $row_arci_dept_ids[$idx])) {
+        if (in_array($r['department_id'], $user_dept_ids)
+                || array_intersect($user_dept_ids, $row_arci_dept_ids[$idx])) {
             $filtered[] = $r;
         }
     }
@@ -126,10 +135,13 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
 // Grades 4–6: no server-side row filtering.
 
 $dept_list = array();
-if ((int)$atem_permission <= 2 && !$_is_superadmin) {
-    if ($user_dept_id && isset($dept_names[$user_dept_id])) {
-        $dept_list[] = $dept_names[$user_dept_id];
+if ((int)$atem_permission <= 3 && !$_is_superadmin) {
+    foreach ($user_dept_ids as $_uid) {
+        if (isset($dept_names[$_uid])) {
+            $dept_list[] = $dept_names[$_uid];
+        }
     }
+    sort($dept_list);
 } else {
     foreach ($dept_names as $dept_name_val) {
         $dept_list[] = $dept_name_val;
@@ -149,7 +161,7 @@ $view_config = array(
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
     'departments' => $dept_list,
     'staffId'     => (int) $staff_id,
-    'isSuperAdmin' => (isset($atem) && (int)$atem === 1),
+    'isSuperAdmin' => $_is_superadmin, // dev-override aware: false while simulating a grade
     'userGrade'   => (int)$atem_permission,
 );
 ?>

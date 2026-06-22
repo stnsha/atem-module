@@ -8,8 +8,8 @@
     var rows = CFG.rows || [];
     var PER_PAGE = 30;
     var page = 1;
-    var sortCol = 'end_date';
-    var sortDir = 1; // earliest end date first
+    var sortCol = null;
+    var sortDir = 1;
 
     var LEVEL_COLOR = { 'Level 1': '#6c757d', 'Level 2': '#0d6efd', 'Level 3': '#6610f2', 'Level 4': '#003B73' };
     var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
@@ -106,7 +106,34 @@
         });
     }
 
+    var STATUS_SORT_GROUP = {
+        'Draft': 0, 'Active': 1, 'Extended': 1,
+        'Completed': 2, 'Completed with Excellence': 2, 'Failed': 2
+    };
+
+    function statusGroup(s) {
+        var g = STATUS_SORT_GROUP[s];
+        return (g === undefined) ? 1 : g;
+    }
+
+    function effectiveSortDate(r) {
+        if ((r.is_extended || r.status === 'Extended') && r.extended_date_1) {
+            return String(r.extended_date_1).substring(0, 10);
+        }
+        return String(r.end_date || '');
+    }
+
     function sortRows(list) {
+        if (sortCol === null) {
+            return list.slice().sort(function (a, b) {
+                var ga = statusGroup(a.status), gb = statusGroup(b.status);
+                if (ga !== gb) { return ga - gb; }
+                var da = effectiveSortDate(a), db = effectiveSortDate(b);
+                if (da < db) { return -1; }
+                if (da > db) { return 1; }
+                return 0;
+            });
+        }
         return list.slice().sort(function (a, b) {
             var av = a[sortCol], bv = b[sortCol];
             if (sortCol === 'id') { av = Number(av) || 0; bv = Number(bv) || 0; }
@@ -121,7 +148,7 @@
         var ths = document.querySelectorAll('#atem-view-tbl th.atem-sortable');
         for (var i = 0; i < ths.length; i++) {
             ths[i].classList.remove('atem-sort-asc', 'atem-sort-desc');
-            if (ths[i].getAttribute('data-col') === sortCol) {
+            if (sortCol !== null && ths[i].getAttribute('data-col') === sortCol) {
                 ths[i].classList.add(sortDir === 1 ? 'atem-sort-asc' : 'atem-sort-desc');
             }
         }

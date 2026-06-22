@@ -106,22 +106,29 @@ if ($record) {
     }
 }
 
-// Access control: SuperAdmin, the issuer, and ARCI members may open this card.
+// Access control (view): grades 2-5 and a real SuperAdmin may open any card.
+// Grade 1 may only open cards where they are the issuer or an ARCI member.
+// Both $atem_permission and $_is_superadmin (header.php) are dev-override aware.
+$is_arci_member  = false;
+$user_arci_roles = array();
 if ($record) {
     $current_sid = (int) $staff_id;
-    $allowed = (isset($atem) && (int)$atem === 1);
-    if (!$allowed) {
-        $allowed = ($current_sid && $current_sid === (int) (isset($record['issuer_staff_id']) ? $record['issuer_staff_id'] : 0));
-    }
-    if (!$allowed && isset($record['arci']) && is_array($record['arci'])) {
+    $is_issuer = ($current_sid && $current_sid === (int) (isset($record['issuer_staff_id']) ? $record['issuer_staff_id'] : 0));
+    if (isset($record['arci']) && is_array($record['arci'])) {
         foreach ($record['arci'] as $m) {
             if ((int) $m['staff_id'] === $current_sid) {
-                $allowed = true;
-                break;
+                $is_arci_member = true;
+                if (!empty($m['role'])) { $user_arci_roles[] = $m['role']; }
             }
         }
     }
-    if (!$allowed) {
+
+    $can_view = $_is_superadmin
+        || (int) $atem_permission >= 2
+        || $is_issuer
+        || $is_arci_member;
+
+    if (!$can_view) {
         $_SESSION['atem_warning'] = 'You do not have permission to view this ATEM card.';
         echo '<script>window.location.replace("atem/view.php");</script>';
         include('footer.php');
@@ -153,6 +160,16 @@ if ($is_progress && !$is_issuer_now) {
     $mode        = 'read';
     $is_progress = false;
     $is_read     = true;
+}
+
+// Edit access backstop: only the issuer, an Accountable ARCI member, or a real
+// SuperAdmin may edit. Everyone else (including grades 2-5 viewing an unrelated
+// card via a crafted ?mode=edit URL) is downgraded to read. Mirrors canEdit() in
+// js/view.js so the edit button and the page agree.
+$can_edit = $_is_superadmin || $is_issuer_now || in_array('A', $user_arci_roles);
+if (!$is_read && !$can_edit) {
+    $mode    = 'read';
+    $is_read = true;
 }
 
 $atem_config = array(

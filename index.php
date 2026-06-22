@@ -8,13 +8,24 @@ for ($y = 2026; $y <= $_dash_cur_year; $y++) {
     $dash_year_options[] = $y;
 }
 
+// staff.department is comma-separated (e.g. "3,7"); parse all of the user's
+// departments so dept-scoped grades only see their own departments here.
+$dash_user_dept_ids = array();
+if (isset($department) && $department !== '') {
+    foreach (explode(',', (string)$department) as $_dpart) {
+        $_dpart = (int)trim($_dpart);
+        if ($_dpart > 0) { $dash_user_dept_ids[] = $_dpart; }
+    }
+}
+
 $dash_dept_options = array();
 $_dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department ORDER BY depart_name");
 if ($_dept_res) {
     while ($_drow = mysqli_fetch_assoc($_dept_res)) {
-        if ((int)$atem_permission >= 3 || $_is_superadmin) {
+        if ((int)$atem_permission >= 4 || $_is_superadmin) {
             $dash_dept_options[] = array('id' => (int)$_drow['id'], 'name' => $_drow['depart_name']);
-        } elseif ((int)$atem_permission === 2 && (int)$_drow['id'] === (int)$department) {
+        } elseif (((int)$atem_permission === 2 || (int)$atem_permission === 3)
+                  && in_array((int)$_drow['id'], $dash_user_dept_ids)) {
             $dash_dept_options[] = array('id' => (int)$_drow['id'], 'name' => $_drow['depart_name']);
         }
     }

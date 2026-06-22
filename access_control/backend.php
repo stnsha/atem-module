@@ -272,7 +272,7 @@ if ($action === 'updateAccess' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    if ($requester_grade <= 3) {
+    if (!$requester_is_superadmin) {
         $dept_check = mysqli_query($conn, "SELECT department FROM staff WHERE id = $target_id AND recycle != 1");
         if (!$dept_check || mysqli_num_rows($dept_check) === 0) {
             echo json_encode(array('success' => false, 'message' => 'Staff not found.'));
@@ -306,14 +306,10 @@ if ($action === 'updateAccess' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $hist_exists = ($hist_check && mysqli_num_rows($hist_check) > 0);
     }
 
-    // Quarter lock: grade 2-5 (non-superadmin) may only change struct once per quarter, within window
+    // Struct changes require the window to be open for non-superadmin; re-updates within the window are allowed
     if ($struct_changing && !$requester_is_superadmin) {
         if (!$in_window) {
             echo json_encode(array('success' => false, 'message' => 'Evaluation structure can only be updated between the 1st and 10th of each quarter.'));
-            exit;
-        }
-        if ($hist_exists) {
-            echo json_encode(array('success' => false, 'message' => 'Evaluation structure has already been updated this quarter.'));
             exit;
         }
     }
@@ -368,12 +364,6 @@ if ($action === 'getStructHistory' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         if (!$in_window) {
             $struct_locked = true;
             $lock_reason   = 'Outside update window (1st-10th of each quarter)';
-        } else {
-            $quota_check = mysqli_query($conn, "SELECT id FROM staff_struct_history WHERE staff_id = $target_id AND year = $current_year AND quarter = $current_quarter");
-            if ($quota_check && mysqli_num_rows($quota_check) > 0) {
-                $struct_locked = true;
-                $lock_reason   = 'Already updated this quarter';
-            }
         }
     }
 

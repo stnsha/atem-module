@@ -1294,10 +1294,35 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     $items = $listResult['data'];
 
-                    // Role-based visibility — mirrors view.php server-side filtering
-                    $_perm       = isset($atem_permission) ? (int)$atem_permission : 0;
-                    $_userDeptId = isset($department)      ? (int)$department      : 0;
-                    $_userStaff  = (int)$staff_id;
+                    // Role-based visibility — mirrors view.php server-side filtering.
+                    // $atem_permission is set when api.php is included from a page,
+                    // but NOT in direct-access mode (how the dashboard calls it), so
+                    // fall back to a grade/atem lookup like get-staff-atem-list does.
+                    $_perm = 0;
+                    if (isset($atem_permission)) {
+                        $_perm = (int)$atem_permission;
+                    } elseif (isset($_SESSION['atem_dev_role_override'])) {
+                        // Dev role simulation (localhost): mirror header.php so the
+                        // dashboard reflects the simulated grade rather than the real
+                        // DB grade/atem. Dev override is never treated as superadmin.
+                        $_perm = (int)$_SESSION['atem_dev_role_override'];
+                    } elseif ($staff_id) {
+                        $_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        if ($_perm_res && ($_perm_row = mysqli_fetch_assoc($_perm_res))) {
+                            $_perm = ((int)$_perm_row['atem'] === 1) ? 6 : (int)$_perm_row['grade'];
+                        }
+                    }
+
+                    // staff.department is comma-separated (e.g. "3,7"); a user can
+                    // belong to several departments. Parse all of them for overlap.
+                    $_userDeptIds = array();
+                    if (isset($department) && $department !== '') {
+                        foreach (explode(',', (string)$department) as $_dpart) {
+                            $_dpart = (int)trim($_dpart);
+                            if ($_dpart > 0) { $_userDeptIds[] = $_dpart; }
+                        }
+                    }
+                    $_userStaff = (int)$staff_id;
 
                     if ($_perm === 1) {
                         $roleFiltered = array();
@@ -1314,7 +1339,9 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
                         $items = $roleFiltered;
-                    } elseif ($_perm === 2) {
+                    } elseif ($_perm === 2 || $_perm === 3) {
+                        // Grades 2 and 3: cards where the issuer or any ARCI member
+                        // belongs to ANY of the user's departments.
                         $roleFiltered = array();
                         foreach ($items as $_item) {
                             $_itemDept  = isset($_item['staff_dept_id']) ? (int)$_item['staff_dept_id'] : 0;
@@ -1324,13 +1351,13 @@ if (!defined('API_JWT_INCLUDED')) {
                                     if (!empty($_m['staff_dept_id'])) { $_arciDepts[] = (int)$_m['staff_dept_id']; }
                                 }
                             }
-                            if ($_itemDept === $_userDeptId || in_array($_userDeptId, $_arciDepts)) {
+                            if (in_array($_itemDept, $_userDeptIds) || array_intersect($_userDeptIds, $_arciDepts)) {
                                 $roleFiltered[] = $_item;
                             }
                         }
                         $items = $roleFiltered;
                     }
-                    // Grade 3–6: no role-based filtering
+                    // Grades 4–6 (superadmin resolves to 6): no role-based filtering
 
                     $filterYear    = isset($jsonData['filter_year'])    ? (int)$jsonData['filter_year']    : 0;
                     $filterMonth   = isset($jsonData['filter_month'])   ? (int)$jsonData['filter_month']   : 0;

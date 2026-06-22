@@ -55,11 +55,30 @@ All SuperAdmin feature gates check `$_is_superadmin` (set by `header.php`) or `$
 | 0 | Non-Graded | None | — | Redirected to dashboard; no ATEM access |
 | 1 | Frontline / Operational Staff | Basic | Own cards only | View ATEM cards where issuer or ARCI member |
 | 2 | Middle Management | Basic | Own department | View department cards; edit staff limited to overlapping departments |
-| 3 | Senior Management | Admin | All departments | Access Control page; view and edit all staff grades and structs |
+| 3 | Senior Management | Admin | Own department (cards) | Access Control page; view and edit all staff grades and structs |
 | 4 | C Suite Executive | Admin | All departments | + Staff Performance page; Masterlist page accessible (page-guard only) |
 | 5 | CEO/Board | Admin | All departments | Same as grade 4 |
 
 `staff.grade` only holds values 0–5. Grade 6 does not exist in the database. SuperAdmin is a separate flag (`staff.atem = 1`) — see the SuperAdmin Flag section for capabilities.
+
+**ATEM card / dashboard statistics visibility** (distinct from Access Control staff management):
+
+| Grade | Card / statistics scope |
+|---|---|
+| 1 | Own cards only — issuer or ARCI member |
+| 2, 3 | Own department(s) — issuer dept or any ARCI member dept overlaps the user's departments |
+| 4, 5, SuperAdmin | All departments |
+
+This scoping is enforced server-side in `view.php` (card list) and the `dashboard-stats` handler in `api.php` (dashboard), and reflected in their department filter dropdowns (`view.php`, `index.php`). It is independent of the Access Control page, where grades 3–5 manage staff across all departments.
+
+The browse/statistics scope above is the **list** layer. Two finer layers gate an individual card (both enforced in `edit.php`, dev-override aware via `$atem_permission` / `$_is_superadmin`):
+
+| Layer | Rule |
+|---|---|
+| Open a single card (read-only view) | Grade 1: own cards only (issuer or ARCI member). Grades 2–5 and real SuperAdmin: any card. Gate at `edit.php` (`$can_view`). |
+| Edit a card (`mode=edit`) | Issuer, Accountable ARCI member (`role 'A'`), or real SuperAdmin only — for every grade. Enforced by the edit backstop in `edit.php` (`$can_edit`) and mirrored by `canEdit()` in `js/view.js`. A grade 2–5 viewer is downgraded to read on unrelated cards. |
+
+So grades 2–5 can open and read any card even though their list/dashboard only shows their own department(s); editing remains issuer/ARCI-only regardless of grade.
 
 **Page-level guards** use `$atem_permission` (not `$grade` directly):
 
