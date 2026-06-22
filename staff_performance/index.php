@@ -104,7 +104,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
             <select id="perf-filter-month" class="form-select form-select-sm">
                 <option value="0">All Month</option>
                 <?php foreach (array(1=>'January',2=>'February',3=>'March',4=>'April',5=>'May',6=>'June',7=>'July',8=>'August',9=>'September',10=>'October',11=>'November',12=>'December') as $mn => $ml): ?>
-                <option value="<?php echo $mn; ?>" <?php echo ($mn === $init_month) ? 'selected' : ''; ?>>
+                <option value="<?php echo $mn; ?>">
                     <?php echo htmlspecialchars($ml); ?></option>
                 <?php endforeach; ?>
             </select>
@@ -561,7 +561,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initial load
     loadPerformance({
         year: PERF_CFG.initYear,
-        month: PERF_CFG.initMonth,
+        month: 0,
         quarter: 0,
         dept: 0,
         grade: 0,
@@ -592,7 +592,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         loadPerformance({
             year: PERF_CFG.initYear,
-            month: PERF_CFG.initMonth,
+            month: 0,
             quarter: 0,
             dept: 0,
             grade: 0,
