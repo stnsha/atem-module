@@ -11,6 +11,11 @@
     var sortCol = null;
     var sortDir = 1;
 
+    var TODAY         = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
+    var presetClosed  = false;
+    var overdueFilter = false;
+    var minLevelId    = 0;
+
     var LEVEL_COLOR = { 'Level 1': '#6c757d', 'Level 2': '#0d6efd', 'Level 3': '#6610f2', 'Level 4': '#003B73' };
     var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
     var STATUS_COLOR = {
@@ -200,6 +205,20 @@
             if (level && r.level_label !== level) { return false; }
             if (dept && r.department_name !== dept) { return false; }
             if (status && r.status !== status) { return false; }
+            if (presetClosed) {
+                if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
+            }
+            if (overdueFilter) {
+                var effectiveDue = ((r.is_extended || r.status === 'Extended') && r.extended_date_1)
+                    ? String(r.extended_date_1).substring(0, 10)
+                    : String(r.end_date || '').substring(0, 10);
+                if (r.status !== 'Active' && r.status !== 'Extended') { return false; }
+                if (!effectiveDue || effectiveDue >= TODAY) { return false; }
+            }
+            if (minLevelId > 0) {
+                var levelNum = parseInt(String(r.level_label || '').replace(/[^0-9]/g, ''), 10) || 0;
+                if (levelNum < minLevelId) { return false; }
+            }
             if (role) {
                 if (role === 'Not Applicable') {
                     if (r.user_arci_roles && r.user_arci_roles.length > 0) { return false; }
@@ -408,13 +427,14 @@
     function bind() {
         ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
             var el = $(id);
-            if (el) { el.addEventListener('change', function () { page = 1; render(); }); }
+            if (el) { el.addEventListener('change', function () { presetClosed = false; overdueFilter = false; minLevelId = 0; page = 1; render(); }); }
         });
         $('vf-search').addEventListener('keyup', function () { page = 1; render(); });
         $('vf-reset').addEventListener('click', function () {
             ['vf-year', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
             resetIssuerDropdown();
+            presetClosed = false; overdueFilter = false; minLevelId = 0;
             page = 1; render();
         });
 
@@ -535,6 +555,9 @@
         if (params.get('dept'))  { var de = $('vf-dept');  if (de) { de.value = params.get('dept'); } }
         if (params.get('from'))  { var fr = $('vf-from');  if (fr) { fr.value = params.get('from'); } }
         if (params.get('to'))    { var to = $('vf-to');    if (to) { to.value = params.get('to'); } }
+        if (params.get('preset')        === 'closed') { presetClosed  = true; }
+        if (params.get('overdue')       === '1')      { overdueFilter = true; }
+        if (params.get('min_level_id'))               { minLevelId = parseInt(params.get('min_level_id'), 10) || 0; }
         bind();
         render();
     });

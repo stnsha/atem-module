@@ -50,7 +50,7 @@
         '4': ['10-01', '12-31']
     };
 
-    function buildViewUrl(statusOverride, levelIdOverride, deptOverride) {
+    function buildViewUrl(statusOverride, levelIdOverride, deptOverride, presetOverride, overdueOnly, incentiveOnly) {
         var yearEl    = document.getElementById('dash-filter-year');
         var monthEl   = document.getElementById('dash-filter-month');
         var quarterEl = document.getElementById('dash-filter-quarter');
@@ -63,8 +63,11 @@
                        ? deptEl.options[deptEl.selectedIndex].text : '');
 
         var params = [];
-        if (statusOverride) { params.push('status='   + encodeURIComponent(statusOverride)); }
-        if (levelIdOverride) { params.push('level_id=' + encodeURIComponent(levelIdOverride)); }
+        if (statusOverride)  { params.push('status='      + encodeURIComponent(statusOverride)); }
+        if (levelIdOverride) { params.push('level_id='    + encodeURIComponent(levelIdOverride)); }
+        if (presetOverride)  { params.push('preset='      + encodeURIComponent(presetOverride)); }
+        if (overdueOnly)     { params.push('overdue=1'); }
+        if (incentiveOnly)   { params.push('min_level_id=2'); }
         if (year)   { params.push('year='  + encodeURIComponent(year)); }
         if (month)  { params.push('month=' + encodeURIComponent(month)); }
         if (!month && quarter && year && QUARTER_RANGES[quarter]) {
@@ -326,7 +329,11 @@
         for (var si = 0; si < dashStats.length; si++) {
             (function (card) {
                 card.addEventListener('click', function () {
-                    window.location.href = buildViewUrl(card.getAttribute('data-status') || '', '', '');
+                    var status      = card.getAttribute('data-status')    || '';
+                    var preset      = card.getAttribute('data-preset')    || '';
+                    var isOverdue   = card.getAttribute('data-overdue')   === '1';
+                    var isIncentive = card.getAttribute('data-incentive') === '1';
+                    window.location.href = buildViewUrl(status, '', '', preset, isOverdue, isIncentive);
                 });
             }(dashStats[si]));
         }

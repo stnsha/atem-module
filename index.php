@@ -127,14 +127,14 @@ window.ATEM_DASH = <?php echo json_encode(array(
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;">
+        <div class="atem-card atem-dash-stat h-100" data-overdue="1" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Overdue Cards</div>
             <div class="atem-stat-value atem-stat-value--red" id="dash-overdue">---</div>
             <div class="atem-stat-label">active/extended past end date</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;">
+        <div class="atem-card atem-dash-stat h-100" data-incentive="1" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Est. Incentive Forecast</div>
             <div class="atem-stat-value atem-stat-value--orange" id="dash-incentive">---</div>
             <div class="atem-stat-label">Level 2-4 payout</div>
