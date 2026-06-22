@@ -125,12 +125,10 @@
             };
         }
 
-        if (total > 0) {
-            setWidth('bar-complete',   Math.round((s.complete   || 0) / total * 100));
-            setWidth('bar-excellence', Math.round((s.excellence || 0) / total * 100));
-            setWidth('bar-extended',   Math.round((s.extended   || 0) / total * 100));
-            setWidth('bar-failed',     Math.round(failed              / total * 100));
-        }
+        setWidth('bar-complete',   total > 0 ? Math.round((s.complete   || 0) / total * 100) : 0);
+        setWidth('bar-excellence', total > 0 ? Math.round((s.excellence || 0) / total * 100) : 0);
+        setWidth('bar-extended',   total > 0 ? Math.round((s.extended   || 0) / total * 100) : 0);
+        setWidth('bar-failed',     total > 0 ? Math.round(failed              / total * 100) : 0);
         setText('bar-complete-n',   s.complete   || 0);
         setText('bar-excellence-n', s.excellence || 0);
         setText('bar-extended-n',   s.extended   || 0);
