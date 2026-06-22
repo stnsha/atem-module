@@ -73,7 +73,7 @@
         st.innerHTML = sh;
 
         var roleEl = $('vf-role');
-        var roleOptions = ['A', 'R', 'C', 'I', 'Not Applicable'];
+        var roleOptions = ['A', 'R', 'C', 'I', 'ARCI', 'Not Applicable'];
         var rh = '<option value="">All roles</option>';
         for (var ri = 0; ri < roleOptions.length; ri++) { rh += '<option value="' + escapeHtml(roleOptions[ri]) + '">' + escapeHtml(roleOptions[ri]) + '</option>'; }
         roleEl.innerHTML = rh;
@@ -220,7 +220,9 @@
                 if (levelNum < minLevelId) { return false; }
             }
             if (role) {
-                if (role === 'Not Applicable') {
+                if (role === 'ARCI') {
+                    if (!r.user_arci_roles || r.user_arci_roles.length === 0) { return false; }
+                } else if (role === 'Not Applicable') {
                     if (r.user_arci_roles && r.user_arci_roles.length > 0) { return false; }
                 } else {
                     if (!r.user_arci_roles || r.user_arci_roles.indexOf(role) < 0) { return false; }
