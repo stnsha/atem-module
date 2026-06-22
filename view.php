@@ -73,7 +73,7 @@ if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
 }
 
-$include_deleted = ($atem_permission >= 4 || $_is_superadmin);
+$include_deleted = ($atem_permission >= 4 || $_is_superadmin) && empty($_GET['no_deleted']);
 $list_result = getAtemList($staff_id, $include_deleted);
 $rows = (!empty($list_result['success']) && isset($list_result['data'])) ? $list_result['data'] : array();
 $api_unavailable = empty($list_result['success']);

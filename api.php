@@ -1408,8 +1408,9 @@ if (!defined('API_JWT_INCLUDED')) {
                             if ($itemDeptId !== $filterDeptId) { continue; }
                         }
 
-                        $total++;
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
+                        if ($statusVal === 'Deleted' || !empty($item['deleted_at'])) { continue; }
+                        $total++;
                         $levelStr  = isset($item['level_structure']['level']) ? $item['level_structure']['level'] : '';
                         preg_match('/\d+/', $levelStr, $lvlMatch);
                         $levelNum  = $lvlMatch ? (int)$lvlMatch[0] : 0;

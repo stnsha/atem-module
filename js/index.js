@@ -76,6 +76,7 @@
             params.push('to='   + encodeURIComponent(year + '-' + range[1]));
         }
         if (deptName) { params.push('dept=' + encodeURIComponent(deptName)); }
+        params.push('no_deleted=1');
 
         return 'atem/view.php' + (params.length ? '?' + params.join('&') : '');
     }
