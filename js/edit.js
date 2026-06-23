@@ -899,6 +899,12 @@
             setError('tl-status-error', 'Status is required. Please select a status before saving.');
             return false;
         }
+        var _tlStatusVal = '';
+        (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String($('tl-status').value)) { _tlStatusVal = s.value; } });
+        if (_tlStatusVal === 'Extended' && !($('tl-ext1') && $('tl-ext1').value)) {
+            setError('tl-status-error', 'Extended status requires an extended date. Please enter the extended date below.');
+            return false;
+        }
         var originalStatusValue = (REC.status && REC.status.value) ? REC.status.value : '';
         var MUST_CHANGE = ['Draft'];
         if (IS_ISSUER && MUST_CHANGE.indexOf(originalStatusValue) >= 0 && String($('tl-status').value) === String(REC.atem_status_id)) {
@@ -1163,6 +1169,17 @@
             var extLocked = ext1El && ext1El.disabled && ext1El.value;
             if (!extLocked) { extEl.removeAttribute('disabled'); }
         }
+        if (selVal === 'Extended') {
+            if (!extEl.checked && !extEl.disabled) {
+                extEl.checked = true;
+                syncExtensionFields();
+            }
+            if (!($('tl-ext1') && $('tl-ext1').value)) {
+                setError('tl-status-error', 'Extended status requires an extended date. Please enter the extended date below.');
+            }
+        } else {
+            setError('tl-status-error', '');
+        }
     }
 
     function restrictDraftStatus() {
@@ -1239,8 +1256,22 @@
         if ($('tl-end')) { $('tl-end').addEventListener('change', function () { recalcFinalDue(); syncEndDateLock(); showTimelineReminder(); }); }
         if ($('tl-extended')) {
             $('tl-extended').addEventListener('change', function () {
+                var statusEl = $('tl-status');
+                if (statusEl) {
+                    if (this.checked) {
+                        var extStatusId = '';
+                        (CFG.statuses || []).forEach(function (s) { if (s.value === 'Extended') { extStatusId = String(s.id); } });
+                        if (extStatusId) { statusEl.value = extStatusId; }
+                    } else {
+                        var activeStatusId = '';
+                        (CFG.statuses || []).forEach(function (s) { if (s.value === 'Active') { activeStatusId = String(s.id); } });
+                        if (activeStatusId) { statusEl.value = activeStatusId; }
+                        setError('tl-status-error', '');
+                    }
+                }
                 syncExtensionFields();
                 recalcClosureDate();
+                syncEndDateLock();
                 applyExtMins();
                 showTimelineReminder();
             });
@@ -1259,6 +1290,11 @@
             $('tl-status').addEventListener('change', function () {
                 recalcClosureDate(); syncExtendedByStatus(); syncEndDateLock(); applyExtMins();
                 showTimelineReminder();
+            });
+        }
+        if ($('tl-ext1')) {
+            $('tl-ext1').addEventListener('change', function () {
+                if (this.value) { setError('tl-status-error', ''); }
             });
         }
         var approvalRadios = document.querySelectorAll('input[name="tl-incentive-approval"]');
