@@ -1235,7 +1235,7 @@
             saveInline();
         });
         if ($('atem-title')) { $('atem-title').addEventListener('blur', saveInline); }
-        if (quillEditor) { quillEditor.on('text-change', function () { clearTimeout(_inlineSaveTimer); _inlineSaveTimer = setTimeout(saveInline, 1500); }); }
+        if (quillEditor) { quillEditor.on('text-change', function () { if (READ) { return; } clearTimeout(_inlineSaveTimer); _inlineSaveTimer = setTimeout(saveInline, 1500); }); }
         if ($('tl-end')) { $('tl-end').addEventListener('change', function () { recalcFinalDue(); syncEndDateLock(); showTimelineReminder(); }); }
         if ($('tl-extended')) {
             $('tl-extended').addEventListener('change', function () {
