@@ -110,6 +110,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
             <div class="atem-card-title mb-1">Active / On Hand</div>
             <div class="atem-stat-value atem-stat-value--blue" id="dash-active">---</div>
             <div class="atem-stat-label">not yet closed</div>
+            <div class="atem-stat-label" id="dash-extended-label" style="display:none;color:#fd7e14;margin-top:2px;"></div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">

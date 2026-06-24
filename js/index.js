@@ -89,6 +89,17 @@
         var failed = s.failed || 0;
         var failRate = total > 0 ? (failed / total * 100).toFixed(1) + '% failure rate' : '0.0% failure rate';
 
+        var extended = s.extended || 0;
+        var extLabelEl = document.getElementById('dash-extended-label');
+        if (extLabelEl) {
+            if (extended > 0) {
+                extLabelEl.textContent = 'with ' + formatNumber(extended) + ' extended';
+                extLabelEl.style.display = '';
+            } else {
+                extLabelEl.style.display = 'none';
+            }
+        }
+
         setText('dash-total',    formatNumber(total));
         setText('dash-active',   formatNumber(active));
         setText('dash-closed',   formatNumber(closed));
