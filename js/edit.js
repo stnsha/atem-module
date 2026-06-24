@@ -325,6 +325,17 @@
         applyExtMins();
         syncEndDateLock();
         syncStatusOptions();
+        // Lock status to Extended while the checkbox is checked but the extension has not yet been saved.
+        // Saved extensions (REC.extended_date_1 set) keep the dropdown enabled so the issuer can
+        // still close the card as Completed or Failed.
+        var statusEl = $('tl-status');
+        if (statusEl && !READ) {
+            if (on && !(REC && REC.extended_date_1)) {
+                statusEl.setAttribute('disabled', 'disabled');
+            } else {
+                statusEl.removeAttribute('disabled');
+            }
+        }
         syncIncentiveApproval();
         recalcClosureDate();
         recalcFinalDue();

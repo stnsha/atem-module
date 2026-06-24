@@ -1417,11 +1417,13 @@ if (!defined('API_JWT_INCLUDED')) {
 
                         $isExtended = !empty($item['is_extended']);
                         if ($statusVal === 'Active' || $statusVal === 'Extended') {
-                            $byStatus['active']++;
+                            if ($isExtended) {
+                                $byStatus['extended']++;
+                            } else {
+                                $byStatus['active']++;
+                            }
                         } elseif ($statusVal === 'Draft') {
                             $byStatus['draft']++;
-                        } elseif ($isExtended) {
-                            $byStatus['extended']++;
                         } elseif ($statusVal === 'Completed') {
                             $byStatus['complete']++;
                         } elseif ($statusVal === 'Completed with Excellence') {
