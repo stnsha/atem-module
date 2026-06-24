@@ -381,7 +381,7 @@
                         : '')
                     : '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
                     + (canEdit(r) ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
-                    + (canUpdateProgress(r) ? ' <a href="atem/edit.php?id=' + r.id + '&mode=progress" class="btn btn-sm btn-outline-info" title="Update Progress"><i class="bi bi-bar-chart-steps"></i></a>' : '')
+                    + (canUpdateProgress(r) ? ' <a href="atem/edit.php?id=' + r.id + '&mode=read#atem-progress-section" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
                     + (canDelete(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '');
                 html += '<tr' + rowStyle + '>'
                     + '<td><span class="atem-id">#AT' + r.id + '</span></td>'

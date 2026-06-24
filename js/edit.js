@@ -21,6 +21,14 @@
     }());
     // Issuer and A members can see all progress cards; R/C/I see only their own.
     var CAN_VIEW_ALL_PROGRESS = IS_ISSUER || IS_A_ARCI;
+    // True for any user tagged on the card (Issuer or any ARCI role A/R/C/I).
+    var IS_TAGGED_ON_CARD = IS_ISSUER || (function () {
+        var arci = REC.arci || [];
+        for (var i = 0; i < arci.length; i++) {
+            if (String(arci[i].staff_id) === String(CFG.staffId)) { return true; }
+        }
+        return false;
+    }());
     var TERMINAL_STATUSES = ['Failed', 'Completed', 'Completed with Excellence'];
     var quillEditor = null;
     var arciState = { A: [], R: [], C: [], I: [] };
@@ -718,7 +726,7 @@
             var p = sorted[i];
             var pillClass = 'atem-pill atem-pill-' + p.status;
             var isOwn = String(p.created_by) === String(CFG.staffId);
-            var actionsHtml = ((!READ || PROGRESS_MODE) && IS_ISSUER) ? '<div class="atem-progress-item-actions">'
+            var actionsHtml = isOwn ? '<div class="atem-progress-item-actions">'
                 + '<button type="button" class="btn btn-outline-secondary btn-sm atem-progress-edit" data-id="' + p.id + '">Edit</button>'
                 + '<button type="button" class="btn btn-outline-danger btn-sm atem-progress-delete" data-id="' + p.id + '">Delete</button>'
                 + '</div>' : '';
@@ -745,7 +753,7 @@
 
     function startAddProgressRow() {
         if (_progressEditing) { return; }
-        if (!IS_ISSUER) { return; }
+        if (!IS_TAGGED_ON_CARD) { return; }
         _progressEditing = true;
         var addBtn = $('atem-add-progress-btn');
         if (addBtn) { addBtn.disabled = true; }

@@ -170,6 +170,10 @@ if ($is_progress && in_array($current_status_value, $terminal_statuses)) {
 $is_draft      = ($current_status_value === 'Draft');
 $is_issuer_now = ($record && (int)$staff_id === (int)$record['issuer_staff_id']);
 
+$can_add_progress = ($is_issuer_now || $is_arci_member)
+    && !$record_is_deleted
+    && !in_array($current_status_value, $terminal_statuses);
+
 // Non-issuers cannot use progress mode — downgrade to read.
 if ($is_progress && !$is_issuer_now) {
     $mode        = 'read';
@@ -409,11 +413,11 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     </div>
 
     <!-- Progress Update -->
-    <div class="atem-bento-item atem-span-12">
+    <div class="atem-bento-item atem-span-12" id="atem-progress-section">
         <div class="atem-card">
             <div class="atem-card-title-row">
                 <h6 class="atem-card-title"><i class="bi bi-bar-chart-steps"></i> Progress Update</h6>
-                <?php if ($is_issuer_now && (!$is_read || $is_progress)): ?>
+                <?php if ($can_add_progress): ?>
                 <button type="button" class="btn btn-primary btn-sm" id="atem-add-progress-btn">Add Progress</button>
                 <?php endif; ?>
             </div>
