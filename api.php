@@ -1233,6 +1233,34 @@ function updateBonusRemark($record_id, $remark, $staff_id)
     return array('success' => true, 'data' => isset($body['data']) ? $body['data'] : null);
 }
 
+function getIidasMigrationPreview($staff_id, $page = 1, $status = '', $committed = '')
+{
+    $qs = '?per_page=50&page=' . (int)$page;
+    if ($status !== '')    { $qs .= '&status='    . urlencode($status); }
+    if ($committed !== '') { $qs .= '&committed=' . urlencode($committed); }
+
+    $result = getApiDataWithJWT('iidas/migration-preview' . $qs, null, 'GET', $staff_id);
+    if (!$result['success']) {
+        return array('success' => false, 'message' => 'API error', 'data' => array(), 'meta' => array());
+    }
+    $body = json_decode($result['response'], true);
+    return array(
+        'success' => true,
+        'data'    => isset($body['data']) ? $body['data'] : array(),
+        'meta'    => isset($body['meta']) ? $body['meta'] : array(),
+    );
+}
+
+function getIidasMigrationSummary($staff_id)
+{
+    $result = getApiDataWithJWT('iidas/migration-preview/summary', null, 'GET', $staff_id);
+    if (!$result['success']) {
+        return array('success' => false, 'message' => 'API error', 'data' => array());
+    }
+    $body = json_decode($result['response'], true);
+    return array('success' => true, 'data' => isset($body['data']) ? $body['data'] : array());
+}
+
 // Only run request handler if this file is accessed directly (not included)
 if (!defined('API_JWT_INCLUDED')) {
     // Check if we have a staff ID for authentication
