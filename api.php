@@ -33,12 +33,16 @@ if (isset($_SESSION["myusername"])) {
 
     if ($result->num_rows > 0) {
         while ($rows = $result->fetch_assoc()) {
-            $staff_id = stripslashes($rows['id']);
+            $staff_id   = stripslashes($rows['id']);
             $department = stripslashes($rows['department']);
             $nama_staff = stripslashes($rows['nama_staff']);
+            $atem_flag  = isset($rows['atem']) ? (int)$rows['atem'] : 0;
         }
     }
 }
+
+// Mirrors header.php logic: dev override suppresses SuperAdmin.
+$is_api_superadmin = (!isset($_SESSION['atem_dev_role_override']) && !empty($atem_flag) && (int)$atem_flag === 1);
 
 /**
  * Log JWT API operations for monitoring and debugging
@@ -1537,6 +1541,9 @@ if (!defined('API_JWT_INCLUDED')) {
                     if (isset($jsonData['id']) && isset($jsonData['data'])) {
                         $data = $jsonData['data'];
                         $data['updated_by'] = $staff_id; // inject server-side
+                        if ($is_api_superadmin) {
+                            $data['superadmin_override'] = 1;
+                        }
                         $response = updateAtem($jsonData['id'], $data, $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or data');

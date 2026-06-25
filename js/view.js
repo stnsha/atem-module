@@ -372,7 +372,7 @@
                 }
                 var titleCell = escapeHtml(r.title);
                 if (r.is_deleted) {
-                    titleCell += ' <span class="badge bg-danger ms-1" style="font-size:10px;vertical-align:middle;">Deleted</span>';
+                    titleCell += ' ' + pill('Deleted', '#dc3545');
                 }
                 var rowStyle = r.is_deleted ? ' style="opacity:0.55;"' : '';
                 var actionCell = r.is_deleted

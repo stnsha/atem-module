@@ -371,8 +371,13 @@
         var extendedAllowed = ['Extended', 'Completed', 'Failed'];
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         (CFG.statuses || []).forEach(function (s) {
-            if (recStatusVal === 'Extended' && extendedAllowed.indexOf(s.value) === -1) { return; }
-            if (s.value === 'Deleted' && !canSeeDeleted) { return; }
+            if (CFG.superadminTerminalEdit) {
+                // SuperAdmin editing a terminal card: only offer Draft or the current status.
+                if (s.value !== 'Draft' && String(s.id) !== String(REC.atem_status_id)) { return; }
+            } else {
+                if (recStatusVal === 'Extended' && extendedAllowed.indexOf(s.value) === -1) { return; }
+                if (s.value === 'Deleted' && !canSeeDeleted) { return; }
+            }
             var opt = document.createElement('option');
             opt.value = s.id;
             opt.textContent = s.value;
@@ -1202,6 +1207,7 @@
     }
 
     function restrictDraftStatus() {
+        if (CFG.superadminTerminalEdit) { return; }
         var sel = $('tl-status');
         if (!sel) { return; }
         var currentLabel = '';
@@ -1235,6 +1241,18 @@
             var el = $(id);
             if (el) { el.setAttribute('disabled', 'disabled'); }
         });
+    }
+
+    // Locks all fields except Level, Rule, and Status for SuperAdmin editing a terminal card.
+    function applyTerminalEditRestrictions() {
+        if (quillEditor) { quillEditor.disable(); }
+        ['atem-title', 'atem-issuer', 'atem-department',
+         'tl-start', 'tl-end', 'tl-extended', 'tl-ext1',
+         'tl-remarks', 'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
+            var el = $(id);
+            if (el) { el.setAttribute('disabled', 'disabled'); }
+        });
+        // tl-final-due and tl-closure are already disabled in HTML.
     }
 
     // --------------------------------------------------------------- wiring
@@ -1384,6 +1402,10 @@
 
         if ($('atem-save-btn')) {
             $('atem-save-btn').addEventListener('click', function () {
+                if (CFG.superadminTerminalEdit) {
+                    saveTerminalEdit();
+                    return;
+                }
                 var selId = $('tl-status') ? $('tl-status').value : '';
                 var selVal = '';
                 (CFG.statuses || []).forEach(function (s) {
@@ -1412,6 +1434,46 @@
         }
 
         if ($('atem-delete-btn')) { $('atem-delete-btn').addEventListener('click', deleteAtem); }
+    }
+
+    function saveTerminalEdit() {
+        var levelVal  = parseInt(($('atem-level') || {}).value, 10) || null;
+        var ruleVal   = parseInt(($('atem-rule')  || {}).value, 10) || null;
+        var statusVal = parseInt(($('tl-status')  || {}).value, 10) || null;
+
+        if (!levelVal)  { setError('atem-save-error', 'Please select a complexity level.'); return; }
+        if (!statusVal) { setError('atem-save-error', 'Please select a status.'); return; }
+        setError('atem-save-error', '');
+
+        var btn = $('atem-save-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+        apiCall('update-atem', {
+            id: CFG.atemId,
+            data: {
+                title:              REC.title,
+                description:        REC.description        || null,
+                level_structure_id: levelVal,
+                incentive_rule_id:  ruleVal,
+                start_date:         REC.start_date          ? dateOnly(REC.start_date)      : null,
+                end_date:           REC.end_date             ? dateOnly(REC.end_date)         : null,
+                is_extended:        REC.is_extended          || false,
+                extended_date_1:    REC.extended_date_1      ? dateOnly(REC.extended_date_1) : null,
+                atem_status_id:     statusVal,
+                remarks:            REC.remarks             || null,
+                incentive_approved: false
+            }
+        }).then(function (res) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
+            if (res && res.success) {
+                window.location.href = 'atem/view.php';
+            } else {
+                setError('atem-save-error', res && res.message ? res.message : 'Failed to save.');
+            }
+        }).catch(function () {
+            if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
+            setError('atem-save-error', 'Network error. Please try again.');
+        });
     }
 
     function deleteAtem() {
@@ -1452,7 +1514,8 @@
         lockDateFields();
         injectBadge();
         applyReadMode();
-        if (!READ && !IS_ISSUER) {
+        if (CFG.superadminTerminalEdit) { applyTerminalEditRestrictions(); }
+        if (!READ && !IS_ISSUER && !CFG.superadminTerminalEdit) {
             ['tl-start', 'tl-end', 'tl-status', 'tl-extended', 'tl-ext1', 'tl-remarks',
              'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
                 var el = document.getElementById(id);

@@ -157,9 +157,17 @@ $current_status_value = '';
 if ($record && isset($record['status']['value'])) {
     $current_status_value = $record['status']['value'];
 }
+// SuperAdmin may edit Completed or Failed cards — but only Level, Rule, and Status (-> Draft).
+$superadmin_terminal_statuses = array('Completed', 'Failed');
+$superadmin_terminal_edit = $_is_superadmin
+    && !$record_is_deleted
+    && in_array($current_status_value, $superadmin_terminal_statuses);
+
 if (!$is_read && in_array($current_status_value, $terminal_statuses)) {
-    $mode    = 'read';
-    $is_read = true;
+    if (!$superadmin_terminal_edit) {
+        $mode    = 'read';
+        $is_read = true;
+    }
 }
 if ($is_progress && in_array($current_status_value, $terminal_statuses)) {
     $mode        = 'read';
@@ -204,7 +212,8 @@ $atem_config = array(
     'departments'  => $departments_list,
     'staffByDept'  => $staff_by_dept,
     'record'       => $record,
-    'isIssuer'     => (bool) $is_issuer_now,
+    'isIssuer'             => (bool) $is_issuer_now,
+    'superadminTerminalEdit' => (bool) $superadmin_terminal_edit,
 );
 
 $_bd_enabled = false;
@@ -319,7 +328,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         <div class="atem-card mb-3">
             <h6 class="atem-card-title"><i class="bi bi-paperclip"></i> Attachment</h6>
             <p class="atem-card-hint">Files stored with this ATEM.</p>
-            <?php if (!$is_read): ?>
+            <?php if (!$is_read && !$superadmin_terminal_edit): ?>
             <div id="atem-dropzone" class="atem-dropzone">
                 <input type="file" id="atem-file-input" multiple
                     accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt" hidden>
@@ -338,7 +347,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         <div class="atem-card">
             <div class="atem-card-title-row">
                 <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link <span class="atem-req">*</span></h6>
-                <?php if (!$is_read): ?>
+                <?php if (!$is_read && !$superadmin_terminal_edit): ?>
                 <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference
                     Link</button>
                 <?php endif; ?>
@@ -356,7 +365,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         <div class="atem-card">
             <h6 class="atem-card-title"><i class="bi bi-people"></i> Project Team (ARCI)</h6>
             <p class="atem-card-hint">A (Accountable) is mandatory; maximum 2 members. R (Responsible) supports up to 2 members. C and I are for visibility only and are not incentivised.</p>
-            <?php if (!$is_read): ?>
+            <?php if (!$is_read && !$superadmin_terminal_edit): ?>
             <div class="atem-arci-add">
                 <div class="atem-arci-add-grid">
                     <div>
@@ -398,7 +407,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                 <div class="atem-arci-col">
                     <div class="atem-arci-col-head">
                         <span><strong><?php echo $rkey; ?></strong> - <?php echo $rlabel; ?></span>
-                        <?php if (!$is_read): ?>
+                        <?php if (!$is_read && !$superadmin_terminal_edit): ?>
                         <button type="button" class="btn btn-outline-secondary btn-sm atem-arci-clear"
                             data-role="<?php echo $rkey; ?>">Delete All</button>
                         <?php endif; ?>
