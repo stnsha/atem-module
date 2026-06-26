@@ -74,7 +74,8 @@ if (!empty($lr['success']) && isset($lr['data'])) {
 }
 
 $include_deleted = ($atem_permission >= 4 || $_is_superadmin) && empty($_GET['no_deleted']);
-$list_result = getAtemList($staff_id, $include_deleted);
+// Always fetch soft-deleted records; grade-based filtering below decides which ones to surface.
+$list_result = getAtemList($staff_id, true);
 $rows = (!empty($list_result['success']) && isset($list_result['data'])) ? $list_result['data'] : array();
 $api_unavailable = empty($list_result['success']);
 
@@ -145,8 +146,15 @@ foreach ($rows as $a) {
 // Apply server-side visibility filtering based on grade.
 if ((int)$atem_permission === 1 && !$_is_superadmin) {
     // Grade 1: own cards only (issuer or any ARCI role).
+    // Also show own suspended cards (soft-deleted with status Suspended).
     $filtered = array();
     foreach ($view_rows as $r) {
+        if ($r['is_deleted']) {
+            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
+                $filtered[] = $r;
+            }
+            continue;
+        }
         if ($r['issuer_staff_id'] === (int)$staff_id
                 || in_array((int)$staff_id, $r['arci_staff_ids'])) {
             $filtered[] = $r;
@@ -155,17 +163,30 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
     $view_rows = $filtered;
 } elseif (((int)$atem_permission === 2 || (int)$atem_permission === 3) && !$_is_superadmin) {
     // Grades 2 and 3: cards where issuer or any ARCI member belongs to ANY of the
-    // user's departments.
+    // user's departments. Also show own suspended cards regardless of department.
     $filtered = array();
     foreach ($view_rows as $idx => $r) {
+        if ($r['is_deleted']) {
+            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
+                $filtered[] = $r;
+            }
+            continue;
+        }
         if (in_array($r['department_id'], $user_dept_ids)
                 || array_intersect($user_dept_ids, $row_arci_dept_ids[$idx])) {
             $filtered[] = $r;
         }
     }
     $view_rows = $filtered;
+} elseif (!$include_deleted) {
+    // Grade 4+/SA with ?no_deleted: strip all soft-deleted rows.
+    $filtered = array();
+    foreach ($view_rows as $r) {
+        if (!$r['is_deleted']) { $filtered[] = $r; }
+    }
+    $view_rows = $filtered;
 }
-// Grades 4–6: no server-side row filtering.
+// Grade 4+/SA (include_deleted=true): no filtering — all rows shown.
 
 $dept_list = array();
 if ((int)$atem_permission <= 3 && !$_is_superadmin) {

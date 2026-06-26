@@ -21,7 +21,7 @@
     var STATUS_COLOR = {
         'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Extended': '#fd7e14', 'Failed': '#dc3545',
-        'Deleted': '#dc3545', 'Suspended': '#6f42c1'
+        'Deleted': '#dc3545', 'Suspended': '#e11d48'
     };
     function $(id) { return document.getElementById(id); }
 
@@ -373,15 +373,17 @@
                 var titleCell = escapeHtml(r.title);
                 if (r.is_deleted) {
                     if (r.status === 'Suspended') {
-                        titleCell += ' ' + pill('Suspended', '#6f42c1');
+                        titleCell += ' ' + pill('Suspended', '#e11d48');
                     } else {
                         titleCell += ' ' + pill('Deleted', '#dc3545');
                     }
                 }
                 var rowStyle = r.is_deleted ? ' style="opacity:0.55;"' : '';
+                var _canViewDeleted = CFG.isSuperAdmin || CFG.userGrade >= 4
+                    || (r.status === 'Suspended' && r.issuer_staff_id == CFG.staffId);
                 var actionCell = r.is_deleted
-                    ? ((CFG.isSuperAdmin || CFG.userGrade >= 4)
-                        ? '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Deleted)"><i class="bi bi-eye"></i></a>'
+                    ? (_canViewDeleted
+                        ? '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Suspended)"><i class="bi bi-eye"></i></a>'
                         : '')
                     : '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
                     + (canEdit(r) ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
