@@ -702,6 +702,19 @@ function deleteAtem($id, $staff_id, $remarks)
     return array('success' => false, 'message' => $msg);
 }
 
+function suspendAtem($id, $staff_id, $remarks)
+{
+    $endpoint = 'atem/' . (int)$id . '/suspend';
+    $result   = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id, 'remarks' => $remarks), 'POST', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return array('success' => true);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to suspend ATEM.';
+    return array('success' => false, 'message' => $msg);
+}
+
 /**
  * Add an ARCI member to an ATEM card
  * @param int $id ATEM ID
@@ -1475,8 +1488,14 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
 
-                        $claimable = isset($item['claimable']) ? (bool)$item['claimable'] : false;
-                        if ($claimable && isset($item['total_incentive_amount'])) {
+                        // Include all non-Draft, non-Failed cards in the incentive
+                        // forecast — Active/Extended cards carry a projected payout
+                        // that should appear in the estimate until they close or are
+                        // suspended (suspended cards are soft-deleted and excluded
+                        // from getAtemList entirely, so their reset 0 amounts never
+                        // reach this loop).
+                        $forecastStatuses = array('Active', 'Extended', 'Completed', 'Completed with Excellence');
+                        if (in_array($statusVal, $forecastStatuses) && isset($item['total_incentive_amount'])) {
                             $amt = (float)$item['total_incentive_amount'];
                             $incentiveTotal += $amt;
                             if ($levelNum >= 1 && $levelNum <= 4) {
@@ -1505,7 +1524,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         } elseif ($statusVal === 'Failed') {
                             $byDept[$deptId]['fail']++;
                         }
-                        if ($claimable && isset($item['total_incentive_amount'])) {
+                        if (in_array($statusVal, $forecastStatuses) && isset($item['total_incentive_amount'])) {
                             $byDept[$deptId]['forecast'] += (float)$item['total_incentive_amount'];
                         }
                     }
@@ -1584,6 +1603,15 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = deleteAtem($jsonData['id'], $staff_id, $delete_remarks);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID');
+                    }
+                    break;
+
+                case 'suspend-atem':
+                    if (isset($jsonData['id'])) {
+                        $suspend_remarks = isset($jsonData['remarks']) ? (string)$jsonData['remarks'] : '';
+                        $response = suspendAtem($jsonData['id'], $staff_id, $suspend_remarks);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID.');
                     }
                     break;
 

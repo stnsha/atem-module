@@ -21,7 +21,7 @@
     var STATUS_COLOR = {
         'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Extended': '#fd7e14', 'Failed': '#dc3545',
-        'Deleted': '#dc3545'
+        'Deleted': '#dc3545', 'Suspended': '#6f42c1'
     };
     function $(id) { return document.getElementById(id); }
 
@@ -71,7 +71,7 @@
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         var sh = '<option value="">All statuses</option>';
         for (var s = 0; s < statuses.length; s++) {
-            if (statuses[s].value === 'Deleted' && !canSeeDeleted) { continue; }
+            if ((statuses[s].value === 'Deleted' || statuses[s].value === 'Suspended') && !canSeeDeleted) { continue; }
             sh += '<option value="' + escapeHtml(statuses[s].value) + '">' + escapeHtml(statuses[s].value) + '</option>';
         }
         st.innerHTML = sh;
@@ -372,7 +372,11 @@
                 }
                 var titleCell = escapeHtml(r.title);
                 if (r.is_deleted) {
-                    titleCell += ' ' + pill('Deleted', '#dc3545');
+                    if (r.status === 'Suspended') {
+                        titleCell += ' ' + pill('Suspended', '#6f42c1');
+                    } else {
+                        titleCell += ' ' + pill('Deleted', '#dc3545');
+                    }
                 }
                 var rowStyle = r.is_deleted ? ' style="opacity:0.55;"' : '';
                 var actionCell = r.is_deleted

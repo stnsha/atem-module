@@ -136,23 +136,31 @@ if ($record) {
     }
 }
 
-// Detect soft-deleted cards and restrict access to grade 4+/SuperAdmin only.
-$record_is_deleted = ($record && !empty($record['deleted_at']));
+// Detect soft-deleted cards (deleted or suspended) and restrict access.
+$record_is_deleted   = ($record && !empty($record['deleted_at']));
+$record_is_suspended = ($record_is_deleted
+    && isset($record['status']['value'])
+    && $record['status']['value'] === 'Suspended');
 if ($record_is_deleted) {
     if (!$_is_superadmin && (int)$atem_permission < 4) {
-        $_SESSION['atem_warning'] = 'This ATEM card has been deleted and is no longer accessible.';
-        echo '<script>window.location.replace("atem/view.php");</script>';
-        include('footer.php');
-        exit;
+        // Suspended cards: allow the issuer to view their own card in read-only.
+        if (!($record_is_suspended && $is_issuer)) {
+            $_SESSION['atem_warning'] = $record_is_suspended
+                ? 'This ATEM card has been suspended and is no longer accessible.'
+                : 'This ATEM card has been deleted and is no longer accessible.';
+            echo '<script>window.location.replace("atem/view.php");</script>';
+            include('footer.php');
+            exit;
+        }
     }
-    // Force read-only — deleted cards cannot be edited by anyone.
+    // Force read-only — soft-deleted cards cannot be edited by anyone.
     $mode        = 'read';
     $is_read     = true;
     $is_progress = false;
 }
 
 // ATEMs with a terminal status cannot be edited.
-$terminal_statuses = array('Failed', 'Completed', 'Completed with Excellence', 'Deleted');
+$terminal_statuses = array('Failed', 'Completed', 'Completed with Excellence', 'Deleted', 'Suspended');
 $current_status_value = '';
 if ($record && isset($record['status']['value'])) {
     $current_status_value = $record['status']['value'];
@@ -177,6 +185,9 @@ if ($is_progress && in_array($current_status_value, $terminal_statuses)) {
 
 $is_draft      = ($current_status_value === 'Draft');
 $is_issuer_now = ($record && (int)$staff_id === (int)$record['issuer_staff_id']);
+
+$can_suspend = ($record && !$record_is_deleted && !$api_unavailable)
+    && ($_is_superadmin || (int)$atem_permission >= 4);
 
 $can_add_progress = ($is_issuer_now || $is_arci_member)
     && !$record_is_deleted
@@ -230,7 +241,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 </div>
 <?php endif; ?>
 
-<?php if ($record_is_deleted): ?>
+<?php if ($record_is_deleted && !$record_is_suspended): ?>
 <div class="alert alert-danger d-flex align-items-center gap-2" role="alert" style="font-size:13px;">
     <i class="bi bi-trash3-fill flex-shrink-0"></i>
     <div>
@@ -245,6 +256,26 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         ?>
         <span class="ms-2 text-muted" style="font-size:12px;">
             Deleted by <?php echo htmlspecialchars($deleted_by_name); ?><?php echo $deleted_at_fmt ? ' on ' . htmlspecialchars($deleted_at_fmt) : ''; ?>.
+        </span>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($record_is_suspended): ?>
+<div class="alert alert-warning d-flex align-items-center gap-2" role="alert" style="font-size:13px;">
+    <i class="bi bi-slash-circle flex-shrink-0"></i>
+    <div>
+        <strong>This ATEM card has been suspended.</strong>
+        It is displayed here in read-only mode. No changes can be made.
+        <?php
+        $sb_id   = isset($record['suspended_by']) ? (int)$record['suspended_by'] : 0;
+        $sb_name = ($sb_id && isset($staff_names[$sb_id])) ? $staff_names[$sb_id] : ('Staff #' . $sb_id);
+        $sb_at   = !empty($record['deleted_at']) ? date('d-m-Y H:i', strtotime($record['deleted_at'])) : '';
+        if ($sb_id || $sb_at):
+        ?>
+        <span class="ms-2 text-muted" style="font-size:12px;">
+            Suspended by <?php echo htmlspecialchars($sb_name); ?><?php echo $sb_at ? ' on ' . htmlspecialchars($sb_at) : ''; ?>.
         </span>
         <?php endif; ?>
     </div>
@@ -522,6 +553,38 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         </div>
     </div>
 
+    <?php if ($record_is_suspended): ?>
+    <!-- Suspension Details -->
+    <div class="atem-bento-item atem-span-12">
+        <div class="atem-card" style="border-left:4px solid #ffc107;">
+            <h6 class="atem-card-title" style="color:#856404;"><i class="bi bi-slash-circle"></i> Suspension Details</h6>
+            <p class="atem-card-hint">This card has been suspended. All estimated incentives have been reset to zero.</p>
+            <div class="row g-3 mt-1">
+                <div class="col-md-4">
+                    <label class="form-label">Suspended By</label>
+                    <div style="font-size:13px;"><?php
+                        $sb_id   = isset($record['suspended_by']) ? (int)$record['suspended_by'] : 0;
+                        $sb_name = ($sb_id && isset($staff_names[$sb_id])) ? $staff_names[$sb_id] : ($sb_id ? 'Staff #' . $sb_id : '&mdash;');
+                        echo htmlspecialchars($sb_name);
+                    ?></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Suspended On</label>
+                    <div style="font-size:13px;"><?php
+                        echo htmlspecialchars(!empty($record['deleted_at']) ? date('d-m-Y H:i', strtotime($record['deleted_at'])) : '&mdash;');
+                    ?></div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Reason</label>
+                    <div style="font-size:13px;white-space:pre-wrap;"><?php
+                        echo htmlspecialchars(isset($record['remarks']) && $record['remarks'] !== '' ? $record['remarks'] : '&mdash;');
+                    ?></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
 </div>
 
 <div class="atem-save-error-wrap">
@@ -532,6 +595,9 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <?php if (!$is_read && $is_draft && $is_issuer_now): ?>
     <button type="button" class="btn btn-outline-danger" id="atem-delete-btn"
         <?php echo $api_unavailable ? 'disabled' : ''; ?>>Delete</button>
+    <?php endif; ?>
+    <?php if ($can_suspend): ?>
+    <button type="button" class="btn btn-warning" id="atem-suspend-btn">Suspend ATEM</button>
     <?php endif; ?>
     <?php if (!$is_read): ?>
     <button type="button" class="btn btn-primary" id="atem-save-btn"
@@ -569,6 +635,35 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" id="reflink-save-btn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Suspend modal -->
+<div class="modal fade" id="atem-suspend-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Suspend ATEM Card</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;" class="mb-3">
+                    Suspending this card will soft-delete it and reset all estimated incentives to zero.
+                    The card will be visible only to the issuer, and grade 4/5 officers.
+                    This action cannot be undone.
+                </p>
+                <div class="mb-2">
+                    <label for="suspend-remarks" class="form-label">Reason for Suspension <span class="atem-req">*</span></label>
+                    <textarea class="form-control" id="suspend-remarks" rows="3"
+                        placeholder="Enter reason for suspension"></textarea>
+                    <div class="atem-form-error" id="suspend-remarks-error"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="atem-suspend-confirm-btn">Suspend Card</button>
             </div>
         </div>
     </div>

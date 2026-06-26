@@ -218,6 +218,14 @@
     }
 
     function recalcIncentive() {
+        if (REC && REC.status && REC.status.value === 'Suspended') {
+            $('inc-base').textContent  = money(0);
+            $('inc-a').textContent     = money(0);
+            $('inc-r').textContent     = money(0);
+            $('inc-total').textContent = money(0);
+            if ($('inc-note')) { $('inc-note').textContent = 'Incentive has been reset to zero — this card is suspended.'; }
+            return;
+        }
         var level = selectedLevel(), rule = selectedRule();
         var base = level ? Number(level.incentive_value) : 0;
         var ruleSelect = $('atem-rule'), note = $('inc-note');
@@ -376,6 +384,7 @@
                 if (s.value !== 'Draft' && String(s.id) !== String(REC.atem_status_id)) { return; }
             } else {
                 if (recStatusVal === 'Extended' && extendedAllowed.indexOf(s.value) === -1) { return; }
+                if (s.value === 'Suspended') { return; }
                 if (s.value === 'Deleted' && !canSeeDeleted) { return; }
             }
             var opt = document.createElement('option');
@@ -1026,7 +1035,8 @@
         'reflink_removed':  'bi-link',
         'progress_added':   'bi-bar-chart-steps',
         'progress_updated': 'bi-bar-chart-steps',
-        'progress_removed': 'bi-trash'
+        'progress_removed': 'bi-trash',
+        'suspended':        'bi-slash-circle'
     };
 
     function formatDateTime(v) {
@@ -1434,6 +1444,43 @@
         }
 
         if ($('atem-delete-btn')) { $('atem-delete-btn').addEventListener('click', deleteAtem); }
+
+        (function () {
+            var suspendBtn = $('atem-suspend-btn');
+            if (!suspendBtn) { return; }
+            var _modal = null;
+            function getSuspendModal() {
+                if (!_modal && typeof bootstrap !== 'undefined') {
+                    _modal = new bootstrap.Modal($('atem-suspend-modal'));
+                    $('atem-suspend-confirm-btn').addEventListener('click', function () {
+                        var remarks = $('suspend-remarks') ? $('suspend-remarks').value.trim() : '';
+                        if (!remarks) {
+                            setError('suspend-remarks-error', 'Reason is required.');
+                            return;
+                        }
+                        setError('suspend-remarks-error', '');
+                        apiCall('suspend-atem', { id: CFG.atemId, remarks: remarks }).then(function (res) {
+                            if (res && res.success) {
+                                window.location.reload();
+                            } else {
+                                if (_modal) { _modal.hide(); }
+                                setError('atem-save-error', res && res.message ? res.message : 'Failed to suspend ATEM.');
+                            }
+                        }).catch(function () {
+                            if (_modal) { _modal.hide(); }
+                            setError('atem-save-error', 'Network error while suspending.');
+                        });
+                    });
+                }
+                return _modal;
+            }
+            suspendBtn.addEventListener('click', function () {
+                if ($('suspend-remarks')) { $('suspend-remarks').value = ''; }
+                setError('suspend-remarks-error', '');
+                var m = getSuspendModal();
+                if (m) { m.show(); }
+            });
+        }());
     }
 
     function saveTerminalEdit() {
