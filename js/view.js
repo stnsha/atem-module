@@ -20,7 +20,8 @@
     var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
     var STATUS_COLOR = {
         'Draft': '#6c757d', 'Active': '#0d6efd',
-        'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Extended': '#fd7e14', 'Failed': '#dc3545',
+        'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Completed with Extension': '#495057',
+        'Extended': '#fd7e14', 'Failed': '#dc3545',
         'Deleted': '#dc3545', 'Suspended': '#e11d48'
     };
     function $(id) { return document.getElementById(id); }
@@ -248,7 +249,7 @@
         'Suspended': 0,
         'Draft': 1,
         'Active': 2, 'Extended': 2,
-        'Completed': 3, 'Completed with Excellence': 3, 'Failed': 3, 'Deleted': 3
+        'Completed': 3, 'Completed with Excellence': 3, 'Completed with Extension': 3, 'Failed': 3, 'Deleted': 3
     };
 
     function statusGroup(s) {
@@ -298,7 +299,7 @@
     function canDelete(r) {
         if (!CFG.staffId || r.is_deleted) { return false; }
         if (r.issuer_staff_id != CFG.staffId) { return false; }
-        var terminal = ['Completed', 'Completed with Excellence', 'Failed'];
+        var terminal = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed'];
         return terminal.indexOf(r.status) === -1;
     }
 

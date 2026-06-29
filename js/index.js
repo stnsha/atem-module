@@ -92,8 +92,9 @@
         var extended = s.extended || 0;
         var extLabelEl = document.getElementById('dash-extended-label');
         if (extLabelEl) {
-            if (extended > 0) {
-                extLabelEl.textContent = 'with ' + formatNumber(extended) + ' extended';
+            var extStatusCount = s.extended_status || 0;
+            if (extStatusCount > 0) {
+                extLabelEl.textContent = 'with ' + formatNumber(extStatusCount) + ' extended';
                 extLabelEl.style.display = '';
             } else {
                 extLabelEl.style.display = 'none';

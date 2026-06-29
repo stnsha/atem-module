@@ -715,6 +715,19 @@ function suspendAtem($id, $staff_id, $remarks)
     return array('success' => false, 'message' => $msg);
 }
 
+function unsuspendAtem($id, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/unsuspend';
+    $result   = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id), 'POST', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return array('success' => true);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to unsuspend ATEM.';
+    return array('success' => false, 'message' => $msg);
+}
+
 /**
  * Add an ARCI member to an ATEM card
  * @param int $id ATEM ID
@@ -1426,7 +1439,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         4 => array('label' => 'L4 Company-Level',    'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
                     );
 
-                    $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'failed' => 0, 'draft' => 0);
+                    $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'extended_status' => 0, 'failed' => 0, 'draft' => 0);
                     $total = 0;
                     $incentiveTotal = 0.0;
                     $overdueCount = 0;
@@ -1461,18 +1474,19 @@ if (!defined('API_JWT_INCLUDED')) {
                         $levelNum  = $lvlMatch ? (int)$lvlMatch[0] : 0;
 
                         $isExtended = !empty($item['is_extended']);
-                        if ($statusVal === 'Active' || $statusVal === 'Extended') {
-                            if ($isExtended) {
-                                $byStatus['extended']++;
-                            } else {
-                                $byStatus['active']++;
-                            }
+                        if ($statusVal === 'Extended') {
+                            $byStatus['extended_status']++;
+                            $byStatus['active']++;
+                        } elseif ($statusVal === 'Active') {
+                            $byStatus['active']++;
                         } elseif ($statusVal === 'Draft') {
                             $byStatus['draft']++;
                         } elseif ($statusVal === 'Completed') {
                             $byStatus['complete']++;
                         } elseif ($statusVal === 'Completed with Excellence') {
                             $byStatus['excellence']++;
+                        } elseif ($statusVal === 'Completed with Extension') {
+                            $byStatus['extended']++;
                         } elseif ($statusVal === 'Failed') {
                             $byStatus['failed']++;
                         }
@@ -1610,6 +1624,14 @@ if (!defined('API_JWT_INCLUDED')) {
                     if (isset($jsonData['id'])) {
                         $suspend_remarks = isset($jsonData['remarks']) ? (string)$jsonData['remarks'] : '';
                         $response = suspendAtem($jsonData['id'], $staff_id, $suspend_remarks);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID.');
+                    }
+                    break;
+
+                case 'unsuspend-atem':
+                    if (isset($jsonData['id'])) {
+                        $response = unsuspendAtem($jsonData['id'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID.');
                     }

@@ -29,7 +29,7 @@
         }
         return false;
     }());
-    var TERMINAL_STATUSES = ['Failed', 'Completed', 'Completed with Excellence'];
+    var TERMINAL_STATUSES = ['Failed', 'Completed', 'Completed with Excellence', 'Completed with Extension'];
     var quillEditor = null;
     var arciState = { A: [], R: [], C: [], I: [] };
     var reflinks = [];
@@ -376,15 +376,31 @@
         (CFG.statuses || []).forEach(function (s) {
             if (String(s.id) === String(REC.atem_status_id)) { recStatusVal = s.value; }
         });
-        var extendedAllowed = ['Extended', 'Completed', 'Failed'];
+        var extendedAllowed = ['Extended', 'Completed with Extension', 'Failed'];
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         (CFG.statuses || []).forEach(function (s) {
             if (CFG.superadminTerminalEdit) {
                 // SuperAdmin editing a terminal card: only offer Draft or the current status.
                 if (s.value !== 'Draft' && String(s.id) !== String(REC.atem_status_id)) { return; }
+            } else if (CFG.issuerCompletedEdit) {
+                if (recStatusVal === 'Completed with Extension') {
+                    // Can only revert to Extended.
+                    if (s.value !== 'Extended' && String(s.id) !== String(REC.atem_status_id)) { return; }
+                } else {
+                    // Issuer reverting a Completed/Excellence card.
+                    var isExtCard = !!(REC.is_extended && REC.extended_date_1);
+                    if (isExtCard) {
+                        var extRevertAllowed = ['Extended', 'Failed'];
+                        if (extRevertAllowed.indexOf(s.value) === -1 && String(s.id) !== String(REC.atem_status_id)) { return; }
+                    } else {
+                        // Non-extended card: allow all statuses except Suspended and Deleted (grade 1-3).
+                        if (s.value === 'Suspended' && recStatusVal !== 'Suspended') { return; }
+                        if (s.value === 'Deleted' && !canSeeDeleted) { return; }
+                    }
+                }
             } else {
                 if (recStatusVal === 'Extended' && extendedAllowed.indexOf(s.value) === -1) { return; }
-                if (s.value === 'Suspended') { return; }
+                if (s.value === 'Suspended' && recStatusVal !== 'Suspended') { return; }
                 if (s.value === 'Deleted' && !canSeeDeleted) { return; }
             }
             var opt = document.createElement('option');
@@ -478,7 +494,7 @@
                     + '<div class="atem-arci-member-name">' + escapeHtml(nm) + '</div>'
                     + '</div>'
                     + incentivisedHtml
-                    + (READ ? '' : '<span class="atem-arci-remove" data-staff="' + parseInt(mem.staff_id, 10) + '" data-role="' + role + '" title="Remove">&times;</span>')
+                    + (READ || CFG.issuerCompletedEdit ? '' : '<span class="atem-arci-remove" data-staff="' + parseInt(mem.staff_id, 10) + '" data-role="' + role + '" title="Remove">&times;</span>')
                     + '</div>';
             }
             cols[i].innerHTML = html;
@@ -1036,7 +1052,8 @@
         'progress_added':   'bi-bar-chart-steps',
         'progress_updated': 'bi-bar-chart-steps',
         'progress_removed': 'bi-trash',
-        'suspended':        'bi-slash-circle'
+        'suspended':        'bi-slash-circle',
+        'unsuspended':      'bi-check-circle'
     };
 
     function formatDateTime(v) {
@@ -1265,6 +1282,27 @@
         // tl-final-due and tl-closure are already disabled in HTML.
     }
 
+    // Locks all editable fields except the status dropdown while the issuer's
+    // Completed card still shows the original Completed/Excellence status.
+    var ICE_LOCK_FIELDS = ['atem-title', 'atem-level', 'atem-rule',
+        'tl-start', 'tl-end', 'tl-extended', 'tl-ext1',
+        'tl-remarks', 'tl-incentive-approve-yes', 'tl-incentive-approve-no'];
+
+    function applyIssuerCompletedLock() {
+        if (quillEditor) { quillEditor.disable(); }
+        ICE_LOCK_FIELDS.forEach(function (id) {
+            var el = $(id);
+            if (el) { el.setAttribute('disabled', 'disabled'); }
+        });
+    }
+
+    function releaseIssuerCompletedLock() {
+        ICE_LOCK_FIELDS.forEach(function (id) {
+            var el = $(id);
+            if (el) { el.removeAttribute('disabled'); }
+        });
+    }
+
     // --------------------------------------------------------------- wiring
     function bind() {
         $('atem-level').addEventListener('change', function () { recalcIncentive(); saveInline(); });
@@ -1337,6 +1375,13 @@
             $('tl-status').addEventListener('change', function () {
                 recalcClosureDate(); syncExtendedByStatus(); syncEndDateLock(); applyExtMins();
                 showTimelineReminder();
+                if (CFG.issuerCompletedEdit) {
+                    if (String(this.value) === String(REC.atem_status_id)) {
+                        applyIssuerCompletedLock();
+                    } else {
+                        releaseIssuerCompletedLock();
+                    }
+                }
             });
         }
         if ($('tl-ext1')) {
@@ -1421,6 +1466,27 @@
                 (CFG.statuses || []).forEach(function (s) {
                     if (String(s.id) === String(selId)) { selVal = s.value; }
                 });
+                if (CFG.issuerCompletedEdit
+                        && selId
+                        && String(selId) !== String(REC.atem_status_id)
+                        && TERMINAL_STATUSES.indexOf(selVal) === -1) {
+                    var msgEl = $('atem-terminal-warn-msg');
+                    if (msgEl) {
+                        msgEl.textContent = 'You are reverting this ATEM from "' + (REC.status && REC.status.value ? REC.status.value : 'Completed') + '" to "' + selVal + '". The closure date will be cleared and the ATEM will be open for editing again. Proceed?';
+                    }
+                    var revertModal = new bootstrap.Modal($('atem-terminal-warn-modal'));
+                    var okBtn = $('atem-terminal-warn-ok');
+                    if (okBtn) {
+                        var revertHandler = function () {
+                            okBtn.removeEventListener('click', revertHandler);
+                            revertModal.hide();
+                            saveAtem();
+                        };
+                        okBtn.addEventListener('click', revertHandler);
+                    }
+                    revertModal.show();
+                    return;
+                }
                 if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
                     var msgEl = $('atem-terminal-warn-msg');
                     if (msgEl) {
@@ -1478,6 +1544,35 @@
                 if ($('suspend-remarks')) { $('suspend-remarks').value = ''; }
                 setError('suspend-remarks-error', '');
                 var m = getSuspendModal();
+                if (m) { m.show(); }
+            });
+        }());
+
+        (function () {
+            var unsuspendBtn = $('atem-unsuspend-btn');
+            if (!unsuspendBtn) { return; }
+            var _modal = null;
+            function getUnsuspendModal() {
+                if (!_modal && typeof bootstrap !== 'undefined') {
+                    _modal = new bootstrap.Modal($('atem-unsuspend-modal'));
+                    $('atem-unsuspend-confirm-btn').addEventListener('click', function () {
+                        apiCall('unsuspend-atem', { id: CFG.atemId }).then(function (res) {
+                            if (res && res.success) {
+                                window.location.reload();
+                            } else {
+                                if (_modal) { _modal.hide(); }
+                                setError('atem-save-error', res && res.message ? res.message : 'Failed to unsuspend ATEM.');
+                            }
+                        }).catch(function () {
+                            if (_modal) { _modal.hide(); }
+                            setError('atem-save-error', 'Network error while unsuspending.');
+                        });
+                    });
+                }
+                return _modal;
+            }
+            unsuspendBtn.addEventListener('click', function () {
+                var m = getUnsuspendModal();
                 if (m) { m.show(); }
             });
         }());
@@ -1562,6 +1657,7 @@
         injectBadge();
         applyReadMode();
         if (CFG.superadminTerminalEdit) { applyTerminalEditRestrictions(); }
+        if (CFG.issuerCompletedEdit) { applyIssuerCompletedLock(); }
         if (!READ && !IS_ISSUER && !CFG.superadminTerminalEdit) {
             ['tl-start', 'tl-end', 'tl-status', 'tl-extended', 'tl-ext1', 'tl-remarks',
              'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {

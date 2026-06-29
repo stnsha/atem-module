@@ -29,7 +29,7 @@ $staff_res = mysqli_query($conn, $staff_sql);
 if ($staff_res) {
     while ($srow = mysqli_fetch_assoc($staff_res)) {
         $dept_id = (int) $srow['department'];
-        if ($dept_id <= 0) {
+        if ($dept_id <= 0 || empty($srow['depart_name'])) {
             continue;
         }
         if (!isset($departments[$dept_id])) {
@@ -125,13 +125,13 @@ $api_unavailable = empty($lookup_result['success']);
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Issuer</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($issuer_name); ?>"
-                        readonly>
+                    <input type="text" class="form-control" id="atem-issuer"
+                        value="<?php echo htmlspecialchars($issuer_name); ?>" readonly>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Department</label>
-                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($issuer_department); ?>"
-                        readonly>
+                    <input type="text" class="form-control" id="atem-department"
+                        value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
                 <div class="col-md-6">
                     <label for="atem-level" class="form-label">ATEM Complexity Level<span class="atem-req">*</span></label>

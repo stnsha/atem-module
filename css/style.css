@@ -885,6 +885,13 @@ button {
   height: 31px;
 }
 
+/* Issuer/Department are always non-editable display fields */
+#atem-issuer[readonly],
+#atem-department[readonly] {
+  background-color: #e9ecef;
+  opacity: 1;
+}
+
 /* Edit/View read-mode: grey disabled + readonly fields and the Quill editor */
 .atem-mode-read input[disabled],
 .atem-mode-read select[disabled],
@@ -899,6 +906,11 @@ button {
 }
 
 .atem-mode-read #atem-description-editor.ql-container {
+  background-color: #e9ecef;
+  border-radius: 4px;
+}
+
+#atem-description-editor.ql-container.ql-disabled {
   background-color: #e9ecef;
   border-radius: 4px;
 }
