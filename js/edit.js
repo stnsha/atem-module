@@ -19,8 +19,8 @@
         }
         return false;
     }());
-    // Issuer and A members can see all progress cards; R/C/I see only their own.
-    var CAN_VIEW_ALL_PROGRESS = IS_ISSUER || IS_A_ARCI;
+    // Issuer and all ARCI members (A/R/C/I) see all progress entries.
+    var CAN_VIEW_ALL_PROGRESS = IS_TAGGED_ON_CARD;
     // True for any user tagged on the card (Issuer or any ARCI role A/R/C/I).
     var IS_TAGGED_ON_CARD = IS_ISSUER || (function () {
         var arci = REC.arci || [];
