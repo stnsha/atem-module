@@ -245,13 +245,15 @@
     }
 
     var STATUS_SORT_GROUP = {
-        'Draft': 0, 'Active': 1, 'Extended': 1,
-        'Completed': 2, 'Completed with Excellence': 2, 'Failed': 2
+        'Suspended': 0,
+        'Draft': 1,
+        'Active': 2, 'Extended': 2,
+        'Completed': 3, 'Completed with Excellence': 3, 'Failed': 3, 'Deleted': 3
     };
 
     function statusGroup(s) {
         var g = STATUS_SORT_GROUP[s];
-        return (g === undefined) ? 1 : g;
+        return (g === undefined) ? 2 : g;
     }
 
     function effectiveSortDate(r) {
