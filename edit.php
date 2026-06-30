@@ -670,7 +670,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <div class="modal-body">
                 <p style="font-size:13px;" class="mb-3">
                     Suspending this card will change its status to Suspended and reset all estimated incentives to zero.
-                    This action cannot be undone.
+                    The card can be unsuspended later to restore it to its previous status.
                 </p>
                 <div class="mb-2">
                     <label for="suspend-remarks" class="form-label">Reason for Suspension <span class="atem-req">*</span></label>
