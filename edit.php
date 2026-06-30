@@ -670,7 +670,6 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <div class="modal-body">
                 <p style="font-size:13px;" class="mb-3">
                     Suspending this card will change its status to Suspended and reset all estimated incentives to zero.
-                    The card will be visible only to the issuer and grade 4/5 officers.
                     This action cannot be undone.
                 </p>
                 <div class="mb-2">
