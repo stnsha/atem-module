@@ -137,10 +137,12 @@ if ($record) {
 }
 
 // Detect soft-deleted cards (deleted or suspended) and restrict access.
-$record_is_deleted   = ($record && !empty($record['deleted_at']));
-$record_is_suspended = ($record_is_deleted
+// Suspended state is keyed off status alone, not deleted_at, so the button/read-only
+// logic stays correct even if a record's deleted_at drifted from its status.
+$record_is_suspended = ($record
     && isset($record['status']['value'])
     && $record['status']['value'] === 'Suspended');
+$record_is_deleted = ($record && !empty($record['deleted_at'])) || $record_is_suspended;
 if ($record_is_deleted) {
     if (!$_is_superadmin && (int)$atem_permission < 4) {
         // Suspended cards: allow the issuer to view their own card in read-only.
@@ -194,7 +196,8 @@ if ($is_progress && in_array($current_status_value, $terminal_statuses)) {
 $can_suspend = ($record && !$record_is_deleted && !$api_unavailable)
     && ($_is_superadmin || (int)$atem_permission >= 4);
 
-$can_unsuspend = $record_is_suspended && ($_is_superadmin || (int)$atem_permission >= 4);
+$can_unsuspend = $record_is_suspended
+    && ($_is_superadmin || (int)$atem_permission >= 4 || $is_issuer_now);
 
 $show_suspension_history = ($record && !empty($record['suspended_by']))
     && ($is_issuer_now || $_is_superadmin || (int)$atem_permission >= 4);
@@ -278,7 +281,11 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <i class="bi bi-slash-circle flex-shrink-0"></i>
     <div>
         <strong>This ATEM card has been suspended.</strong>
+        <?php if ($can_unsuspend): ?>
+        Card details are read-only until it is unsuspended, which will restore its previous status.
+        <?php else: ?>
         It is displayed here in read-only mode. No changes can be made.
+        <?php endif; ?>
         <?php
         $sb_id   = isset($record['suspended_by']) ? (int)$record['suspended_by'] : 0;
         $sb_name = ($sb_id && isset($staff_names[$sb_id])) ? $staff_names[$sb_id] : ('Staff #' . $sb_id);

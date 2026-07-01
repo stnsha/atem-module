@@ -1467,7 +1467,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
 
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
-                        if ($statusVal === 'Deleted' || !empty($item['deleted_at'])) { continue; }
+                        if ($statusVal === 'Deleted' || $statusVal === 'Suspended' || !empty($item['deleted_at'])) { continue; }
                         $total++;
                         $levelStr  = isset($item['level_structure']['level']) ? $item['level_structure']['level'] : '';
                         preg_match('/\d+/', $levelStr, $lvlMatch);

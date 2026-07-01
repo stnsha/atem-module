@@ -137,7 +137,9 @@ foreach ($rows as $a) {
         'user_arci_roles' => $user_roles,
         'accountable'     => $accountable,
         'is_extended'     => !empty($a['is_extended']),
-        'is_deleted'      => !empty($a['deleted_at']),
+        // Suspended is keyed off status alone (not just deleted_at) so a suspended
+        // card is always locked down even if its deleted_at drifted from its status.
+        'is_deleted'      => (!empty($a['deleted_at']) || ($status && $status['value'] === 'Suspended')),
         'deleted_at'      => isset($a['deleted_at']) ? $a['deleted_at'] : null,
     );
     $row_arci_dept_ids[] = $arci_dept_ids;
