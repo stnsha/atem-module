@@ -381,7 +381,7 @@
                         titleCell += ' ' + pill('Deleted', '#dc3545');
                     }
                 }
-                var rowStyle = r.is_deleted ? ' style="opacity:0.55;"' : '';
+                var rowStyle = (r.is_deleted && r.status !== 'Suspended') ? ' style="opacity:0.55;"' : '';
                 var _canViewDeleted = CFG.isSuperAdmin || CFG.userGrade >= 4
                     || (r.status === 'Suspended' && r.issuer_staff_id == CFG.staffId);
                 var actionCell = r.is_deleted
