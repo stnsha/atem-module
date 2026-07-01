@@ -581,7 +581,7 @@
         var html = '<ol class="atem-reflink-ol">';
         for (var i = 0; i < reflinks.length; i++) {
             html += '<li><div class="atem-reflink-row"><a href="' + escapeHtml(reflinks[i].url) + '" target="_blank" rel="noopener">' + escapeHtml(reflinks[i].name) + '</a>'
-                + (READ ? '' : '<span class="atem-reflink-remove" data-id="' + parseInt(reflinks[i].id, 10) + '" title="Remove">&times;</span>') + '</div></li>';
+                + ((READ && !CFG.suspendedIssuerEdit) ? '' : '<span class="atem-reflink-remove" data-id="' + parseInt(reflinks[i].id, 10) + '" title="Remove">&times;</span>') + '</div></li>';
         }
         html += '</ol>';
         wrap.innerHTML = html;
@@ -623,7 +623,7 @@
             var dl = CFG.apiUrl + '?action=attachment-download&id=' + parseInt(CFG.atemId, 10) + '&att=' + parseInt(a.id, 10);
             html += '<div class="atem-attachment-row"><a class="atem-file-name" href="' + dl + '" target="_blank" rel="noopener">' + escapeHtml(a.name) + '</a> '
                 + '<span class="atem-file-size">(' + formatFileSize(a.size) + ')</span>'
-                + (READ ? '' : '<span class="atem-file-remove" data-att="' + parseInt(a.id, 10) + '" title="Remove">&times;</span>') + '</div>';
+                + ((READ && !CFG.suspendedIssuerEdit) ? '' : '<span class="atem-file-remove" data-att="' + parseInt(a.id, 10) + '" title="Remove">&times;</span>') + '</div>';
         }
         wrap.innerHTML = html;
     }
@@ -1270,6 +1270,36 @@
         });
     }
 
+    // While suspended, the Issuer may still edit Title and Description — everything
+    // else stays locked by applyReadMode() above.
+    function applySuspendedIssuerUnlock() {
+        if (quillEditor) { quillEditor.enable(); }
+        var titleEl = $('atem-title');
+        if (titleEl) { titleEl.removeAttribute('disabled'); }
+    }
+
+    function saveSuspendedFields() {
+        var titleEl = $('atem-title');
+        var title = titleEl ? titleEl.value.trim() : '';
+        setError('atem-suspended-save-error', '');
+        if (!title) { setError('atem-suspended-save-error', 'ATEM Title is required.'); return; }
+        var description = quillEditor ? ((quillEditor.getText().trim() === '') ? '' : quillEditor.root.innerHTML) : '';
+        var btn = $('atem-suspended-save-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+        apiCall('update-atem-suspended', { id: CFG.atemId, data: { title: title, description: description } }).then(function (res) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Save Title & Description'; }
+            if (res && res.success) {
+                REC.title = title;
+                REC.description = description;
+            } else {
+                setError('atem-suspended-save-error', res && res.message ? res.message : 'Failed to save.');
+            }
+        }).catch(function () {
+            if (btn) { btn.disabled = false; btn.textContent = 'Save Title & Description'; }
+            setError('atem-suspended-save-error', 'Network error while saving.');
+        });
+    }
+
     // Locks all fields except Level, Rule, and Status for SuperAdmin editing a terminal card.
     function applyTerminalEditRestrictions() {
         if (quillEditor) { quillEditor.disable(); }
@@ -1336,7 +1366,7 @@
             renderArci();
             saveInline();
         });
-        if ($('atem-title')) { $('atem-title').addEventListener('blur', saveInline); }
+        if ($('atem-title')) { $('atem-title').addEventListener('blur', function () { if (READ) { return; } saveInline(); }); }
         if (quillEditor) { quillEditor.on('text-change', function () { if (READ) { return; } clearTimeout(_inlineSaveTimer); _inlineSaveTimer = setTimeout(saveInline, 1500); }); }
         if ($('tl-end')) { $('tl-end').addEventListener('change', function () { recalcFinalDue(); syncEndDateLock(); showTimelineReminder(); }); }
         if ($('tl-extended')) {
@@ -1439,6 +1469,7 @@
             });
         }
 
+        if ($('atem-suspended-save-btn')) { $('atem-suspended-save-btn').addEventListener('click', saveSuspendedFields); }
         if ($('atem-add-reflink-btn')) { $('atem-add-reflink-btn').addEventListener('click', openReflinkModal); }
         if ($('reflink-save-btn')) { $('reflink-save-btn').addEventListener('click', saveReferenceLink); }
         var rl = $('atem-reflink-list');
@@ -1658,6 +1689,7 @@
         applyReadMode();
         if (CFG.superadminTerminalEdit) { applyTerminalEditRestrictions(); }
         if (CFG.issuerCompletedEdit) { applyIssuerCompletedLock(); }
+        if (CFG.suspendedIssuerEdit) { applySuspendedIssuerUnlock(); }
         if (!READ && !IS_ISSUER && !CFG.superadminTerminalEdit) {
             ['tl-start', 'tl-end', 'tl-status', 'tl-extended', 'tl-ext1', 'tl-remarks',
              'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {

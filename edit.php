@@ -206,6 +206,11 @@ $can_add_progress = ($is_issuer_now || $is_arci_member)
     && !$record_is_deleted
     && !in_array($current_status_value, $terminal_statuses);
 
+// While suspended, the Issuer may still edit Title, Description, Reference Links,
+// and Attachments. Everything else (level, rule, timeline, status, ARCI, incentive)
+// stays frozen until the card is unsuspended.
+$suspended_issuer_edit = $record_is_suspended && $is_issuer_now;
+
 // Non-issuers cannot use progress mode — downgrade to read.
 if ($is_progress && !$is_issuer_now) {
     $mode        = 'read';
@@ -239,6 +244,7 @@ $atem_config = array(
     'isIssuer'             => (bool) $is_issuer_now,
     'superadminTerminalEdit' => (bool) $superadmin_terminal_edit,
     'issuerCompletedEdit'    => (bool) $issuer_completed_edit,
+    'suspendedIssuerEdit'    => (bool) $suspended_issuer_edit,
 );
 
 $_bd_enabled = false;
@@ -282,14 +288,15 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <div>
         <strong>This ATEM card has been suspended.</strong>
         <?php if ($can_unsuspend): ?>
-        Card details are read-only until it is unsuspended, which will restore its previous status.
+        Unsuspending it will restore the card to its previous status.
         <?php else: ?>
         It is displayed here in read-only mode. No changes can be made.
         <?php endif; ?>
         <?php
         $sb_id   = isset($record['suspended_by']) ? (int)$record['suspended_by'] : 0;
         $sb_name = ($sb_id && isset($staff_names[$sb_id])) ? $staff_names[$sb_id] : ('Staff #' . $sb_id);
-        $sb_at   = !empty($record['deleted_at']) ? date('d-m-Y H:i', strtotime($record['deleted_at'])) : '';
+        $sb_ts   = !empty($record['deleted_at']) ? $record['deleted_at'] : (isset($record['closure_date']) ? $record['closure_date'] : '');
+        $sb_at   = $sb_ts ? date('d-m-Y H:i', strtotime($sb_ts)) : '';
         if ($sb_id || $sb_at):
         ?>
         <span class="ms-2 text-muted" style="font-size:12px;">
@@ -300,15 +307,20 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 </div>
 <?php endif; ?>
 
-<div class="atem-bento atem-mode-<?php echo $mode; ?>">
+<div class="atem-bento atem-mode-<?php echo $mode; ?><?php echo $suspended_issuer_edit ? ' atem-suspended-desc-edit' : ''; ?>">
 
     <!-- ATEM Details -->
     <div class="atem-bento-item atem-span-8">
         <div class="atem-card h-100">
             <h6 class="atem-card-title"><i class="bi bi-file-earmark-text"></i> ATEM Details</h6>
             <p class="atem-card-hint">
+                <?php if ($suspended_issuer_edit): ?>
+                This card is suspended. You may still update the Title and Description below.
+                <?php else: ?>
                 <?php echo $is_read ? 'Viewing an ATEM card (read only).' : 'Edit this ATEM card. Fields marked'; ?>
-                <?php if (!$is_read): ?><span class="atem-req">*</span> are required.<?php endif; ?></p>
+                <?php if (!$is_read): ?><span class="atem-req">*</span> are required.<?php endif; ?>
+                <?php endif; ?>
+            </p>
             <div class="row g-3 mt-1">
                 <div class="col-12">
                     <label for="atem-title" class="form-label">ATEM Title <span class="atem-req">*</span></label>
@@ -345,6 +357,12 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     <label class="form-label">ATEM Description</label>
                     <div id="atem-description-editor"></div>
                 </div>
+                <?php if ($suspended_issuer_edit): ?>
+                <div class="col-12 d-flex justify-content-end align-items-center gap-2">
+                    <div class="atem-form-error flex-grow-1 mb-0" id="atem-suspended-save-error"></div>
+                    <button type="button" class="btn btn-primary btn-sm" id="atem-suspended-save-btn">Save Title &amp; Description</button>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -377,7 +395,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         <div class="atem-card mb-3">
             <h6 class="atem-card-title"><i class="bi bi-paperclip"></i> Attachment</h6>
             <p class="atem-card-hint">Files stored with this ATEM.</p>
-            <?php if (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit): ?>
+            <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
             <div id="atem-dropzone" class="atem-dropzone">
                 <input type="file" id="atem-file-input" multiple
                     accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt" hidden>
@@ -396,7 +414,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         <div class="atem-card">
             <div class="atem-card-title-row">
                 <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link <span class="atem-req">*</span></h6>
-                <?php if (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit): ?>
+                <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
                 <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference
                     Link</button>
                 <?php endif; ?>

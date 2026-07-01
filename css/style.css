@@ -915,6 +915,21 @@ button {
   border-radius: 4px;
 }
 
+/* Suspended card, Issuer view: Title and Description stay editable even though
+   the rest of the card is read-only, so restore the toolbar and normal
+   background for the description editor here. */
+.atem-mode-read.atem-suspended-desc-edit .ql-toolbar {
+  display: block;
+}
+
+.atem-mode-read.atem-suspended-desc-edit #atem-description-editor.ql-container {
+  background-color: #fff;
+}
+
+.atem-mode-read.atem-suspended-desc-edit #atem-description-editor.ql-container.ql-disabled {
+  background-color: #fff;
+}
+
 /* Page intro line under the ODB header title */
 .atem-page-hint {
   font-size: 13px;

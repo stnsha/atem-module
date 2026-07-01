@@ -683,6 +683,33 @@ function updateAtem($id, $data, $staff_id)
 }
 
 /**
+ * Update only Title and Description while an ATEM card is Suspended (Issuer only).
+ * @param int $id ATEM ID
+ * @param array $data title/description payload
+ * @param int $staff_id Staff ID for authentication
+ * @return array Update result
+ */
+function updateAtemSuspendedFields($id, $data, $staff_id)
+{
+    $result = getApiDataWithJWT('atem/' . (int)$id . '/suspended-fields', $data, 'PUT', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'ATEM updated successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to update ATEM'
+        );
+    }
+}
+
+/**
  * Soft-delete a Draft or Active ATEM card (Issuer only)
  * @param int $id ATEM ID
  * @param int $staff_id Staff ID for authentication
@@ -1606,6 +1633,16 @@ if (!defined('API_JWT_INCLUDED')) {
                             $data['superadmin_override'] = 1;
                         }
                         $response = updateAtem($jsonData['id'], $data, $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or data');
+                    }
+                    break;
+
+                case 'update-atem-suspended':
+                    if (isset($jsonData['id']) && isset($jsonData['data'])) {
+                        $data = $jsonData['data'];
+                        $data['updated_by'] = $staff_id; // inject server-side
+                        $response = updateAtemSuspendedFields($jsonData['id'], $data, $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or data');
                     }
