@@ -374,13 +374,6 @@
                         + fmtDate(r.extended_date_1) + '</div>';
                 }
                 var titleCell = escapeHtml(r.title);
-                if (r.is_deleted) {
-                    if (r.status === 'Suspended') {
-                        titleCell += ' ' + pill('Suspended', '#e11d48');
-                    } else {
-                        titleCell += ' ' + pill('Deleted', '#dc3545');
-                    }
-                }
                 var rowStyle = (r.is_deleted && r.status !== 'Suspended') ? ' style="opacity:0.55;"' : '';
                 var _canViewDeleted = CFG.isSuperAdmin || CFG.userGrade >= 4
                     || (r.status === 'Suspended' && r.issuer_staff_id == CFG.staffId);
