@@ -150,14 +150,14 @@ Non-SuperAdmin users can only change their evaluation struct during the first 10
 
 Soft delete only — `atems.deleted_at` is set, the row remains in the DB.
 
-**Who can delete:** Issuer only. Allowed statuses: Draft, Active. Terminal statuses (Completed, Completed with Excellence, Failed) are permanently locked — no one can delete them.
+**Who can delete:** Issuer can delete their own Draft, Active, Extended, or Suspended cards. A real SuperAdmin (`CFG.isSuperAdmin` / `$is_api_superadmin`) can delete an ATEM of **any** status — including terminal ones (Completed, Completed with Excellence, Completed with Extension, Failed) — regardless of who issued it. Non-SuperAdmins can never delete terminal-status cards. Already soft-deleted (`status === 'Deleted'`) cards are never delete-able again by anyone.
 
 **Delete flow:**
-1. Issuer clicks Delete in `view.php` → Bootstrap modal opens (same fade animation as edit.php modals)
+1. Issuer (or SuperAdmin) clicks Delete in `view.php` → Bootstrap modal opens (same fade animation as edit.php modals)
 2. User must enter a remark (required) before confirming
 3. Frontend posts `{ action: 'delete-atem', id, remarks }` to `api.php`
-4. `api.php` → `deleteAtem($id, $staff_id, $remarks)` → DELETE `/api/atem/{id}` with JSON body `{ actor_id, remarks }`
-5. Backend (`AtemController::destroy`): sets `atem_status_id` to "Deleted" status, saves `remarks` and `closed_by` (actor), writes audit log (`event = 'deleted'`), then calls `$atem->delete()` (soft delete)
+4. `api.php` → `deleteAtem($id, $staff_id, $remarks, $is_superadmin)` → DELETE `/api/atem/{id}` with JSON body `{ actor_id, remarks, [superadmin_override: 1] }` (flag added when `$is_api_superadmin` is true)
+5. Backend (`AtemController::destroy`): checks terminal status and issuer match, both bypassed when `superadmin_override` is set; sets `atem_status_id` to "Deleted" status, saves `remarks` and `closed_by` (actor), writes audit log (`event = 'deleted'`), then calls `$atem->delete()` (soft delete)
 
 **"Deleted" status:** A real `atem_statuses` row (value = `'Deleted'`), added via migration `2026_06_22_105848_add_deleted_status_to_atem_statuses_table.php`. Always look this up via `DB::table('atem_statuses')->where('value', 'Deleted')->whereNull('deleted_at')->value('id')` in the backend — do NOT use `AtemStatus::where(...)` which may be affected by the SoftDeletes global scope.
 

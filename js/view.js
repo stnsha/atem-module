@@ -297,7 +297,9 @@
 
     // --------------------------------------------------------------- delete permission
     function canDelete(r) {
-        if (!CFG.staffId || r.is_deleted) { return false; }
+        if (r.is_deleted) { return false; }
+        if (CFG.isSuperAdmin) { return true; }
+        if (!CFG.staffId) { return false; }
         if (r.issuer_staff_id != CFG.staffId) { return false; }
         var terminal = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed'];
         return terminal.indexOf(r.status) === -1;
