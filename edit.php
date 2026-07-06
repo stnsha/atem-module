@@ -55,6 +55,17 @@ foreach ($departments as $d_id => $d_name) {
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
 
+// staff.department is comma-separated (e.g. "3,7"); a user can belong to several
+// departments. Parsed here for the Payout Details permission gate (People
+// Management = dept 17). Mirrors view.php's $user_dept_ids.
+$requester_dept_ids = array();
+if (isset($department) && $department !== '') {
+    foreach (explode(',', (string) $department) as $_rdpart) {
+        $_rdpart = (int) trim($_rdpart);
+        if ($_rdpart > 0) { $requester_dept_ids[] = $_rdpart; }
+    }
+}
+
 $lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array());
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
@@ -169,6 +180,16 @@ if ($record && isset($record['status']['value'])) {
 }
 $is_draft      = ($current_status_value === 'Draft');
 $is_issuer_now = ($record && (int)$staff_id === (int)$record['issuer_staff_id']);
+
+// Payout Details card: visible once the ATEM itself reaches a terminal status.
+// Changing payout status is gated separately (SuperAdmin, grade 4/5, or People
+// Management dept-17 staff) and becomes permanently locked once 'Closed'.
+$payout_terminal_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed');
+$show_payout_card    = ($record && in_array($current_status_value, $payout_terminal_statuses, true));
+$payout_status_value = ($record && isset($record['payout_status'])) ? $record['payout_status'] : null;
+$payout_is_closed    = ($payout_status_value === 'Closed');
+$can_manage_payout   = $show_payout_card && !$payout_is_closed && !$api_unavailable
+    && ($_is_superadmin || (int)$atem_permission >= 4 || in_array(17, $requester_dept_ids, true));
 
 // SuperAdmin may edit Completed or Failed cards — but only Level, Rule, and Status (-> Draft).
 $superadmin_terminal_statuses = array('Completed', 'Failed', 'Completed with Extension');
@@ -649,6 +670,73 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <?php endif; ?>
 </div>
 
+<?php if ($show_payout_card): ?>
+<!-- Payout Details -->
+<div class="atem-card mt-4" id="atem-payout-card">
+    <div class="atem-card-title-row">
+        <h6 class="atem-card-title"><i class="bi bi-cash-stack"></i> Payout Details</h6>
+        <a class="btn btn-outline-secondary btn-sm" id="atem-payout-pdf-btn"
+           href="atem/payout_pdf.php?id=<?php echo (int) $atem_id; ?>" target="_blank" rel="noopener">
+            <i class="bi bi-file-earmark-pdf"></i> Download as PDF
+        </a>
+    </div>
+    <p class="atem-card-hint">
+        <?php echo $payout_is_closed
+            ? 'Payout has been closed. This section is now permanently read-only.'
+            : 'Track the incentive payout status for this ATEM.'; ?>
+    </p>
+    <div class="row g-3 mt-1">
+        <div class="col-md-4">
+            <label for="payout-status" class="form-label">Payout Status</label>
+            <select class="form-select" id="payout-status"
+                <?php echo (!$can_manage_payout || $payout_is_closed) ? 'disabled' : ''; ?>>
+                <option value="" <?php echo !$payout_status_value ? 'selected' : ''; ?>>Select status</option>
+                <option value="Closed" <?php echo $payout_status_value === 'Closed' ? 'selected' : ''; ?>>Closed</option>
+                <option value="No Payout" <?php echo $payout_status_value === 'No Payout' ? 'selected' : ''; ?>>No Payout</option>
+                <option value="Payout In Progress" <?php echo $payout_status_value === 'Payout In Progress' ? 'selected' : ''; ?>>Payout In Progress</option>
+            </select>
+            <div class="atem-form-error" id="payout-status-error"></div>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Last Updated By</label>
+            <div style="font-size:13px;"><?php
+                $pu_id = isset($record['payout_updated_by']) ? (int) $record['payout_updated_by'] : 0;
+                echo htmlspecialchars($pu_id ? (isset($staff_names[$pu_id]) ? $staff_names[$pu_id] : ('Staff #' . $pu_id)) : '—');
+            ?></div>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Last Updated On</label>
+            <div style="font-size:13px;"><?php
+                $pu_at = isset($record['payout_updated_at']) ? $record['payout_updated_at'] : '';
+                echo htmlspecialchars($pu_at ? date('d-m-Y H:i', strtotime($pu_at)) : '—');
+            ?></div>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Remark</label>
+            <div style="font-size:13px;white-space:pre-wrap;"><?php
+                echo htmlspecialchars(isset($record['payout_remark']) && $record['payout_remark'] !== '' ? $record['payout_remark'] : '—');
+            ?></div>
+        </div>
+        <?php if ($payout_is_closed): ?>
+        <div class="col-md-6">
+            <label class="form-label">Closed By</label>
+            <div style="font-size:13px;"><?php
+                $pc_id = isset($record['payout_closed_by']) ? (int) $record['payout_closed_by'] : 0;
+                echo htmlspecialchars($pc_id ? (isset($staff_names[$pc_id]) ? $staff_names[$pc_id] : ('Staff #' . $pc_id)) : '—');
+            ?></div>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Closed On</label>
+            <div style="font-size:13px;"><?php
+                $pc_at = isset($record['payout_closed_at']) ? $record['payout_closed_at'] : '';
+                echo htmlspecialchars($pc_at ? date('d-m-Y H:i', strtotime($pc_at)) : '—');
+            ?></div>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Audit Log -->
 <div class="atem-card mt-4" id="atem-audit-card">
     <h6 class="atem-card-title"><i class="bi bi-clock-history"></i> Audit Log</h6>
@@ -729,6 +817,31 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-success" id="atem-unsuspend-confirm-btn">Unsuspend Card</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payout status confirmation modal -->
+<div class="modal fade" id="atem-payout-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Payout Status Change</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;" class="mb-3" id="atem-payout-modal-msg"></p>
+                <div class="mb-2">
+                    <label for="payout-remarks" class="form-label">Remark <span class="atem-req">*</span></label>
+                    <textarea class="form-control" id="payout-remarks" rows="3"
+                        placeholder="Enter a remark for this payout status change"></textarea>
+                    <div class="atem-form-error" id="payout-remarks-error"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="atem-payout-confirm-btn">Confirm</button>
             </div>
         </div>
     </div>

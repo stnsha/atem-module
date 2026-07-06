@@ -1607,6 +1607,68 @@
                 if (m) { m.show(); }
             });
         }());
+
+        (function () {
+            var payoutSelect = $('payout-status');
+            if (!payoutSelect || payoutSelect.disabled) { return; }
+            var originalValue = payoutSelect.value;
+            var pendingValue = null;
+            var _modal = null;
+
+            function getPayoutModal() {
+                if (!_modal && typeof bootstrap !== 'undefined') {
+                    _modal = new bootstrap.Modal($('atem-payout-modal'));
+                    $('atem-payout-confirm-btn').addEventListener('click', function () {
+                        var remarks = $('payout-remarks') ? $('payout-remarks').value.trim() : '';
+                        if (!remarks) {
+                            setError('payout-remarks-error', 'Remark is required.');
+                            return;
+                        }
+                        setError('payout-remarks-error', '');
+                        apiCall('update-payout-status', { id: CFG.atemId, payout_status: pendingValue, remarks: remarks }).then(function (res) {
+                            if (res && res.success) {
+                                window.location.reload();
+                            } else {
+                                if (_modal) { _modal.hide(); }
+                                payoutSelect.value = originalValue;
+                                setError('payout-status-error', res && res.message ? res.message : 'Failed to update payout status.');
+                            }
+                        }).catch(function () {
+                            if (_modal) { _modal.hide(); }
+                            payoutSelect.value = originalValue;
+                            setError('payout-status-error', 'Network error while updating payout status.');
+                        });
+                    });
+                }
+                return _modal;
+            }
+
+            payoutSelect.addEventListener('change', function () {
+                var newValue = payoutSelect.value;
+                if (!newValue) { return; }
+                pendingValue = newValue;
+                if ($('payout-remarks')) { $('payout-remarks').value = ''; }
+                setError('payout-remarks-error', '');
+                setError('payout-status-error', '');
+                var msgEl = $('atem-payout-modal-msg');
+                if (msgEl) {
+                    msgEl.textContent = 'You are about to set the payout status to "' + newValue + '"' +
+                        (newValue === 'Closed' ? '. Once closed, this section becomes permanently read-only and cannot be changed again.' : '.') +
+                        ' Do you want to proceed?';
+                }
+                var m = getPayoutModal();
+                if (m) { m.show(); }
+            });
+
+            var payoutModalEl = $('atem-payout-modal');
+            if (payoutModalEl) {
+                payoutModalEl.addEventListener('hidden.bs.modal', function () {
+                    if (pendingValue !== null && payoutSelect.value === pendingValue) {
+                        payoutSelect.value = originalValue;
+                    }
+                });
+            }
+        }());
     }
 
     function saveTerminalEdit() {

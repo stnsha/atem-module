@@ -760,6 +760,23 @@ function unsuspendAtem($id, $staff_id)
     return array('success' => false, 'message' => $msg);
 }
 
+function updatePayoutStatus($id, $status, $remarks, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/payout-status';
+    $result   = getApiDataWithJWT($endpoint, array(
+        'actor_id'      => (int)$staff_id,
+        'payout_status' => $status,
+        'remarks'       => $remarks,
+    ), 'PATCH', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : null);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to update payout status.';
+    return array('success' => false, 'message' => $msg);
+}
+
 /**
  * Add an ARCI member to an ATEM card
  * @param int $id ATEM ID
@@ -1676,6 +1693,38 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = unsuspendAtem($jsonData['id'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID.');
+                    }
+                    break;
+
+                case 'update-payout-status':
+                    if (isset($jsonData['id']) && isset($jsonData['payout_status']) && isset($jsonData['remarks'])) {
+                        // $atem_permission is only set when api.php is included from a page
+                        // (edit.php); the browser's apiCall() posts directly here, so resolve
+                        // permission fresh from the DB — same fallback used by dashboard-stats.
+                        $pp_perm = 0;
+                        if (isset($atem_permission)) {
+                            $pp_perm = (int)$atem_permission;
+                        } elseif ($staff_id) {
+                            $pp_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                            if ($pp_perm_res && ($pp_perm_row = mysqli_fetch_assoc($pp_perm_res))) {
+                                $pp_perm = ((int)$pp_perm_row['atem'] === 1) ? 6 : (int)$pp_perm_row['grade'];
+                            }
+                        }
+                        $pp_dept_ids = array();
+                        if (isset($department) && $department !== '') {
+                            foreach (explode(',', (string)$department) as $_ppd) {
+                                $_ppd = (int)trim($_ppd);
+                                if ($_ppd > 0) { $pp_dept_ids[] = $_ppd; }
+                            }
+                        }
+                        if (!$is_api_superadmin && $pp_perm < 4 && !in_array(17, $pp_dept_ids)) {
+                            $response = array('success' => false, 'message' => 'Insufficient permission to update payout status.');
+                            break;
+                        }
+                        $pp_remarks = (string)$jsonData['remarks'];
+                        $response = updatePayoutStatus($jsonData['id'], $jsonData['payout_status'], $pp_remarks, $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID, payout status, or remarks.');
                     }
                     break;
 
