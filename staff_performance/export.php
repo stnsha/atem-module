@@ -84,7 +84,7 @@ function fmt_ex_date($d) {
 }
 
 function ex_status_val($a) {
-    return is_array($a['status'])
+    return (isset($a['status']) && is_array($a['status']))
         ? (isset($a['status']['value']) ? $a['status']['value'] : '')
         : (string)(isset($a['status']) ? $a['status'] : '');
 }
@@ -99,7 +99,7 @@ function ex_level_val($a) {
 // One row per ARCI role; if issuer-only (no ARCI), one row with ARCI blank.
 // Reward per role: A -> a_incentive_amount; R -> r_incentive_amount / R-count; C/I/issuer-only -> 0.
 function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
-    $atem_id   = '#AT' . (int)$a['id'];
+    $atem_id   = '#AT' . (isset($a['id']) ? (int)$a['id'] : 0);
     $title     = isset($a['title']) ? $a['title'] : '';
     $level     = ex_level_val($a);
     $start     = fmt_ex_date(isset($a['start_date']) ? $a['start_date'] : '');
@@ -241,10 +241,10 @@ if ($type === 'performance') {
     // Apply filters
     $out_records = array();
     foreach ($records as $rec) {
-        if (!empty($ids) && !in_array((int)$rec['id'], $ids)) { continue; }
-        if ($filter_dept   > 0 && (int)$rec['staff_dept_id'] !== $filter_dept)   { continue; }
-        if ($filter_grade  > 0 && (int)$rec['staff_grade']   !== $filter_grade)  { continue; }
-        if ($filter_struct > 0 && (int)$rec['staff_struct']  !== $filter_struct) { continue; }
+        if (!empty($ids) && !in_array(isset($rec['id']) ? (int)$rec['id'] : 0, $ids)) { continue; }
+        if ($filter_dept   > 0 && (isset($rec['staff_dept_id']) ? (int)$rec['staff_dept_id'] : 0) !== $filter_dept)   { continue; }
+        if ($filter_grade  > 0 && (isset($rec['staff_grade']) ? (int)$rec['staff_grade'] : 0)   !== $filter_grade)  { continue; }
+        if ($filter_struct > 0 && (isset($rec['staff_struct']) ? (int)$rec['staff_struct'] : 0)  !== $filter_struct) { continue; }
         $out_records[] = $rec;
     }
 

@@ -121,7 +121,7 @@ foreach ($rows as $a) {
     }
 
     $view_rows[] = array(
-        'id'              => (int) $a['id'],
+        'id'              => isset($a['id']) ? (int) $a['id'] : 0,
         'title'           => isset($a['title']) ? $a['title'] : '',
         'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
         'department_name' => isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : '-',

@@ -35,7 +35,7 @@ if (!$db_is_superadmin) {
 
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
-if ($action === 'toggleStructWindow' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'toggleStructWindow' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $new_value = (isset($_POST['value']) && (int)$_POST['value'] === 1) ? '1' : '0';
     mysqli_query($conn,
         "INSERT INTO atem_config (setting_key, setting_value) VALUES ('struct_window_override', '$new_value')
@@ -45,7 +45,7 @@ if ($action === 'toggleStructWindow' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-if ($action === 'toggleBackdate' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'toggleBackdate' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $new_value = (isset($_POST['value']) && (int)$_POST['value'] === 1) ? '1' : '0';
     mysqli_query($conn,
         "INSERT INTO atem_config (setting_key, setting_value) VALUES ('backdate_enabled', '$new_value')

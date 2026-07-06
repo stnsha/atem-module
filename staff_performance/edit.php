@@ -229,9 +229,9 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
     );
     $edit_atem_js_rows = array();
     foreach ($atem_rows as $a) {
-        $a_status   = is_array($a['status'])
+        $a_status   = (isset($a['status']) && is_array($a['status']))
             ? (isset($a['status']['value']) ? $a['status']['value'] : '')
-            : (string)($a['status'] ?: '');
+            : (string)(isset($a['status']) && $a['status'] ? $a['status'] : '');
         $a_level    = (!empty($a['level_structure']) && is_array($a['level_structure']))
             ? (isset($a['level_structure']['level']) ? $a['level_structure']['level'] : '')
             : (isset($a['level_label']) ? $a['level_label'] : '');
@@ -267,7 +267,7 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
             array_unshift($target_roles, 'Issuer');
         }
         $edit_atem_js_rows[] = array(
-            'id'          => (int)$a['id'],
+            'id'          => isset($a['id']) ? (int)$a['id'] : 0,
             'title'       => isset($a['title']) ? $a['title'] : '',
             'issuer_name' => $issuer_name,
             'issuer_dept' => $iss_dept,

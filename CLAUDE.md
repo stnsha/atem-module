@@ -122,17 +122,20 @@ Key functions in `api.php`:
 
 ### Admin Backend
 
-`access_control/backend.php` is a standalone JSON endpoint (not part of `api.php`). The `admin/` directory no longer exists — all admin backend logic was consolidated here.
+There are two separate standalone JSON endpoints (neither is part of `api.php`) — the `admin/` directory was **not** removed; it is a live, separate area from `access_control/`, gated on `$_is_superadmin` rather than grade.
 
-It:
+**`access_control/backend.php`** — staff grade/struct/library management, scoped to grades 1+:
 - Reads `staff.grade` AND `staff.atem` from the ODB database directly
 - Sets `$requester_is_superadmin = true` and `$requester_grade = 6` when `staff.atem = 1`
 - On localhost with dev override active: sets `$requester_is_superadmin = false` (suppresses SuperAdmin for testing)
-- Requires `$requester_grade >= 3` to proceed for most operations
+- Requires `$requester_grade >= 1` to proceed (specific actions enforce higher minimums)
 - Parses `$requester_dept_ids` from comma-separated `staff.department`
-- Handles: `getActiveStaff`, `searchStaff`, `updateAccess`, `getLibrary`, `updateLibrary`, `addLibrary`, `deleteLibrary`, `getStructHistory`, `updateStructWindowOverride`
-- Library write operations (`addLibrary`, `updateLibrary`, `deleteLibrary`) are guarded by `$requester_is_superadmin`
-- `updateStructWindowOverride` is guarded by `$requester_is_superadmin`
+- Handles: `getActiveStaff`, `searchStaff`, `updateAccess`, `getStructHistory`, `getLibrary`, `updateLibrary`, `addLibrary`
+- Library write operations (`updateLibrary`, `addLibrary`) are guarded by `$db_is_superadmin` (the real DB flag, not dev-override-suppressed)
+
+**`admin/backend.php`** — global config toggles, SuperAdmin-only (`admin/index.php` redirects away if `!$_is_superadmin`):
+- Handles: `toggleStructWindow` (writes `atem_config.struct_window_override`), `toggleBackdate` (writes `atem_config.backdate_enabled`)
+- Both actions read `staff.atem` directly from the DB and require `$db_is_superadmin`; there is no dev-override suppression path in this file
 
 ### Struct Update Window
 
@@ -143,7 +146,8 @@ Non-SuperAdmin users can only change their evaluation struct during the first 10
 - `staff_struct_history` table enforces the quota: if a record already exists for `(staff_id, year, quarter)`, a second update is blocked for non-SuperAdmin users
 - SuperAdmin always bypasses both the window check and the quota check
 - SuperAdmin can enable a **global window override**: setting `atem_config.struct_window_override = '1'` opens the window for all users regardless of date
-- The override toggle is a checkbox on `access_control/index.php`, visible only when `$atem === 1`
+- The override toggle is a checkbox on `admin/index.php` (Admin Settings page), which is itself gated on `$_is_superadmin` and reachable only via the "Admin" nav link (also `$_is_superadmin`-gated). The write goes through `admin/backend.php`'s `toggleStructWindow` action, not `access_control/backend.php`
+- The same page also has a **Backdate** toggle (`atem_config.backdate_enabled`, via `admin/backend.php`'s `toggleBackdate` action): when enabled, `create.php` and `edit.php` skip the today-minimum restriction on date inputs
 - `getStructHistory` returns the last 12 quarters of struct changes for display in `js/admin_access.js`; used to show lock reason when updating is blocked
 
 ### ATEM Card Deletion
@@ -188,9 +192,11 @@ Soft delete only — `atems.deleted_at` is set, the row remains in the DB.
 | `view.php` | ATEM card list; passes `include_deleted` for grade 4+/SA |
 | `js/view.js` | Card list rendering; `canDelete()`, delete modal, deleted badge/dimming |
 | `edit.php` | Single card view/edit; detects `$record_is_deleted`, shows deleted banner |
-| `access_control/index.php` | Staff grade and struct management UI; struct window override toggle for SuperAdmin |
-| `access_control/backend.php` | Admin AJAX handler, direct ODB DB queries (replaces removed `admin/backend.php`) |
+| `access_control/index.php` | Staff grade and struct management UI |
+| `access_control/backend.php` | Staff grade/struct/library AJAX handler, direct ODB DB queries |
 | `access_control/masterlist.php` | Grade and struct library editor; accessible via SuperAdmin nav link only |
+| `admin/index.php` | Admin Settings page (struct window override + backdate toggles); SuperAdmin-only, reachable via SuperAdmin-only "Admin" nav link |
+| `admin/backend.php` | Global `atem_config` toggle AJAX handler (`toggleStructWindow`, `toggleBackdate`); SuperAdmin-only |
 | `js/admin_access.js` | Frontend logic for Access Control page (dept-scoped edit gating, struct history display) |
 | `lock_adv.php` (parent) | ODB session auth, sets `$grade`, `$struct`, `$atem` |
 | `sql/add_staff_atem_column.sql` | One-time DDL to add `staff.atem` column |

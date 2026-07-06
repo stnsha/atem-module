@@ -116,7 +116,7 @@ if ($record) {
     $is_issuer = ($current_sid && $current_sid === (int) (isset($record['issuer_staff_id']) ? $record['issuer_staff_id'] : 0));
     if (isset($record['arci']) && is_array($record['arci'])) {
         foreach ($record['arci'] as $m) {
-            if ((int) $m['staff_id'] === $current_sid) {
+            if (isset($m['staff_id']) && (int) $m['staff_id'] === $current_sid) {
                 $is_arci_member = true;
                 if (!empty($m['role'])) { $user_arci_roles[] = $m['role']; }
             }
@@ -168,7 +168,7 @@ if ($record && isset($record['status']['value'])) {
     $current_status_value = $record['status']['value'];
 }
 $is_draft      = ($current_status_value === 'Draft');
-$is_issuer_now = ($record && (int)$staff_id === (int)$record['issuer_staff_id']);
+$is_issuer_now = ($record && (int)$staff_id === (int)(isset($record['issuer_staff_id']) ? $record['issuer_staff_id'] : 0));
 
 // SuperAdmin may edit Completed or Failed cards — but only Level, Rule, and Status (-> Draft).
 $superadmin_terminal_statuses = array('Completed', 'Failed', 'Completed with Extension');
@@ -235,9 +235,9 @@ $atem_config = array(
     'staffId'      => (int) $staff_id,
     'userGrade'    => (int) $atem_permission,
     'isSuperAdmin' => (bool) $_is_superadmin,
-    'levels'       => $lookups['levels'],
-    'rules'        => $lookups['rules'],
-    'statuses'     => $lookups['statuses'],
+    'levels'       => isset($lookups['levels']) ? $lookups['levels'] : array(),
+    'rules'        => isset($lookups['rules']) ? $lookups['rules'] : array(),
+    'statuses'     => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
     'departments'  => $departments_list,
     'staffByDept'  => $staff_by_dept,
     'record'       => $record,

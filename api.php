@@ -31,7 +31,7 @@ if (isset($_SESSION["myusername"])) {
     $query = "select * from staff where username = '$username' and recycle!=1";
     $result = $conn->query($query);
 
-    if ($result->num_rows > 0) {
+    if ($result && $result->num_rows > 0) {
         while ($rows = $result->fetch_assoc()) {
             $staff_id   = stripslashes($rows['id']);
             $department = stripslashes($rows['department']);
@@ -1358,7 +1358,7 @@ if (!defined('API_JWT_INCLUDED')) {
         exit;
     }
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action) {
             switch ($action) {
                 case 'lookups':
@@ -2049,7 +2049,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                         $_my_role = !empty($_role_parts) ? $_role_parts : null;
                         $_enriched[] = array(
-                            'id'          => (int)$_a['id'],
+                            'id'          => isset($_a['id']) ? (int)$_a['id'] : 0,
                             'title'       => isset($_a['title']) ? $_a['title'] : '',
                             'level_label' => $_level ? $_level['level'] : '',
                             'system_name' => $_level ? (isset($_level['system_name']) ? $_level['system_name'] : '') : '',
