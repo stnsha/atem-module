@@ -36,7 +36,7 @@ if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
 $auth_row          = mysqli_fetch_assoc($auth_result);
 $requester_id      = (int)$auth_row['id'];
 $requester_dept_ids = array();
-foreach (explode(',', $auth_row['department']) as $_d) {
+foreach (explode(',', (string)$auth_row['department']) as $_d) {
     $_d = (int)trim($_d);
     if ($_d > 0) {
         $requester_dept_ids[] = $_d;
@@ -87,7 +87,7 @@ if ($requester_grade < 1) {
 
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
-if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'GET') {
 
     if ($requester_grade === 1) {
         $query  = "SELECT s.id, s.nama_staff, s.grade, s.status_semasa, s.struct,
@@ -201,7 +201,7 @@ if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     exit;
 }
 
-if ($action === 'searchStaff' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'searchStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($requester_grade === 1) {
         echo json_encode(array());
         exit;
@@ -255,7 +255,7 @@ if ($action === 'searchStaff' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-if ($action === 'updateAccess' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'updateAccess' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($requester_grade < 2) {
         echo json_encode(array('success' => false, 'message' => 'Unauthorized.'));
         exit;
@@ -280,7 +280,7 @@ if ($action === 'updateAccess' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $dept_row        = mysqli_fetch_assoc($dept_check);
         $target_dept_ids = array();
-        foreach (explode(',', $dept_row['department']) as $_d) {
+        foreach (explode(',', (string)$dept_row['department']) as $_d) {
             $_d = (int)trim($_d);
             if ($_d > 0) {
                 $target_dept_ids[] = $_d;
@@ -330,7 +330,7 @@ if ($action === 'updateAccess' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-if ($action === 'getStructHistory' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+if ($action === 'getStructHistory' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $target_id = isset($_GET['staff_id']) ? (int)$_GET['staff_id'] : 0;
     if ($target_id <= 0) {
         echo json_encode(array('success' => false, 'message' => 'Invalid staff.'));
@@ -376,7 +376,7 @@ if ($action === 'getStructHistory' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     exit;
 }
 
-if ($action === 'getLibrary' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+if ($action === 'getLibrary' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $grades  = array();
     $structs = array();
 
@@ -398,7 +398,7 @@ if ($action === 'getLibrary' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     exit;
 }
 
-if ($action === 'updateLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'updateLibrary' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$db_is_superadmin) {
         echo json_encode(array('success' => false, 'message' => 'Unauthorized.'));
         exit;
@@ -426,7 +426,7 @@ if ($action === 'updateLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-if ($action === 'addLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'addLibrary' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$db_is_superadmin) {
         echo json_encode(array('success' => false, 'message' => 'Unauthorized.'));
         exit;
@@ -449,7 +449,8 @@ if ($action === 'addLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(array('success' => false, 'message' => 'Database error: ' . mysqli_error($conn)));
         exit;
     }
-    $next_id = (int)mysqli_fetch_assoc($max_result)['next_id'];
+    $max_row = mysqli_fetch_assoc($max_result);
+    $next_id = $max_row ? (int)$max_row['next_id'] : 0;
 
     $insert = "INSERT INTO `$table` (id, `$col`) VALUES ($next_id, '$label_escaped')";
 

@@ -33,7 +33,9 @@ $preview_result = getIidasMigrationPreview($staff_id, $page, $status, $committed
 $summary_by_status = array();
 if (!empty($summary_result['data'])) {
     foreach ($summary_result['data'] as $s) {
-        $summary_by_status[$s['mapped_status']] = $s;
+        if (isset($s['mapped_status'])) {
+            $summary_by_status[$s['mapped_status']] = $s;
+        }
     }
 }
 
@@ -80,9 +82,9 @@ $statuses = array('Draft', 'Active', 'Completed', 'Deleted');
 <div class="card" style="min-width:150px">
     <div class="card-body p-3">
         <div class="mb-1"><span class="badge bg-<?php echo $badge; ?>"><?php echo htmlspecialchars($sv); ?></span></div>
-        <div class="fs-4 fw-bold"><?php echo (int)$s['total']; ?></div>
+        <div class="fs-4 fw-bold"><?php echo isset($s['total']) ? (int)$s['total'] : 0; ?></div>
         <div class="small text-muted">
-            <?php echo (int)$s['pending']; ?> pending &middot; <?php echo (int)$s['committed']; ?> committed
+            <?php echo isset($s['pending']) ? (int)$s['pending'] : 0; ?> pending &middot; <?php echo isset($s['committed']) ? (int)$s['committed'] : 0; ?> committed
         </div>
     </div>
 </div>
@@ -145,24 +147,24 @@ $statuses = array('Draft', 'Active', 'Completed', 'Deleted');
             $badge = isset($badge_map[$ms]) ? $badge_map[$ms] : 'secondary';
         ?>
         <tr>
-            <td><?php echo (int)$row['source_id']; ?></td>
-            <td><?php echo htmlspecialchars($row['title']); ?></td>
+            <td><?php echo isset($row['source_id']) ? (int)$row['source_id'] : 0; ?></td>
+            <td><?php echo htmlspecialchars(isset($row['title']) ? $row['title'] : ''); ?></td>
             <td><span class="badge bg-<?php echo $badge; ?>"><?php echo htmlspecialchars($ms); ?></span></td>
-            <td><?php echo (int)$row['issuer_staff_id']; ?></td>
-            <td><?php echo ($row['staff_dept_id'] !== null) ? (int)$row['staff_dept_id'] : '&mdash;'; ?></td>
+            <td><?php echo isset($row['issuer_staff_id']) ? (int)$row['issuer_staff_id'] : 0; ?></td>
+            <td><?php echo isset($row['staff_dept_id']) ? (int)$row['staff_dept_id'] : '&mdash;'; ?></td>
             <td><?php echo !empty($row['start_date']) ? htmlspecialchars(substr($row['start_date'], 0, 10)) : '&mdash;'; ?></td>
             <td><?php echo !empty($row['end_date'])   ? htmlspecialchars(substr($row['end_date'],   0, 10)) : '&mdash;'; ?></td>
             <td>
-                <?php if ((int)$row['would_soft_delete']): ?>
+                <?php if (isset($row['would_soft_delete']) && (int)$row['would_soft_delete']): ?>
                     <span class="text-danger fw-semibold">Yes</span>
                 <?php else: ?>
                     <span class="text-muted">No</span>
                 <?php endif; ?>
             </td>
-            <td class="text-center"><?php echo (int)$row['arci_count']; ?></td>
-            <td class="text-center"><?php echo (int)$row['subtask_count']; ?></td>
-            <td class="text-center"><?php echo (int)$row['ref_count']; ?></td>
-            <td class="text-center"><?php echo (int)$row['attachment_count']; ?></td>
+            <td class="text-center"><?php echo isset($row['arci_count']) ? (int)$row['arci_count'] : 0; ?></td>
+            <td class="text-center"><?php echo isset($row['subtask_count']) ? (int)$row['subtask_count'] : 0; ?></td>
+            <td class="text-center"><?php echo isset($row['ref_count']) ? (int)$row['ref_count'] : 0; ?></td>
+            <td class="text-center"><?php echo isset($row['attachment_count']) ? (int)$row['attachment_count'] : 0; ?></td>
             <td>
                 <?php if (!empty($row['committed_at'])): ?>
                     <span class="badge bg-success"><?php echo htmlspecialchars(substr($row['committed_at'], 0, 10)); ?></span>

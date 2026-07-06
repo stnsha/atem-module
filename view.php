@@ -121,14 +121,14 @@ foreach ($rows as $a) {
     }
 
     $view_rows[] = array(
-        'id'              => (int) $a['id'],
+        'id'              => (int) (isset($a['id']) ? $a['id'] : 0),
         'title'           => isset($a['title']) ? $a['title'] : '',
         'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
         'department_name' => isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : '-',
         'department_id'   => $dept_id,
-        'level_label'     => $level ? $level['level'] : '',
-        'system_name'     => $level ? $level['system_name'] : '',
-        'status'          => $status ? $status['value'] : '',
+        'level_label'     => ($level && isset($level['level']))       ? $level['level']       : '',
+        'system_name'     => ($level && isset($level['system_name'])) ? $level['system_name'] : '',
+        'status'          => ($status && isset($status['value']))     ? $status['value']      : '',
         'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
         'extended_date_1' => isset($a['extended_date_1']) ? $a['extended_date_1'] : '',

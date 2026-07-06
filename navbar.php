@@ -33,7 +33,7 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
     );
 
     $_navbar_activeRole      = isset($_SESSION['atem_dev_role_override']) ? (int)$_SESSION['atem_dev_role_override'] : null;
-    $_navbar_activeRoleLabel = ($_navbar_activeRole !== null)
+    $_navbar_activeRoleLabel = ($_navbar_activeRole !== null && isset($_navbar_gradeLabels[$_navbar_activeRole]))
         ? $_navbar_gradeLabels[$_navbar_activeRole]
         : 'DB Default';
     $_navbar_currentUri      = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/odb/atem/index.php';
@@ -65,8 +65,8 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
 
 <?php
 // Get current page to highlight active nav item
-$current_page = basename($_SERVER['PHP_SELF']);
-$current_dir  = basename(dirname($_SERVER['PHP_SELF']));
+$current_page = basename(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '');
+$current_dir  = basename(dirname(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : ''));
 
 // Determine active class for each nav item
 $dashboard_active = ($current_page == 'index.php' && $current_dir == 'atem')  ? 'active' : '';

@@ -31,11 +31,11 @@ if (isset($_SESSION["myusername"])) {
     $query = "select * from staff where username = '$username' and recycle!=1";
     $result = $conn->query($query);
 
-    if ($result->num_rows > 0) {
+    if ($result && $result->num_rows > 0) {
         while ($rows = $result->fetch_assoc()) {
-            $staff_id   = stripslashes($rows['id']);
-            $department = stripslashes($rows['department']);
-            $nama_staff = stripslashes($rows['nama_staff']);
+            $staff_id   = stripslashes((string)$rows['id']);
+            $department = stripslashes((string)$rows['department']);
+            $nama_staff = stripslashes((string)$rows['nama_staff']);
             $atem_flag  = isset($rows['atem']) ? (int)$rows['atem'] : 0;
         }
     }
@@ -1375,7 +1375,7 @@ if (!defined('API_JWT_INCLUDED')) {
         exit;
     }
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action) {
             switch ($action) {
                 case 'lookups':
@@ -1891,7 +1891,16 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'update-staff-field':
-                    if ((int)$atem_permission < 4 && (!isset($atem) || (int)$atem !== 1)) {
+                    $usf_perm = 0;
+                    if (isset($atem_permission)) {
+                        $usf_perm = (int)$atem_permission;
+                    } elseif ($staff_id) {
+                        $usf_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        if ($usf_perm_res && ($usf_perm_row = mysqli_fetch_assoc($usf_perm_res))) {
+                            $usf_perm = ((int)$usf_perm_row['atem'] === 1) ? 6 : (int)$usf_perm_row['grade'];
+                        }
+                    }
+                    if ($usf_perm < 4) {
                         $response = array('success' => false, 'message' => 'Insufficient permission');
                         break;
                     }
@@ -2098,13 +2107,13 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                         $_my_role = !empty($_role_parts) ? $_role_parts : null;
                         $_enriched[] = array(
-                            'id'          => (int)$_a['id'],
+                            'id'          => (int)(isset($_a['id']) ? $_a['id'] : 0),
                             'title'       => isset($_a['title']) ? $_a['title'] : '',
-                            'level_label' => $_level ? $_level['level'] : '',
+                            'level_label' => ($_level && isset($_level['level'])) ? $_level['level'] : '',
                             'system_name' => $_level ? (isset($_level['system_name']) ? $_level['system_name'] : '') : '',
                             'start_date'  => isset($_a['start_date']) ? $_a['start_date'] : '',
                             'end_date'    => isset($_a['end_date']) ? $_a['end_date'] : '',
-                            'status'      => $_status ? $_status['value'] : '',
+                            'status'      => ($_status && isset($_status['value'])) ? $_status['value'] : '',
                             'accountable' => $_accountable,
                             'is_extended' => !empty($_a['is_extended']),
                             'extended_date_1' => isset($_a['extended_date_1']) ? $_a['extended_date_1'] : '',
