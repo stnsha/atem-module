@@ -710,16 +710,21 @@ function updateAtemSuspendedFields($id, $data, $staff_id)
 }
 
 /**
- * Soft-delete a Draft or Active ATEM card (Issuer only)
+ * Soft-delete a Draft, Active, or Suspended ATEM card (Issuer or SuperAdmin)
  * @param int $id ATEM ID
  * @param int $staff_id Staff ID for authentication
  * @param string $remarks Mandatory deletion remark
+ * @param bool $is_superadmin Whether the requester is a real SuperAdmin
  * @return array Result
  */
-function deleteAtem($id, $staff_id, $remarks)
+function deleteAtem($id, $staff_id, $remarks, $is_superadmin = false)
 {
     $endpoint = 'atem/' . (int)$id;
-    $result   = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id, 'remarks' => $remarks), 'DELETE', $staff_id);
+    $payload  = array('actor_id' => (int)$staff_id, 'remarks' => $remarks);
+    if ($is_superadmin) {
+        $payload['superadmin_override'] = 1;
+    }
+    $result   = getApiDataWithJWT($endpoint, $payload, 'DELETE', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded  = json_decode($result['response'], true);
     if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
@@ -1651,7 +1656,7 @@ if (!defined('API_JWT_INCLUDED')) {
                 case 'delete-atem':
                     if (isset($jsonData['id'])) {
                         $delete_remarks = isset($jsonData['remarks']) ? (string)$jsonData['remarks'] : '';
-                        $response = deleteAtem($jsonData['id'], $staff_id, $delete_remarks);
+                        $response = deleteAtem($jsonData['id'], $staff_id, $delete_remarks, $is_api_superadmin);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID');
                     }

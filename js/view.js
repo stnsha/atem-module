@@ -303,6 +303,13 @@
         return terminal.indexOf(r.status) === -1;
     }
 
+    function canDeleteSuspended(r) {
+        if (r.status !== 'Suspended') { return false; }
+        if (CFG.isSuperAdmin) { return true; }
+        if (!CFG.staffId) { return false; }
+        return r.issuer_staff_id == CFG.staffId;
+    }
+
     // --------------------------------------------------------------- edit permission
     function canEdit(r) {
         if (CFG.isSuperAdmin) { return true; }
@@ -381,6 +388,7 @@
                     ? (_canViewDeleted
                         ? '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Suspended)"><i class="bi bi-eye"></i></a>'
                         : '')
+                    + (canDeleteSuspended(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '')
                     : '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
                     + (canEdit(r) ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
                     + (canUpdateProgress(r) ? ' <a href="atem/edit.php?id=' + r.id + '&mode=read#atem-progress-section" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
