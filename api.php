@@ -1512,7 +1512,13 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                         if ($filterDeptId > 0) {
                             $itemDeptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
-                            if ($itemDeptId !== $filterDeptId) { continue; }
+                            $itemArciDepts = array();
+                            if (isset($item['arci']) && is_array($item['arci'])) {
+                                foreach ($item['arci'] as $_m) {
+                                    if (!empty($_m['staff_dept_id'])) { $itemArciDepts[] = (int)$_m['staff_dept_id']; }
+                                }
+                            }
+                            if ($itemDeptId !== $filterDeptId && !in_array($filterDeptId, $itemArciDepts)) { continue; }
                         }
 
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
