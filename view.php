@@ -94,8 +94,9 @@ foreach ($rows as $a) {
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 
-    $arci_ids      = array();
-    $arci_dept_ids = array();
+    $arci_ids        = array();
+    $arci_dept_ids   = array();
+    $arci_dept_names = array();
     $user_roles    = array();
     $accountable   = array();
     if (isset($a['arci']) && is_array($a['arci'])) {
@@ -104,7 +105,11 @@ foreach ($rows as $a) {
                 $m_id = (int) $m['staff_id'];
                 $arci_ids[] = $m_id;
                 if (!empty($m['staff_dept_id'])) {
-                    $arci_dept_ids[] = (int) $m['staff_dept_id'];
+                    $m_dept_id = (int) $m['staff_dept_id'];
+                    $arci_dept_ids[] = $m_dept_id;
+                    if (isset($dept_names[$m_dept_id])) {
+                        $arci_dept_names[] = $dept_names[$m_dept_id];
+                    }
                 }
                 if ($m_id === (int) $staff_id && !empty($m['role'])) {
                     $user_roles[] = $m['role'];
@@ -134,6 +139,7 @@ foreach ($rows as $a) {
         'extended_date_1' => isset($a['extended_date_1']) ? $a['extended_date_1'] : '',
         'issuer_staff_id' => $issuer_id,
         'arci_staff_ids'  => $arci_ids,
+        'arci_dept_names' => array_values(array_unique($arci_dept_names)),
         'user_arci_roles' => $user_roles,
         'accountable'     => $accountable,
         'is_extended'     => !empty($a['is_extended']),

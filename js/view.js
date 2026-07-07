@@ -208,7 +208,11 @@
             if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
             if (issuer && r.issuer_staff_id !== issuer) { return false; }
             if (level && r.level_label !== level) { return false; }
-            if (dept && r.department_name !== dept) { return false; }
+            if (dept) {
+                var deptMatches = (r.department_name === dept) ||
+                    (r.arci_dept_names && r.arci_dept_names.indexOf(dept) !== -1);
+                if (!deptMatches) { return false; }
+            }
             if (status && r.status !== status) { return false; }
             if (presetClosed) {
                 if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
