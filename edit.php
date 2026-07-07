@@ -51,6 +51,73 @@ foreach ($departments as $d_id => $d_name) {
     $departments_list[] = array('id' => $d_id, 'name' => $d_name);
 }
 
+// Outlets for the derived outlet-scope display (outlet-type ATEMs only).
+$outlets_list = array();
+$outlet_res = mysqli_query($conn, "SELECT id, code FROM outlet ORDER BY code ASC");
+if ($outlet_res) {
+    while ($orow = mysqli_fetch_assoc($outlet_res)) {
+        $outlets_list[] = array('id' => (int) $orow['id'], 'code' => $orow['code']);
+    }
+}
+
+// Area Managers for the Area Manager(s) picker (outlet-type ATEMs only).
+// status_rym = 134 identifies the "Area Manager" position in position_rymnet.
+$area_managers_list = array();
+$am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
+           FROM staff s
+           JOIN position_rymnet p ON p.id = s.status_rym
+           WHERE s.status_rym = 134 AND s.recycle != 1
+           ORDER BY s.nama_staff";
+$am_res = mysqli_query($conn, $am_sql);
+if ($am_res) {
+    while ($arow = mysqli_fetch_assoc($am_res)) {
+        $am_outlet_ids = array();
+        foreach (explode(',', (string) $arow['outlet']) as $oid) {
+            $oid = (int) trim($oid);
+            if ($oid > 0) {
+                $am_outlet_ids[] = $oid;
+            }
+        }
+        $area_managers_list[] = array(
+            'id'         => (int) $arow['id'],
+            'name'       => $arow['nama_staff'],
+            'position'   => $arow['position_name'],
+            'outlet_ids' => $am_outlet_ids,
+        );
+    }
+}
+
+// Staff grouped by outlet (for the ARCI picker on Outlet-type ATEMs). A staff
+// member can belong to several outlets (comma-separated staff.outlet), so they
+// are bucketed under every outlet id they belong to, not just one.
+$staff_by_outlet = array();
+$all_staff_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
+                  FROM staff s
+                  LEFT JOIN position_rymnet p ON p.id = s.status_rym
+                  WHERE s.recycle != 1";
+$all_staff_res = mysqli_query($conn, $all_staff_sql);
+if ($all_staff_res) {
+    while ($orow2 = mysqli_fetch_assoc($all_staff_res)) {
+        if (empty($orow2['outlet'])) {
+            continue;
+        }
+        foreach (explode(',', (string) $orow2['outlet']) as $oid) {
+            $oid = (int) trim($oid);
+            if ($oid <= 0) {
+                continue;
+            }
+            if (!isset($staff_by_outlet[$oid])) {
+                $staff_by_outlet[$oid] = array();
+            }
+            $staff_by_outlet[$oid][] = array(
+                'id'       => (int) $orow2['id'],
+                'name'     => $orow2['nama_staff'],
+                'position' => $orow2['position_name'],
+            );
+        }
+    }
+}
+
 // Fetch lookups and the record via the JWT proxy (server-side).
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
@@ -66,7 +133,7 @@ if (isset($department) && $department !== '') {
     }
 }
 
-$lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array());
+$lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array(), 'pillars' => array());
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
@@ -90,12 +157,35 @@ if ($record) {
     $did = isset($record['staff_dept_id']) ? (int) $record['staff_dept_id'] : 0;
     $issuer_name = isset($staff_names[$iid]) ? $staff_names[$iid] : ($iid ? ('Staff #' . $iid) : '');
     $issuer_department = isset($dept_names[$did]) ? $dept_names[$did] : '';
+    $is_outlet_type = ((int) (isset($record['atem_type']) ? $record['atem_type'] : 1) === 2);
+    $outlet_codes_by_id = array();
+    foreach ($outlets_list as $o) {
+        $outlet_codes_by_id[$o['id']] = $o['code'];
+    }
+    $area_managers_by_id = array();
+    foreach ($area_managers_list as $am) {
+        $area_managers_by_id[$am['id']] = $am;
+    }
+    // A member on an Outlet ATEM can be outlet-scoped (outlet_id set),
+    // department-scoped (an HQ staff tagged C/I, staff_dept_id set), or
+    // neither (an auto-added Area Manager, who spans every outlet on the
+    // card). HQ-type cards are always department-scoped, unchanged.
     if (isset($record['arci']) && is_array($record['arci'])) {
         foreach ($record['arci'] as $k => $m) {
-            $sid = isset($m['staff_id']) ? (int) $m['staff_id'] : 0;
+            $sid  = isset($m['staff_id']) ? (int) $m['staff_id'] : 0;
             $mdid = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
-            $record['arci'][$k]['staff_name'] = isset($staff_names[$sid]) ? $staff_names[$sid] : ('Staff #' . $sid);
-            $record['arci'][$k]['department_name'] = isset($dept_names[$mdid]) ? $dept_names[$mdid] : '';
+            $moid = isset($m['outlet_id']) ? (int) $m['outlet_id'] : 0;
+
+            if ($is_outlet_type && $moid) {
+                $record['arci'][$k]['staff_name']       = isset($staff_names[$sid]) ? $staff_names[$sid] : ('Staff #' . $sid);
+                $record['arci'][$k]['department_name']  = isset($outlet_codes_by_id[$moid]) ? $outlet_codes_by_id[$moid] : '';
+            } elseif ($is_outlet_type && !$mdid && !$moid && isset($area_managers_by_id[$sid])) {
+                $record['arci'][$k]['staff_name']      = $area_managers_by_id[$sid]['name'] . ' (' . $area_managers_by_id[$sid]['position'] . ')';
+                $record['arci'][$k]['department_name'] = 'All Outlets';
+            } else {
+                $record['arci'][$k]['staff_name']      = isset($staff_names[$sid]) ? $staff_names[$sid] : ('Staff #' . $sid);
+                $record['arci'][$k]['department_name'] = isset($dept_names[$mdid]) ? $dept_names[$mdid] : '';
+            }
         }
     }
     if (isset($record['audit_logs']) && is_array($record['audit_logs'])) {
@@ -259,8 +349,12 @@ $atem_config = array(
     'levels'       => $lookups['levels'],
     'rules'        => $lookups['rules'],
     'statuses'     => $lookups['statuses'],
+    'pillars'      => $lookups['pillars'],
     'departments'  => $departments_list,
     'staffByDept'  => $staff_by_dept,
+    'outlets'      => $outlets_list,
+    'areaManagers' => $area_managers_list,
+    'staffByOutlet' => $staff_by_outlet,
     'record'       => $record,
     'isIssuer'             => (bool) $is_issuer_now,
     'superadminTerminalEdit' => (bool) $superadmin_terminal_edit,
@@ -358,7 +452,27 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     <input type="text" class="form-control" id="atem-department"
                         value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-amount-group">
+                    <label for="atem-reward-amount" class="form-label">Reward Amount</label>
+                    <select class="form-select" id="atem-reward-amount">
+                        <option value="0" selected>RM0</option>
+                        <option value="50">+ RM50</option>
+                        <option value="100">+ RM100</option>
+                        <option value="200">+ RM200</option>
+                    </select>
+                    <div class="atem-form-error" id="atem-reward-amount-error"></div>
+                </div>
+                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-deduction-amount-group">
+                    <label for="atem-deduction-amount" class="form-label">Deduction Amount</label>
+                    <select class="form-select" id="atem-deduction-amount">
+                        <option value="0" selected>RM0</option>
+                        <option value="50">- RM50</option>
+                        <option value="100">- RM100</option>
+                        <option value="200">- RM200</option>
+                    </select>
+                    <div class="atem-form-error" id="atem-deduction-amount-error"></div>
+                </div>
+                <div class="col-md-6 atem-hq-only" id="atem-level-group">
                     <label for="atem-level" class="form-label">ATEM Complexity Level <span
                             class="atem-req">*</span></label>
                     <select class="form-select" id="atem-level">
@@ -366,13 +480,38 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     </select>
                     <div class="atem-form-error" id="atem-level-error"></div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-6 atem-hq-only" id="atem-rule-group">
                     <label for="atem-rule" class="form-label">Incentive Rule <span class="atem-req" id="rule-req-star"
                             style="display:none;">*</span></label>
                     <select class="form-select" id="atem-rule">
                         <option value="">Select rule</option>
                     </select>
                     <div class="atem-form-error" id="atem-rule-error"></div>
+                </div>
+                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-pillars-group">
+                    <label for="atem-pillars" class="form-label">5 Pillars</label>
+                    <select class="form-select" id="atem-pillars">
+                        <option value="">Select pillar</option>
+                    </select>
+                    <div class="atem-form-error" id="atem-pillars-error"></div>
+                </div>
+                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-am-tag-group">
+                    <label class="form-label">Area Manager(s) <span class="atem-req">*</span></label>
+                    <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
+                    <div class="atem-outlet-picker" id="atem-am-picker-wrap">
+                        <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area manager(s)...</div>
+                        <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
+                            <div class="atem-outlet-picker-search-wrap">
+                                <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search" placeholder="Search area manager...">
+                            </div>
+                            <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                    <div id="atem-am-tags" class="atem-outlet-tags mt-2">
+                        <span class="atem-empty-state">No area manager tagged.</span>
+                    </div>
+                    <div class="atem-form-error" id="atem-am-error"></div>
                 </div>
                 <div class="col-12 mt-2">
                     <label class="form-label">ATEM Description</label>
@@ -390,7 +529,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 
     <!-- Right column: Incentive + Attachment + Reference Link -->
     <div class="atem-bento-item atem-span-4">
-        <div class="atem-card mb-3">
+        <div class="atem-card mb-3" id="atem-incentive-section">
             <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
             <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The
                 company reserves the right to determine the final payout under its incentive scheme. C and I roles are
@@ -409,6 +548,18 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                             Responsible</span><span class="atem-incentive-stat-value" id="inc-r">RM0.00</span></div>
                 </div>
                 <div class="atem-incentive-note" id="inc-note">Incentive is computed from the level and rule.</div>
+            </div>
+        </div>
+
+        <div class="atem-card mb-3 atem-hidden" id="atem-reward-section">
+            <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Reward</h6>
+            <p class="atem-card-hint">This shows an estimated reward based on the selected pillar and reward
+                mechanism. The company reserves the right to determine the final payout under its incentive scheme.</p>
+            <div class="atem-incentive">
+                <div class="atem-incentive-total-block">
+                    <div class="atem-incentive-total-label">Total Reward</div>
+                    <div class="atem-incentive-total-amount" id="reward-total">RM0.00</div>
+                </div>
             </div>
         </div>
 
@@ -453,6 +604,10 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         <div class="atem-card">
             <h6 class="atem-card-title"><i class="bi bi-people"></i> Project Team (ARCI)</h6>
             <p class="atem-card-hint">A (Accountable) is mandatory; maximum 2 members. R (Responsible) supports up to 2 members. C and I are for visibility only and are not incentivised.</p>
+            <div class="alert alert-warning atem-hidden" id="atem-arci-orphan-warning" role="alert">
+                <span id="atem-arci-orphan-warning-text"></span>
+                <button type="button" class="btn-close" id="atem-arci-orphan-warning-close" aria-label="Close"></button>
+            </div>
             <?php if (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit): ?>
             <div class="atem-arci-add">
                 <div class="atem-arci-add-grid">
@@ -467,7 +622,17 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                         </select>
                     </div>
                     <div>
-                        <label class="form-label">Department</label>
+                        <label class="form-label" id="arci-dept-label">Department</label>
+                        <div class="atem-outlet-only atem-hidden mb-1" id="arci-scope-toggle">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="arci-scope" id="arci-scope-outlet" checked>
+                                <label class="form-check-label" for="arci-scope-outlet">Outlet</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="arci-scope" id="arci-scope-department">
+                                <label class="form-check-label" for="arci-scope-department">Department</label>
+                            </div>
+                        </div>
                         <input type="text" class="form-control mb-1" id="arci-dept-search"
                             placeholder="Search department...">
                         <select class="form-select" id="arci-dept-select" size="6">
@@ -584,6 +749,26 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                         </label>
                     </div>
                     <div class="atem-form-error" id="tl-incentive-approval-error"></div>
+                </div>
+
+                <!-- Reward Decision — HQ cards only, shown once a terminal status is selected -->
+                <div class="col-12" id="tl-reward-decision-wrap" style="display:none;">
+                    <label class="form-label" style="font-weight:600;">Reward Decision <span class="atem-req">*</span></label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="tl-reward-decision"
+                               id="tl-reward-decision-rewarded" value="rewarded">
+                        <label class="form-check-label" for="tl-reward-decision-rewarded">
+                            Rewarded — incentive remains claimable
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="tl-reward-decision"
+                               id="tl-reward-decision-deducted" value="deducted">
+                        <label class="form-check-label" for="tl-reward-decision-deducted">
+                            Deducted — no incentive payout (not claimable)
+                        </label>
+                    </div>
+                    <div class="atem-form-error" id="tl-reward-decision-error"></div>
                 </div>
 
                 <!-- Row 3: Final Due, Closure (auto, disabled) -->

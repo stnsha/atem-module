@@ -70,6 +70,45 @@ function isInStructWindow() {
     $day = (int)date('j');
     return ($day >= 1 && $day <= 10);
 }
+
+function attachOutletCodes($conn, $staff_list)
+{
+    $ids = array();
+    foreach ($staff_list as $s) {
+        foreach (explode(',', $s['outlet_raw']) as $oid) {
+            $oid = (int)trim($oid);
+            if ($oid > 0) {
+                $ids[$oid] = true;
+            }
+        }
+    }
+
+    $code_map = array();
+    if (!empty($ids)) {
+        $ids_sql = implode(',', array_keys($ids));
+        $r = mysqli_query($conn, "SELECT id, code FROM outlet WHERE id IN ($ids_sql)");
+        if ($r) {
+            while ($row = mysqli_fetch_assoc($r)) {
+                $code_map[(int)$row['id']] = $row['code'];
+            }
+        }
+    }
+
+    foreach ($staff_list as &$s) {
+        $codes = array();
+        foreach (explode(',', $s['outlet_raw']) as $oid) {
+            $oid = (int)trim($oid);
+            if ($oid > 0 && isset($code_map[$oid])) {
+                $codes[] = $code_map[$oid];
+            }
+        }
+        $s['outlet_codes'] = $codes;
+        unset($s['outlet_raw']);
+    }
+    unset($s);
+
+    return $staff_list;
+}
 $current_year    = (int)date('Y');
 $current_quarter = getCurrentQuarter();
 $in_window       = isInStructWindow();
@@ -91,7 +130,7 @@ if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 
     if ($requester_grade === 1) {
         $query  = "SELECT s.id, s.nama_staff, s.grade, s.status_semasa, s.struct,
-                          s.department, d.depart_name, st.struct_name
+                          s.department, d.depart_name, st.struct_name, s.outlet
                    FROM staff s
                    LEFT JOIN staff_department d  ON s.department = d.id
                    LEFT JOIN staff_struct     st ON s.struct      = st.id
@@ -108,10 +147,12 @@ if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                     'department_name' => $row['depart_name']    ? $row['depart_name']    : '-',
                     'dept_raw'        => $row['department']     ? $row['department']     : '0',
                     'struct_id'       => ($row['struct'] !== null) ? (int)$row['struct'] : 0,
-                    'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-'
+                    'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-',
+                    'outlet_raw'      => $row['outlet']         ? $row['outlet']         : ''
                 );
             }
         }
+        $staff = attachOutletCodes($conn, $staff);
         echo json_encode(array(
             'success'     => true,
             'data'        => $staff,
@@ -165,7 +206,7 @@ if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 
     $query = "SELECT s.id, s.nama_staff, s.grade, s.status_semasa, s.struct,
-                     s.department, d.depart_name, st.struct_name
+                     s.department, d.depart_name, st.struct_name, s.outlet
               FROM staff s
               LEFT JOIN staff_department d  ON s.department = d.id
               LEFT JOIN staff_struct     st ON s.struct      = st.id
@@ -185,10 +226,12 @@ if ($action === 'getActiveStaff' && $_SERVER['REQUEST_METHOD'] === 'GET') {
                 'department_name' => $row['depart_name']    ? $row['depart_name']    : '-',
                 'dept_raw'        => $row['department']     ? $row['department']     : '0',
                 'struct_id'       => ($row['struct'] !== null) ? (int)$row['struct'] : 0,
-                'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-'
+                'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-',
+                'outlet_raw'      => $row['outlet']         ? $row['outlet']         : ''
             );
         }
     }
+    $staff = attachOutletCodes($conn, $staff);
 
     echo json_encode(array(
         'success'     => true,
@@ -224,7 +267,7 @@ if ($action === 'searchStaff' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $query = "SELECT s.id, s.nama_staff, s.grade, s.status_semasa, s.struct,
-                     s.department, d.depart_name, st.struct_name
+                     s.department, d.depart_name, st.struct_name, s.outlet
               FROM staff s
               LEFT JOIN staff_department d  ON s.department = d.id
               LEFT JOIN staff_struct     st ON s.struct      = st.id
@@ -246,10 +289,12 @@ if ($action === 'searchStaff' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 'department_name' => $row['depart_name']    ? $row['depart_name']    : '-',
                 'dept_raw'        => $row['department']     ? $row['department']     : '0',
                 'struct_id'       => ($row['struct'] !== null) ? (int)$row['struct'] : 0,
-                'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-'
+                'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-',
+                'outlet_raw'      => $row['outlet']         ? $row['outlet']         : ''
             );
         }
     }
+    $staff = attachOutletCodes($conn, $staff);
 
     echo json_encode($staff);
     exit;
@@ -380,17 +425,17 @@ if ($action === 'getLibrary' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $grades  = array();
     $structs = array();
 
-    $r = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade ORDER BY id ASC");
+    $r = mysqli_query($conn, "SELECT id, grade_name, is_active FROM staff_grade ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
-            $grades[] = array('id' => (int)$row['id'], 'label' => $row['grade_name']);
+            $grades[] = array('id' => (int)$row['id'], 'label' => $row['grade_name'], 'is_active' => (int)$row['is_active']);
         }
     }
 
-    $r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
+    $r = mysqli_query($conn, "SELECT id, struct_name, is_active FROM staff_struct ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
-            $structs[] = array('id' => (int)$row['id'], 'label' => $row['struct_name']);
+            $structs[] = array('id' => (int)$row['id'], 'label' => $row['struct_name'], 'is_active' => (int)$row['is_active']);
         }
     }
 
@@ -404,22 +449,42 @@ if ($action === 'updateLibrary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $type  = isset($_POST['type'])  ? $_POST['type']        : '';
-    $id    = isset($_POST['id'])    ? (int)$_POST['id']     : -1;
-    $label = isset($_POST['label']) ? trim($_POST['label'])  : '';
+    $type      = isset($_POST['type'])       ? $_POST['type']            : '';
+    $id        = isset($_POST['id'])         ? (int)$_POST['id']         : -1;
+    $has_label = isset($_POST['label']);
+    $label     = $has_label ? trim($_POST['label']) : '';
+    $has_active = isset($_POST['is_active']);
+    $is_active  = $has_active ? ((int)$_POST['is_active'] === 1 ? 1 : 0) : 0;
 
-    if (!in_array($type, array('grade', 'struct')) || $id < 0 || $label === '') {
+    if (!in_array($type, array('grade', 'struct')) || $id < 0) {
         echo json_encode(array('success' => false, 'message' => 'Invalid input.'));
         exit;
     }
+    if ($has_label && $label === '') {
+        echo json_encode(array('success' => false, 'message' => 'Invalid input.'));
+        exit;
+    }
+    if (!$has_label && !$has_active) {
+        echo json_encode(array('success' => false, 'message' => 'Nothing to update.'));
+        exit;
+    }
 
-    $table         = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
-    $col           = ($type === 'grade') ? 'grade_name'  : 'struct_name';
-    $label_escaped = mysqli_real_escape_string($conn, $label);
+    $table = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
+    $col   = ($type === 'grade') ? 'grade_name'  : 'struct_name';
 
-    $result = mysqli_query($conn, "UPDATE `$table` SET `$col` = '$label_escaped' WHERE id = $id");
+    $set_parts = array();
+    if ($has_label) {
+        $label_escaped = mysqli_real_escape_string($conn, $label);
+        $set_parts[]   = "`$col` = '$label_escaped'";
+    }
+    if ($has_active) {
+        $set_parts[] = "`is_active` = " . $is_active;
+    }
+
+    $result = mysqli_query($conn, "UPDATE `$table` SET " . implode(', ', $set_parts) . " WHERE id = $id");
     if ($result && mysqli_affected_rows($conn) >= 0) {
-        echo json_encode(array('success' => true, 'message' => 'Label updated successfully.'));
+        $message = $has_label ? 'Label updated successfully.' : 'Status updated successfully.';
+        echo json_encode(array('success' => true, 'message' => $message));
     } else {
         echo json_encode(array('success' => false, 'message' => 'Database error: ' . mysqli_error($conn)));
     }

@@ -67,7 +67,19 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
     }
 }
 
-$lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array());
+// Outlet filter (display only for now; not yet wired to ATEM rows) + code
+// lookup used to resolve atem_outlets.outlet_id to a display code below.
+$outlet_list  = array();
+$outlet_names = array();
+$outlet_res = mysqli_query($conn, "SELECT id, code FROM outlet ORDER BY code ASC");
+if ($outlet_res) {
+    while ($orow = mysqli_fetch_assoc($outlet_res)) {
+        $outlet_list[] = array('id' => (int) $orow['id'], 'code' => $orow['code']);
+        $outlet_names[(int) $orow['id']] = $orow['code'];
+    }
+}
+
+$lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array(), 'pillars' => array());
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
@@ -92,7 +104,18 @@ foreach ($rows as $a) {
     $issuer_id = isset($a['issuer_staff_id']) ? (int) $a['issuer_staff_id'] : 0;
     $dept_id   = isset($a['staff_dept_id']) ? (int) $a['staff_dept_id'] : 0;
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
+    $pillar    = isset($a['pillar']) && $a['pillar'] ? $a['pillar'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
+
+    $outlet_codes = array();
+    if (isset($a['outlets']) && is_array($a['outlets'])) {
+        foreach ($a['outlets'] as $o) {
+            $o_id = isset($o['outlet_id']) ? (int) $o['outlet_id'] : 0;
+            if ($o_id) {
+                $outlet_codes[] = isset($outlet_names[$o_id]) ? $outlet_names[$o_id] : ('Outlet #' . $o_id);
+            }
+        }
+    }
 
     $arci_ids        = array();
     $arci_dept_ids   = array();
@@ -128,11 +151,14 @@ foreach ($rows as $a) {
     $view_rows[] = array(
         'id'              => (int) $a['id'],
         'title'           => isset($a['title']) ? $a['title'] : '',
+        'atem_type'       => isset($a['atem_type']) ? (int) $a['atem_type'] : 1,
+        'outlet_codes'    => $outlet_codes,
         'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
         'department_name' => isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : '-',
         'department_id'   => $dept_id,
         'level_label'     => $level ? $level['level'] : '',
         'system_name'     => $level ? $level['system_name'] : '',
+        'pillar_name'     => $pillar ? $pillar['name'] : '',
         'status'          => $status ? $status['value'] : '',
         'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
@@ -221,8 +247,10 @@ $view_config = array(
     'rows'        => $view_rows,
     'levels'      => isset($lookups['levels']) ? $lookups['levels'] : array(),
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
+    'pillars'     => isset($lookups['pillars']) ? $lookups['pillars'] : array(),
     'departments' => $dept_list,
     'issuers'     => $issuer_list,
+    'outlets'     => $outlet_list,
     'staffId'     => (int) $staff_id,
     'isSuperAdmin' => $_is_superadmin,
     'userGrade'   => (int)$atem_permission,
@@ -314,123 +342,323 @@ $view_config = array(
 .vf-s2-list li.active { background: #0d6efd; color: #fff; }
 .vf-s2-list li.hidden { display: none; }
 .vf-s2-empty { padding: 8px 10px; font-size: 12px; color: #6c757d; font-family: 'Inter', sans-serif; }
+
+.atem-view-tabs {
+    border-bottom: 1px solid #e9ecef;
+    gap: 28px;
+}
+.atem-view-tabs .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 2px 12px;
+    margin-bottom: -1px;
+    border: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+    background: none;
+    color: #6c757d;
+    font-size: 13px;
+    font-weight: 500;
+    transition: color .15s ease, border-color .15s ease;
+}
+.atem-view-tabs .nav-link:hover {
+    color: #495057;
+    border-color: transparent;
+    isolation: auto;
+}
+.atem-view-tabs .nav-link.active {
+    background: none;
+}
+.atem-view-tabs .nav-link.atem-tab-color-hq.active {
+    color: #fd7e14;
+    border-color: #fd7e14;
+}
+.atem-view-tabs .nav-link.atem-tab-color-outlet.active {
+    color: #0A5AA8;
+    border-color: #0A5AA8;
+}
+.atem-view-tabs .nav-link i {
+    font-size: 15px;
+}
+.atem-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #f1f3f5;
+    color: #6c757d;
+}
+.atem-view-tabs .nav-link.atem-tab-color-hq.active .atem-tab-count {
+    background: #fff1e6;
+    color: #fd7e14;
+}
+.atem-view-tabs .nav-link.atem-tab-color-outlet.active .atem-tab-count {
+    background: #e6eef7;
+    color: #0A5AA8;
+}
 </style>
-
-<!-- Filter bar -->
-<div class="atem-card atem-filter mb-3">
-    <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
-
-    <!-- Row 1: Year | Month | Start Date | End Date | Status -->
-    <div class="row row-cols-md-5 row-cols-2 g-2 mt-1">
-        <div class="col">
-            <label class="form-label">Year</label>
-            <select class="form-select form-select-sm" id="vf-year">
-                <option value="">All Year</option>
-                <?php foreach ($view_year_opts as $y): ?>
-                <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Month</label>
-            <select class="form-select form-select-sm" id="vf-month">
-                <option value="0">All Month</option>
-                <option value="1">January</option>
-                <option value="2">February</option>
-                <option value="3">March</option>
-                <option value="4">April</option>
-                <option value="5">May</option>
-                <option value="6">June</option>
-                <option value="7">July</option>
-                <option value="8">August</option>
-                <option value="9">September</option>
-                <option value="10">October</option>
-                <option value="11">November</option>
-                <option value="12">December</option>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Start Date</label>
-            <input type="date" class="form-control form-control-sm" id="vf-from">
-        </div>
-        <div class="col">
-            <label class="form-label">End Date</label>
-            <input type="date" class="form-control form-control-sm" id="vf-to">
-        </div>
-        <div class="col">
-            <label class="form-label">Status</label>
-            <select class="form-select form-select-sm" id="vf-status">
-                <option value="">All statuses</option>
-            </select>
-        </div>
-    </div>
-
-    <!-- Row 2: Issuer | Department | Level | Role | Search -->
-    <div class="row row-cols-md-5 row-cols-2 g-2 mt-0">
-        <div class="col">
-            <label class="form-label">Issuer</label>
-            <div class="vf-issuer-wrap" id="vf-issuer-wrap">
-                <div class="vf-s2-selection" id="vf-issuer-btn" tabindex="0">All issuers</div>
-                <div class="vf-s2-dropdown" id="vf-issuer-dropdown">
-                    <div class="vf-s2-search-wrap">
-                        <input class="vf-s2-search" id="vf-issuer-search" type="search" placeholder="Search name...">
-                    </div>
-                    <ul class="vf-s2-list" id="vf-issuer-list"></ul>
-                </div>
-                <input type="hidden" id="vf-issuer-value" value="0">
-            </div>
-        </div>
-        <div class="col">
-            <label class="form-label">Department</label>
-            <select class="form-select form-select-sm" id="vf-dept">
-                <option value="">All departments</option>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Level</label>
-            <select class="form-select form-select-sm" id="vf-level">
-                <option value="">All levels</option>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Your Role with ARCI</label>
-            <select class="form-select form-select-sm" id="vf-role">
-                <option value="">All roles</option>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Search title or ID</label>
-            <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type title or ATEM ID...">
-        </div>
-    </div>
-
-    <div class="d-flex justify-content-end mt-2">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="vf-reset">Reset Filters</button>
-    </div>
-</div>
 
 <!-- Table -->
 <div class="atem-card">
-    <div class="table-responsive">
-        <table class="table table-hover align-middle atem-view-tbl" id="atem-view-tbl">
-            <thead>
-                <tr>
-                    <th class="atem-sortable" data-col="id">ATEM ID</th>
-                    <th class="atem-sortable" data-col="title">Title</th>
-                    <th class="atem-sortable" data-col="issuer_name">Issuer</th>
-                    <th>Accountable</th>
-                    <th>ARCI</th>
-                    <th class="atem-sortable" data-col="level_label">Level Structure</th>
-                    <th class="atem-sortable" data-col="start_date">Start</th>
-                    <th class="atem-sortable" data-col="end_date">End</th>
-                    <th class="atem-sortable" data-col="status">Status</th>
-                    <th style="width:110px;">Action</th>
-                </tr>
-            </thead>
-            <tbody id="atem-view-body"></tbody>
-        </table>
+    <ul class="nav nav-tabs atem-view-tabs" id="atem-view-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active atem-tab-color-hq" id="atem-tab-hq-btn" data-bs-toggle="tab" data-bs-target="#atem-tab-hq"
+                type="button" role="tab" aria-controls="atem-tab-hq" aria-selected="true">
+                <i class="bi bi-building"></i> HQ ATEM <span class="atem-tab-count" id="atem-tab-hq-count">0</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link atem-tab-color-outlet" id="atem-tab-outlet-btn" data-bs-toggle="tab" data-bs-target="#atem-tab-outlet"
+                type="button" role="tab" aria-controls="atem-tab-outlet" aria-selected="false">
+                <i class="bi bi-shop"></i> Outlet ATEM <span class="atem-tab-count" id="atem-tab-outlet-count">0</span>
+            </button>
+        </li>
+    </ul>
+    <div class="tab-content pt-3">
+        <div class="tab-pane fade show active" id="atem-tab-hq" role="tabpanel" aria-labelledby="atem-tab-hq-btn">
+
+            <!-- HQ Filter bar -->
+            <div class="atem-card atem-filter mb-3">
+                <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
+
+                <!-- Row 1: Year | Month | Start Date | End Date | Status -->
+                <div class="row row-cols-md-5 row-cols-2 g-2 mt-1">
+                    <div class="col">
+                        <label class="form-label">Year</label>
+                        <select class="form-select form-select-sm" id="vf-year">
+                            <option value="">All Year</option>
+                            <?php foreach ($view_year_opts as $y): ?>
+                            <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Month</label>
+                        <select class="form-select form-select-sm" id="vf-month">
+                            <option value="0">All Month</option>
+                            <option value="1">January</option>
+                            <option value="2">February</option>
+                            <option value="3">March</option>
+                            <option value="4">April</option>
+                            <option value="5">May</option>
+                            <option value="6">June</option>
+                            <option value="7">July</option>
+                            <option value="8">August</option>
+                            <option value="9">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" class="form-control form-control-sm" id="vf-from">
+                    </div>
+                    <div class="col">
+                        <label class="form-label">End Date</label>
+                        <input type="date" class="form-control form-control-sm" id="vf-to">
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Status</label>
+                        <select class="form-select form-select-sm" id="vf-status">
+                            <option value="">All statuses</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Row 2: Issuer | Department | Level | Role | Search -->
+                <div class="row row-cols-md-5 row-cols-2 g-2 mt-0">
+                    <div class="col">
+                        <label class="form-label">Issuer</label>
+                        <div class="vf-issuer-wrap" id="vf-issuer-wrap">
+                            <div class="vf-s2-selection" id="vf-issuer-btn" tabindex="0">All issuers</div>
+                            <div class="vf-s2-dropdown" id="vf-issuer-dropdown">
+                                <div class="vf-s2-search-wrap">
+                                    <input class="vf-s2-search" id="vf-issuer-search" type="search" placeholder="Search name...">
+                                </div>
+                                <ul class="vf-s2-list" id="vf-issuer-list"></ul>
+                            </div>
+                            <input type="hidden" id="vf-issuer-value" value="0">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Department</label>
+                        <select class="form-select form-select-sm" id="vf-dept">
+                            <option value="">All departments</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Level</label>
+                        <select class="form-select form-select-sm" id="vf-level">
+                            <option value="">All levels</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Your Role with ARCI</label>
+                        <select class="form-select form-select-sm" id="vf-role">
+                            <option value="">All roles</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Search title or ID</label>
+                        <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type title or ATEM ID...">
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end mt-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="vf-reset">Reset Filters</button>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle atem-view-tbl" id="atem-view-tbl-hq">
+                    <thead>
+                        <tr>
+                            <th class="atem-sortable" data-col="id">ATEM ID</th>
+                            <th class="atem-sortable" data-col="title">Title</th>
+                            <th class="atem-sortable" data-col="issuer_name">Issuer</th>
+                            <th>Accountable</th>
+                            <th>ARCI</th>
+                            <th class="atem-sortable" data-col="level_label">Level Structure</th>
+                            <th class="atem-sortable" data-col="start_date">Start</th>
+                            <th class="atem-sortable" data-col="end_date">End</th>
+                            <th class="atem-sortable" data-col="status">Status</th>
+                            <th style="width:110px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="atem-view-body-hq"></tbody>
+                </table>
+            </div>
+            <div class="atem-pager" id="atem-pager-hq"></div>
+        </div>
+        <div class="tab-pane fade" id="atem-tab-outlet" role="tabpanel" aria-labelledby="atem-tab-outlet-btn">
+
+            <!-- Outlet Filter bar -->
+            <div class="atem-card atem-filter mb-3">
+                <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
+
+                <!-- Row 1: Year | Month | Start Date | End Date | Status -->
+                <div class="row row-cols-md-5 row-cols-2 g-2 mt-1">
+                    <div class="col">
+                        <label class="form-label">Year</label>
+                        <select class="form-select form-select-sm" id="vfo-year">
+                            <option value="">All Year</option>
+                            <?php foreach ($view_year_opts as $y): ?>
+                            <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Month</label>
+                        <select class="form-select form-select-sm" id="vfo-month">
+                            <option value="0">All Month</option>
+                            <option value="1">January</option>
+                            <option value="2">February</option>
+                            <option value="3">March</option>
+                            <option value="4">April</option>
+                            <option value="5">May</option>
+                            <option value="6">June</option>
+                            <option value="7">July</option>
+                            <option value="8">August</option>
+                            <option value="9">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" class="form-control form-control-sm" id="vfo-from">
+                    </div>
+                    <div class="col">
+                        <label class="form-label">End Date</label>
+                        <input type="date" class="form-control form-control-sm" id="vfo-to">
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Status</label>
+                        <select class="form-select form-select-sm" id="vfo-status">
+                            <option value="">All statuses</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Row 2: Issuer | Outlet | Pillar | Role | Search -->
+                <div class="row row-cols-md-5 row-cols-2 g-2 mt-0">
+                    <div class="col">
+                        <label class="form-label">Issuer</label>
+                        <div class="vf-issuer-wrap" id="vfo-issuer-wrap">
+                            <div class="vf-s2-selection" id="vfo-issuer-btn" tabindex="0">All issuers</div>
+                            <div class="vf-s2-dropdown" id="vfo-issuer-dropdown">
+                                <div class="vf-s2-search-wrap">
+                                    <input class="vf-s2-search" id="vfo-issuer-search" type="search" placeholder="Search name...">
+                                </div>
+                                <ul class="vf-s2-list" id="vfo-issuer-list"></ul>
+                            </div>
+                            <input type="hidden" id="vfo-issuer-value" value="0">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Outlet</label>
+                        <div class="vf-issuer-wrap" id="vfo-outlet-wrap">
+                            <div class="vf-s2-selection" id="vfo-outlet-btn" tabindex="0">All outlets</div>
+                            <div class="vf-s2-dropdown" id="vfo-outlet-dropdown">
+                                <div class="vf-s2-search-wrap">
+                                    <input class="vf-s2-search" id="vfo-outlet-search" type="search" placeholder="Search outlet...">
+                                </div>
+                                <ul class="vf-s2-list" id="vfo-outlet-list"></ul>
+                            </div>
+                            <input type="hidden" id="vfo-outlet-value" value="0">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Pillar</label>
+                        <select class="form-select form-select-sm" id="vfo-pillar">
+                            <option value="">All pillars</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Your Role with ARCI</label>
+                        <select class="form-select form-select-sm" id="vfo-role">
+                            <option value="">All roles</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Search title or ID</label>
+                        <input type="text" class="form-control form-control-sm" id="vfo-search" placeholder="Type title or ATEM ID...">
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end mt-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="vfo-reset">Reset Filters</button>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle atem-view-tbl" id="atem-view-tbl-outlet">
+                    <thead>
+                        <tr>
+                            <th class="atem-sortable" data-col="id">ATEM ID</th>
+                            <th class="atem-sortable" data-col="title">Title</th>
+                            <th class="atem-sortable" data-col="issuer_name">Issuer</th>
+                            <th>Accountable</th>
+                            <th class="atem-sortable" data-col="pillar_name">Pillars</th>
+                            <th class="atem-sortable" data-col="start_date">Start Date</th>
+                            <th class="atem-sortable" data-col="end_date">End Date</th>
+                            <th class="atem-sortable" data-col="status">Status</th>
+                            <th style="width:110px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="atem-view-body-outlet"></tbody>
+                </table>
+            </div>
+            <div class="atem-pager" id="atem-pager-outlet"></div>
+        </div>
     </div>
-    <div class="atem-pager" id="atem-pager"></div>
 </div>
 
 <!-- Delete confirmation modal -->

@@ -298,6 +298,59 @@ button {
   grid-column: span 12;
 }
 
+.atem-hidden {
+  display: none !important;
+}
+
+/* Staff Type selector (create.php) */
+.atem-staff-type-options {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.atem-staff-type-btn {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 0.2rem 0.5rem;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #495057;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.atem-staff-type-btn .bi {
+  font-size: 12px;
+}
+
+/* Legacy common/css/page.css sets span { font-size: 15px; font-family: Arial },
+   which overrides the label span's size/family independent of the button's own
+   font-size. Pin it back to match the surrounding form labels. */
+.atem-staff-type-label {
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+}
+
+.atem-staff-type-btn:hover {
+  border-color: #86b7fe;
+}
+
+.atem-staff-type-btn.active {
+  background-color: #e7f1ff;
+  border-color: #0d6efd;
+  color: #0d6efd;
+}
+
 .atem-req {
   color: #dc3545;
   /* The legacy common/css/page.css sets span { font-size: 15px }, which inflates
@@ -1168,6 +1221,124 @@ button {
 /* Extension fields helper */
 .atem-ext-field {
   transition: opacity 0.15s ease;
+}
+
+/* Outlet tagging picker (create.php outlet-staff flow) */
+.atem-outlet-picker {
+  position: relative;
+}
+
+.atem-outlet-picker-btn {
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  height: 38px;
+  padding: 0.375rem 0.75rem;
+  font-size: 14px;
+  color: #495057;
+  background-color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.atem-outlet-picker-btn:hover,
+.atem-outlet-picker-btn:focus {
+  border-color: #86b7fe;
+  outline: none;
+}
+
+.atem-outlet-picker-dropdown {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background-color: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.atem-outlet-picker-dropdown.open {
+  display: block;
+}
+
+.atem-outlet-picker-search-wrap {
+  padding: 6px 6px 4px;
+}
+
+.atem-outlet-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 13px;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.atem-outlet-picker-search:focus {
+  border-color: #86b7fe;
+}
+
+.atem-outlet-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.atem-outlet-picker-list li {
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.atem-outlet-picker-list li:hover {
+  background-color: #f8f9fa;
+}
+
+.atem-outlet-picker-list li.selected {
+  background-color: #e7f1ff;
+  color: #0d6efd;
+}
+
+.atem-outlet-picker-list li.hidden {
+  display: none;
+}
+
+.atem-outlet-picker-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.atem-outlet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.atem-outlet-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #495057;
+}
+
+.atem-outlet-tag-remove {
+  color: #dc3545;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
 }
 
 /* Incentive approval radio group in Timeline card */

@@ -35,6 +35,8 @@
     var reflinks = [];
     var attachments = [];
     var progressUpdates = [];
+    var outletTags = []; // [{ id, code }] - derived from areaManagerTags, read-only
+    var areaManagerTags = []; // [{ id, name, position, outlet_ids }] - outlet-type ATEMs only
     var _inlineSaveTimer = null;
     var _lastCalcIncentive = 'RM0.00';
 
@@ -177,6 +179,7 @@
         }, 'Select level');
         fillSelect($('atem-rule'), CFG.rules || [], 'id', function (r) { return r.code + ' - ' + r.system_label; }, 'Select rule');
         fillSelect($('tl-status'), CFG.statuses || [], 'id', function (s) { return s.value; }, 'Select status');
+        fillSelect($('atem-pillars'), CFG.pillars || [], 'id', function (p) { return p.name; }, 'Select pillar');
     }
 
     function selectedLevel() {
@@ -428,6 +431,249 @@
         }
     }
 
+    function syncRewardDecision() {
+        var wrap = $('tl-reward-decision-wrap');
+        if (!wrap) { return; }
+        var statusEl = $('tl-status');
+        var selVal = '';
+        if (statusEl) {
+            (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(statusEl.value)) { selVal = s.value; } });
+        }
+        var atemType = (REC && REC.atem_type) ? parseInt(REC.atem_type, 10) : 1;
+        var show = (atemType === 1) && TERMINAL_STATUSES.indexOf(selVal) >= 0;
+        wrap.style.display = show ? '' : 'none';
+    }
+
+    // HQ cards show Complexity Level / Incentive Rule and the Estimated
+    // Incentive breakdown. Outlet cards show 5 Pillars / Reward Mechanism
+    // (lookups left empty for now) and a simple Estimated Reward total. The
+    // type is fixed at creation, so this is a one-time toggle from REC, not a
+    // live user choice like on create.php.
+    function applyAtemTypeView() {
+        var isHq = (parseInt(REC.atem_type, 10) || 1) === 1;
+        var hqOnly = document.querySelectorAll('.atem-hq-only');
+        var outletOnly = document.querySelectorAll('.atem-outlet-only');
+        for (var i = 0; i < hqOnly.length; i++) { hqOnly[i].classList.toggle('atem-hidden', !isHq); }
+        for (var j = 0; j < outletOnly.length; j++) { outletOnly[j].classList.toggle('atem-hidden', isHq); }
+
+        var incentiveSection = $('atem-incentive-section');
+        var rewardSection = $('atem-reward-section');
+        if (incentiveSection) { incentiveSection.classList.toggle('atem-hidden', !isHq); }
+        if (rewardSection) { rewardSection.classList.toggle('atem-hidden', isHq); }
+    }
+
+    // Outlet flow: the "Total Reward" card mirrors the selected Reward Amount
+    // (the upside scenario). The actual signed final_amount is decided
+    // server-side once the card reaches a closing status.
+    var DEDUCT_REWARD_STATUSES = ['Extended', 'Completed with Extension', 'Failed'];
+
+    function recalcReward() {
+        var rewardEl = $('atem-reward-amount');
+        var totalEl = $('reward-total');
+        if (!rewardEl || !totalEl) { return; }
+
+        var statusEl = $('tl-status');
+        var statusVal = '';
+        if (statusEl) {
+            (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(statusEl.value)) { statusVal = s.value; } });
+        }
+
+        if (DEDUCT_REWARD_STATUSES.indexOf(statusVal) >= 0) {
+            var deductionEl = $('atem-deduction-amount');
+            var deductionVal = deductionEl ? Number(deductionEl.value || 0) : 0;
+            totalEl.textContent = '-' + money(deductionVal);
+        } else {
+            totalEl.textContent = money(rewardEl.value ? Number(rewardEl.value) : 0);
+        }
+    }
+
+    // --------------------------------------------------- area manager tagging
+    function renderAreaManagerTags() {
+        var wrap = $('atem-am-tags');
+        if (!wrap) { return; }
+        if (!areaManagerTags.length) {
+            wrap.innerHTML = '<span class="atem-empty-state">No area manager tagged.</span>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < areaManagerTags.length; i++) {
+            var label = areaManagerTags[i].name + ' (' + areaManagerTags[i].position + ')';
+            html += '<span class="atem-outlet-tag">' + escapeHtml(label)
+                + (READ ? '' : '<span class="atem-outlet-tag-remove" data-id="' + areaManagerTags[i].id + '">&times;</span>')
+                + '</span>';
+        }
+        wrap.innerHTML = html;
+    }
+
+    function syncAreaManagerPickerSelection() {
+        var listEl = $('atem-am-picker-list');
+        if (!listEl) { return; }
+        var items = listEl.querySelectorAll('li');
+        for (var i = 0; i < items.length; i++) {
+            var id = parseInt(items[i].getAttribute('data-id'), 10) || 0;
+            items[i].classList.toggle('selected', areaManagerTags.some(function (m) { return m.id === id; }));
+        }
+    }
+
+    function addAreaManagerTag(id) {
+        if (areaManagerTags.some(function (m) { return m.id === id; })) { return; }
+        var am = (CFG.areaManagers || []).filter(function (a) { return a.id === id; })[0];
+        if (!am) { return; }
+        areaManagerTags.push({ id: am.id, name: am.name, position: am.position, outlet_ids: am.outlet_ids });
+        renderAreaManagerTags();
+        syncAreaManagerPickerSelection();
+        recomputeDerivedOutlets();
+        autoAddAreaManagerToArci(am);
+        if (!READ) { saveInline(); }
+    }
+
+    // Area Managers are automatically tagged as Accountable (A) in the
+    // Project Team, since they own the outlet(s) in scope. Both
+    // staff_dept_id and outlet_id are left null - they aren't scoped to a
+    // single outlet/department like other members. Skipped if the staff is
+    // already assigned to any ARCI role (atem_arci is unique per staff per
+    // card).
+    function autoAddAreaManagerToArci(am) {
+        if (READ) { return; }
+        if (assignedStaffIds().indexOf(am.id) >= 0) { return; }
+        apiCall('arci-add', { id: CFG.atemId, data: { staff_id: am.id, staff_dept_id: null, outlet_id: null, role: 'A' } }).then(function (res) {
+            if (res && res.success) {
+                setArciState(res.data);
+            } else {
+                setError('arci-error', res && res.message ? res.message : 'Failed to auto-add Area Manager to Accountable.');
+            }
+        }).catch(function () {
+            setError('arci-error', 'Network error while adding Area Manager to Accountable.');
+        });
+    }
+
+    function removeAreaManagerTag(id) {
+        areaManagerTags = areaManagerTags.filter(function (m) { return m.id !== id; });
+        renderAreaManagerTags();
+        syncAreaManagerPickerSelection();
+        recomputeDerivedOutlets();
+        if (!READ) { saveInline(); }
+    }
+
+    function buildAreaManagerPicker() {
+        var listEl   = $('atem-am-picker-list');
+        var searchEl = $('atem-am-picker-search');
+        var btnEl    = $('atem-am-picker-btn');
+        var dropEl   = $('atem-am-picker-dropdown');
+        var wrapEl   = $('atem-am-picker-wrap');
+        if (!listEl || !btnEl || !dropEl) { return; }
+
+        var managers = CFG.areaManagers || [];
+        var html = '';
+        for (var i = 0; i < managers.length; i++) {
+            var label = managers[i].name + ' (' + managers[i].position + ')';
+            html += '<li data-id="' + managers[i].id + '">' + escapeHtml(label) + '</li>';
+        }
+        listEl.innerHTML = html || '<div class="atem-outlet-picker-empty">No area managers available</div>';
+        syncAreaManagerPickerSelection();
+
+        function openDropdown() {
+            dropEl.classList.add('open');
+            if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
+        }
+        function closeDropdown() { dropEl.classList.remove('open'); }
+
+        function filterList(term) {
+            var items = listEl.querySelectorAll('li');
+            var lower = term.toLowerCase();
+            for (var j = 0; j < items.length; j++) {
+                var text = items[j].textContent || '';
+                items[j].classList.toggle('hidden', !(!lower || text.toLowerCase().indexOf(lower) >= 0));
+            }
+        }
+
+        btnEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
+        });
+        if (searchEl) {
+            searchEl.addEventListener('input', function () { filterList(this.value); });
+            searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
+        listEl.addEventListener('click', function (e) {
+            var li = e.target.closest ? e.target.closest('li') : null;
+            if (!li) { return; }
+            addAreaManagerTag(parseInt(li.getAttribute('data-id'), 10) || 0);
+        });
+        document.addEventListener('click', function (e) {
+            if (wrapEl && !wrapEl.contains(e.target)) { closeDropdown(); }
+        });
+
+        var tagsWrap = $('atem-am-tags');
+        if (tagsWrap) {
+            tagsWrap.addEventListener('click', function (e) {
+                if (e.target.classList.contains('atem-outlet-tag-remove')) {
+                    removeAreaManagerTag(parseInt(e.target.getAttribute('data-id'), 10) || 0);
+                }
+            });
+        }
+    }
+
+    // Unions outlet_ids across all selected Area Managers, keeps the derived
+    // outlet id/code set used by the outlet-mode ARCI "Outlet" select/staff
+    // list, and warns (inline banner, never a
+    // native dialog) if any existing ARCI member now references an outlet
+    // that dropped out of the derived set.
+    function recomputeDerivedOutlets() {
+        var outletsById = {};
+        (CFG.outlets || []).forEach(function (o) { outletsById[o.id] = o.code; });
+
+        var seen = {};
+        var unionIds = [];
+        areaManagerTags.forEach(function (m) {
+            (m.outlet_ids || []).forEach(function (oid) {
+                if (!seen[oid]) { seen[oid] = true; unionIds.push(oid); }
+            });
+        });
+
+        outletTags = unionIds
+            .filter(function (id) { return outletsById.hasOwnProperty(id); })
+            .map(function (id) { return { id: id, code: outletsById[id] }; });
+
+        populateDepartments();
+        renderStaffList();
+        checkArciOutletOrphans();
+    }
+
+    // Compares each currently-tagged ARCI member's outlet_id against the
+    // current derived outlet set. Members referencing an outlet no longer in
+    // scope are NOT removed - just flagged via the inline warning banner so
+    // the issuer can recheck them. Department-scoped members (HQ staff
+    // tagged C/I on an Outlet ATEM) have no outlet_id and are never flagged.
+    function checkArciOutletOrphans() {
+        var warnEl = $('atem-arci-orphan-warning');
+        var textEl = $('atem-arci-orphan-warning-text');
+        if (!warnEl || !textEl) { return; }
+        var isOutletCard = (parseInt(REC.atem_type, 10) || 1) === 2;
+        if (!isOutletCard) { warnEl.classList.add('atem-hidden'); return; }
+
+        var validOutletIds = {};
+        outletTags.forEach(function (o) { validOutletIds[o.id] = true; });
+
+        var orphanNames = [];
+        ['A', 'R', 'C', 'I'].forEach(function (role) {
+            (arciState[role] || []).forEach(function (m) {
+                var oid = parseInt(m.outlet_id, 10) || 0;
+                if (oid && !validOutletIds[oid]) { orphanNames.push(m.staff_name); }
+            });
+        });
+
+        if (orphanNames.length) {
+            textEl.textContent = 'The following Project Team member(s) are tagged to an outlet no longer covered by the selected Area Manager(s) - please recheck: ' + orphanNames.join(', ');
+            warnEl.classList.remove('atem-hidden');
+        } else {
+            warnEl.classList.add('atem-hidden');
+        }
+    }
+
     // ------------------------------------------------------------------- ARCI
     function assignedStaffIds() {
         var ids = [];
@@ -451,10 +697,35 @@
         for (var i = 0; i < d.length; i++) { if (String(d[i].id) === String(deptId)) { return d[i].name; } }
         return '';
     }
+    function outletCodeForArci(outletId) {
+        var o = CFG.outlets || [];
+        for (var i = 0; i < o.length; i++) { if (String(o[i].id) === String(outletId)) { return o[i].code; } }
+        return '';
+    }
     function staffNameIn(deptId, staffId) {
         var list = (CFG.staffByDept && CFG.staffByDept[deptId]) ? CFG.staffByDept[deptId] : [];
         for (var i = 0; i < list.length; i++) { if (parseInt(list[i].id, 10) === parseInt(staffId, 10)) { return list[i].name; } }
         return '';
+    }
+    function staffNameInOutlet(outletId, staffId) {
+        var list = (CFG.staffByOutlet && CFG.staffByOutlet[outletId]) ? CFG.staffByOutlet[outletId] : [];
+        for (var i = 0; i < list.length; i++) { if (parseInt(list[i].id, 10) === parseInt(staffId, 10)) { return list[i].name; } }
+        return '';
+    }
+    // Resolves display name/scope-label for a freshly-added ARCI member on an
+    // Outlet ATEM (the arci-add response has no resolved names). A member can
+    // be outlet-scoped, department-scoped (HQ staff on C/I), or neither (an
+    // auto-added Area Manager, who spans every outlet on the card).
+    function resolveOutletArciDisplay(mem) {
+        if (mem.outlet_id) {
+            return { name: staffNameInOutlet(mem.outlet_id, mem.staff_id), dept: outletCodeForArci(mem.outlet_id) };
+        }
+        if (mem.staff_dept_id) {
+            return { name: staffNameIn(mem.staff_dept_id, mem.staff_id), dept: deptName(mem.staff_dept_id) };
+        }
+        var am = (CFG.areaManagers || []).filter(function (a) { return parseInt(a.id, 10) === parseInt(mem.staff_id, 10); })[0];
+        if (am) { return { name: am.name + ' (' + am.position + ')', dept: 'All Outlets' }; }
+        return { name: '', dept: '' };
     }
     function renderArci() {
         var cols = document.querySelectorAll('.atem-arci-members');
@@ -465,14 +736,19 @@
             var html = '';
             for (var m = 0; m < members.length; m++) {
                 var mem = members[m];
-                var nm = mem.staff_name || staffNameIn(mem.staff_dept_id, mem.staff_id) || ('Staff #' + mem.staff_id);
-                var dn = mem.department_name || deptName(mem.staff_dept_id);
+                var _isOutletMem = (parseInt(REC.atem_type, 10) || 1) === 2;
+                var _resolved = _isOutletMem
+                    ? resolveOutletArciDisplay(mem)
+                    : { name: staffNameIn(mem.staff_dept_id, mem.staff_id), dept: deptName(mem.staff_dept_id) };
+                var nm = mem.staff_name || _resolved.name || ('Staff #' + mem.staff_id);
+                var dn = mem.department_name || _resolved.dept;
                 var incentivisedHtml = '';
                 var _arciRule = selectedRule();
                 var _arciLimits = getRuleLimits(_arciRule);
                 var _lvl = selectedLevel();
                 var _isLevel1 = _lvl && Number(_lvl.incentive_value) === 0;
-                var showChk = !_isLevel1 && ((role === 'A') || (role === 'R' && _arciLimits.maxR > 0));
+                var isOutletCard = (parseInt(REC.atem_type, 10) || 1) === 2;
+                var showChk = !_isLevel1 && !isOutletCard && ((role === 'A') || (role === 'R' && _arciLimits.maxR > 0));
                 if (showChk) {
                     if (READ) {
                         if (mem.is_incentivised) {
@@ -502,8 +778,37 @@
         if (!READ) { renderStaffList(); }
         recalcIncentive();
     }
+    // On Outlet-type cards, a radio toggle (#arci-scope-outlet /
+    // #arci-scope-department) lets the issuer add either outlet-scoped staff
+    // or HQ department staff (e.g. for a C/I role) to the Project Team.
+    // arciScope is only meaningful when the card is Outlet-type; HQ-type
+    // cards always use department scope.
+    var arciScope = 'outlet';
+
+    function currentArciScope() {
+        var isOutletCard = (parseInt(REC.atem_type, 10) || 1) === 2;
+        return isOutletCard ? arciScope : 'department';
+    }
+
     function populateDepartments() {
         var sel = $('arci-dept-select'); if (!sel) { return; }
+        var labelEl = $('arci-dept-label');
+        var searchEl = $('arci-dept-search');
+        var scopeToggle = $('arci-scope-toggle');
+        var isOutletCard = (parseInt(REC.atem_type, 10) || 1) === 2;
+        if (scopeToggle) { scopeToggle.classList.toggle('atem-hidden', !isOutletCard); }
+        if (labelEl) { labelEl.textContent = isOutletCard ? 'Scope' : 'Department'; }
+
+        if (isOutletCard && currentArciScope() === 'outlet') {
+            if (searchEl) { searchEl.placeholder = 'Search outlet...'; }
+            sel.innerHTML = '<option value="">Select outlet</option>';
+            for (var j = 0; j < outletTags.length; j++) {
+                var oo = document.createElement('option'); oo.value = outletTags[j].id; oo.textContent = outletTags[j].code; sel.appendChild(oo);
+            }
+            return;
+        }
+
+        if (searchEl) { searchEl.placeholder = 'Search department...'; }
         var depts = CFG.departments || [];
         sel.innerHTML = '<option value="">Select department</option>';
         for (var i = 0; i < depts.length; i++) {
@@ -517,13 +822,17 @@
     function renderStaffList() {
         var listDiv = $('arci-staff-list'); if (!listDiv) { return; }
         var deptId = $('arci-dept-select').value;
-        if (!deptId) { listDiv.innerHTML = '<div class="text-muted" style="font-size:13px;">Select a department to load staff</div>'; return; }
-        var staff = (CFG.staffByDept && CFG.staffByDept[deptId]) ? CFG.staffByDept[deptId] : [];
+        var isOutletScope = (currentArciScope() === 'outlet');
+        if (!deptId) { listDiv.innerHTML = '<div class="text-muted" style="font-size:13px;">Select ' + (isOutletScope ? 'an outlet' : 'a department') + ' to load staff</div>'; return; }
+        var staff = isOutletScope
+            ? ((CFG.staffByOutlet && CFG.staffByOutlet[deptId]) ? CFG.staffByOutlet[deptId] : [])
+            : ((CFG.staffByDept && CFG.staffByDept[deptId]) ? CFG.staffByDept[deptId] : []);
         var assigned = assignedStaffIds(), term = $('arci-staff-search').value.toLowerCase(), html = '';
         for (var i = 0; i < staff.length; i++) {
             if (assigned.indexOf(parseInt(staff[i].id, 10)) >= 0) { continue; }
             if (term && staff[i].name.toLowerCase().indexOf(term) < 0) { continue; }
-            html += '<label class="atem-arci-staff-item"><input type="checkbox" value="' + parseInt(staff[i].id, 10) + '" data-name="' + escapeHtml(staff[i].name) + '"> <span>' + escapeHtml(staff[i].name) + '</span></label>';
+            var displayName = (isOutletScope && staff[i].position) ? (staff[i].name + ' (' + staff[i].position + ')') : staff[i].name;
+            html += '<label class="atem-arci-staff-item"><input type="checkbox" value="' + parseInt(staff[i].id, 10) + '" data-name="' + escapeHtml(displayName) + '"> <span>' + escapeHtml(displayName) + '</span></label>';
         }
         listDiv.innerHTML = html || '<div class="text-muted" style="font-size:13px;">No staff available</div>';
     }
@@ -531,15 +840,22 @@
         setError('arci-error', '');
         var role = $('arci-role').value;
         if (!role) { setError('arci-error', 'Please select a role first.'); return; }
-        var deptId = $('arci-dept-select').value;
+        var scopeId = $('arci-dept-select').value;
         var checks = $('arci-staff-list').querySelectorAll('input[type="checkbox"]:checked');
         if (checks.length === 0) { setError('arci-error', 'Please select at least one staff member.'); return; }
+        var isOutletScope = (currentArciScope() === 'outlet');
         var queue = [];
         for (var i = 0; i < checks.length; i++) { queue.push(parseInt(checks[i].value, 10)); }
         function next() {
             if (queue.length === 0) { $('arci-role').value = ''; $('arci-dept-select').value = ''; $('arci-staff-search').value = ''; renderStaffList(); return; }
             var sid = queue.shift();
-            apiCall('arci-add', { id: CFG.atemId, data: { staff_id: sid, staff_dept_id: deptId ? parseInt(deptId, 10) : null, role: role } }).then(function (res) {
+            var payload = {
+                staff_id: sid,
+                staff_dept_id: (!isOutletScope && scopeId) ? parseInt(scopeId, 10) : null,
+                outlet_id: (isOutletScope && scopeId) ? parseInt(scopeId, 10) : null,
+                role: role
+            };
+            apiCall('arci-add', { id: CFG.atemId, data: payload }).then(function (res) {
                 if (res && res.success) { setArciState(res.data); saveInline(); } else { setError('arci-error', res && res.message ? res.message : 'Failed to add member.'); }
                 next();
             }).catch(function () { setError('arci-error', 'Network error while adding member.'); next(); });
@@ -939,9 +1255,15 @@
     function validateFinal() {
         setError('atem-title-error', ''); setError('atem-level-error', ''); setError('atem-rule-error', '');
         setError('tl-start-error', ''); setError('tl-end-error', ''); setError('tl-status-error', '');
-        setError('reflink-section-error', ''); setError('atem-save-error', '');
+        setError('reflink-section-error', ''); setError('atem-save-error', ''); setError('tl-reward-decision-error', '');
+        setError('atem-am-error', ''); setError('atem-reward-amount-error', ''); setError('atem-deduction-amount-error', '');
+        var isOutletType = (parseInt(REC.atem_type, 10) || 1) === 2;
         if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return false; }
-        if (!$('atem-level').value) { setError('atem-level-error', 'ATEM Complexity Levelis required.'); return false; }
+        if (isOutletType) {
+            if (!areaManagerTags.length) { setError('atem-am-error', 'At least one Area Manager is required.'); return false; }
+        } else if (!$('atem-level').value) {
+            setError('atem-level-error', 'ATEM Complexity Levelis required.'); return false;
+        }
         if (!$('tl-start').value) { setError('tl-start-error', 'Start Date is required.'); return false; }
         if (!$('tl-end').value) { setError('tl-end-error', 'End Date is required.'); return false; }
         if (!$('tl-status').value) {
@@ -965,7 +1287,7 @@
             return false;
         }
         var level = selectedLevel();
-        if (level && Number(level.incentive_value) > 0 && !$('atem-rule').value) {
+        if (!isOutletType && level && Number(level.incentive_value) > 0 && !$('atem-rule').value) {
             setError('atem-rule-error', 'Incentive Rule is required for Level 2-4.');
             return false;
         }
@@ -973,12 +1295,17 @@
             setError('arci-error', 'An Accountable (A) member is mandatory.');
             return false;
         }
-        if (level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
+        if (!isOutletType && level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
             var _arciErr = validateArciIncentive();
             if (_arciErr) { setError('arci-error', _arciErr); return false; }
         }
         if (!reflinks || reflinks.length === 0) {
             setError('reflink-section-error', 'At least one Reference Link is required.');
+            return false;
+        }
+        var rewardWrap = $('tl-reward-decision-wrap');
+        if (rewardWrap && rewardWrap.style.display !== 'none' && !document.querySelector('input[name="tl-reward-decision"]:checked')) {
+            setError('tl-reward-decision-error', 'Please choose whether this ATEM is Rewarded or Deducted.');
             return false;
         }
         return true;
@@ -992,12 +1319,20 @@
             return;
         }
         var levelId = $('atem-level').value, ruleId = $('atem-rule').value;
+        var pillarId = $('atem-pillars') ? $('atem-pillars').value : '';
+        var rewardAmount = $('atem-reward-amount') ? $('atem-reward-amount').value : '';
+        var deductionAmount = $('atem-deduction-amount') ? $('atem-deduction-amount').value : '';
         var description = quillEditor ? ((quillEditor.getText().trim() === '') ? '' : quillEditor.root.innerHTML) : '';
         var data = {
             title: $('atem-title').value.trim(),
             description: description,
             level_structure_id: levelId ? parseInt(levelId, 10) : null,
             incentive_rule_id: ruleId ? parseInt(ruleId, 10) : null,
+            pillar_id: pillarId ? parseInt(pillarId, 10) : null,
+            reward_amount: rewardAmount ? parseInt(rewardAmount, 10) : null,
+            deduction_amount: deductionAmount ? parseInt(deductionAmount, 10) : null,
+            outlet_ids: outletTags.map(function (o) { return o.id; }),
+            area_manager_ids: areaManagerTags.map(function (m) { return m.id; }),
             start_date: $('tl-start').value || null,
             end_date: $('tl-end').value || null,
             is_extended: $('tl-extended').checked,
@@ -1015,19 +1350,31 @@
     function saveAtem() {
         if (!validateFinal()) { scrollToFirstError(); return; }
         var levelId = $('atem-level').value, ruleId = $('atem-rule').value;
+        var pillarId = $('atem-pillars') ? $('atem-pillars').value : '';
+        var rewardAmount = $('atem-reward-amount') ? $('atem-reward-amount').value : '';
+        var deductionAmount = $('atem-deduction-amount') ? $('atem-deduction-amount').value : '';
         var description = quillEditor ? ((quillEditor.getText().trim() === '') ? '' : quillEditor.root.innerHTML) : '';
         var data = {
             title: $('atem-title').value.trim(),
             description: description,
             level_structure_id: levelId ? parseInt(levelId, 10) : null,
             incentive_rule_id: ruleId ? parseInt(ruleId, 10) : null,
+            pillar_id: pillarId ? parseInt(pillarId, 10) : null,
+            reward_amount: rewardAmount ? parseInt(rewardAmount, 10) : null,
+            deduction_amount: deductionAmount ? parseInt(deductionAmount, 10) : null,
+            outlet_ids: outletTags.map(function (o) { return o.id; }),
+            area_manager_ids: areaManagerTags.map(function (m) { return m.id; }),
             start_date: $('tl-start').value || null,
             end_date: $('tl-end').value || null,
             is_extended: $('tl-extended').checked,
             extended_date_1: $('tl-ext1').value || null,
             incentive_approved: !!(document.getElementById('tl-incentive-approve-yes') && document.getElementById('tl-incentive-approve-yes').checked),
             atem_status_id: $('tl-status').value ? parseInt($('tl-status').value, 10) : null,
-            remarks: $('tl-remarks').value
+            remarks: $('tl-remarks').value,
+            is_deducted: (function () {
+                var checked = document.querySelector('input[name="tl-reward-decision"]:checked');
+                return !!(checked && checked.value === 'deducted');
+            })()
         };
         var btn = $('atem-save-btn');
         if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
@@ -1156,8 +1503,35 @@
             yesEl.checked = !!REC.incentive_approved;
             noEl.checked  = !REC.incentive_approved;
         }
+        var rewardedEl = document.getElementById('tl-reward-decision-rewarded');
+        var deductedEl = document.getElementById('tl-reward-decision-deducted');
+        if (rewardedEl && deductedEl) {
+            // No separate column tracks this decision - infer from claimable: a
+            // terminal HQ card with claimable already false was Deducted.
+            var wasDeducted = TERMINAL_STATUSES.indexOf(REC.status ? REC.status.value : '') >= 0 && !REC.claimable;
+            deductedEl.checked = wasDeducted;
+            rewardedEl.checked = !wasDeducted;
+        }
+        if (REC.pillar_id && $('atem-pillars')) { $('atem-pillars').value = REC.pillar_id; }
+        if (REC.reward_amount && $('atem-reward-amount')) { $('atem-reward-amount').value = REC.reward_amount; }
+        if (REC.deduction_amount && $('atem-deduction-amount')) { $('atem-deduction-amount').value = REC.deduction_amount; }
+        recalcReward();
+        var amById = {};
+        (CFG.areaManagers || []).forEach(function (a) { amById[a.id] = a; });
+        areaManagerTags = (REC.area_managers || [])
+            .map(function (a) { return parseInt(a.staff_id, 10) || 0; })
+            .filter(function (id) { return amById.hasOwnProperty(id); })
+            .map(function (id) {
+                return { id: id, name: amById[id].name, position: amById[id].position, outlet_ids: amById[id].outlet_ids };
+            });
+        renderAreaManagerTags();
+        syncAreaManagerPickerSelection();
+        recomputeDerivedOutlets();
+        applyAtemTypeView();
+
         syncStatusOptions();
         syncIncentiveApproval();
+        syncRewardDecision();
         syncEndDateLock();
         if (quillEditor && REC.description) { quillEditor.clipboard.dangerouslyPasteHTML(REC.description); }
 
@@ -1262,9 +1636,11 @@
     function applyReadMode() {
         if (!READ) { return; }
         if (quillEditor) { quillEditor.disable(); }
-        ['atem-title', 'atem-issuer', 'atem-department', 'atem-level', 'atem-rule', 'tl-start', 'tl-end',
+        ['atem-title', 'atem-issuer', 'atem-department', 'atem-level', 'atem-rule',
+            'atem-pillars', 'atem-reward-amount', 'atem-deduction-amount', 'tl-start', 'tl-end',
             'tl-status', 'tl-final-due', 'tl-closure', 'tl-remarks', 'tl-extended', 'tl-ext1',
-            'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
+            'tl-incentive-approve-yes', 'tl-incentive-approve-no',
+            'tl-reward-decision-rewarded', 'tl-reward-decision-deducted'].forEach(function (id) {
             var el = $(id);
             if (el) { el.setAttribute('disabled', 'disabled'); }
         });
@@ -1336,6 +1712,8 @@
     // --------------------------------------------------------------- wiring
     function bind() {
         $('atem-level').addEventListener('change', function () { recalcIncentive(); saveInline(); });
+        if ($('atem-reward-amount')) { $('atem-reward-amount').addEventListener('change', function () { recalcReward(); saveInline(); }); }
+        if ($('atem-deduction-amount')) { $('atem-deduction-amount').addEventListener('change', function () { recalcReward(); saveInline(); }); }
         $('atem-rule').addEventListener('change', function () {
             var _newLimits = getRuleLimits(selectedRule());
             var aInc = 0;
@@ -1404,6 +1782,8 @@
         if ($('tl-status')) {
             $('tl-status').addEventListener('change', function () {
                 recalcClosureDate(); syncExtendedByStatus(); syncEndDateLock(); applyExtMins();
+                syncRewardDecision();
+                recalcReward();
                 showTimelineReminder();
                 if (CFG.issuerCompletedEdit) {
                     if (String(this.value) === String(REC.atem_status_id)) {
@@ -1431,6 +1811,20 @@
         if ($('arci-dept-select')) { $('arci-dept-select').addEventListener('change', renderStaffList); }
         if ($('arci-staff-search')) { $('arci-staff-search').addEventListener('keyup', renderStaffList); }
         if ($('arci-add-btn')) { $('arci-add-btn').addEventListener('click', addSelectedMembers); }
+        if ($('arci-scope-outlet')) {
+            $('arci-scope-outlet').addEventListener('change', function () {
+                arciScope = 'outlet';
+                populateDepartments();
+                renderStaffList();
+            });
+        }
+        if ($('arci-scope-department')) {
+            $('arci-scope-department').addEventListener('change', function () {
+                arciScope = 'department';
+                populateDepartments();
+                renderStaffList();
+            });
+        }
 
         var grid = $('arci-grid');
         if (grid) {
@@ -1740,6 +2134,13 @@
     document.addEventListener('DOMContentLoaded', function () {
         populateLookups();
         populateDepartments();
+        buildAreaManagerPicker();
+        var orphanCloseBtn = $('atem-arci-orphan-warning-close');
+        if (orphanCloseBtn) {
+            orphanCloseBtn.addEventListener('click', function () {
+                $('atem-arci-orphan-warning').classList.add('atem-hidden');
+            });
+        }
         initEditor();
         bind();
         hydrate();

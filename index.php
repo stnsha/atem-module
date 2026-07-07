@@ -48,7 +48,8 @@ window.ATEM_DASH = <?php echo json_encode(array(
             <select id="dash-filter-year" class="form-select form-select-sm">
                 <option value="">All Years</option>
                 <?php foreach ($dash_year_options as $y): ?>
-                <option value="<?php echo $y; ?>"<?php echo ($y === 2026) ? ' selected' : ''; ?>><?php echo $y; ?></option>
+                <option value="<?php echo $y; ?>" <?php echo ($y === 2026) ? ' selected' : ''; ?>><?php echo $y; ?>
+                </option>
                 <?php endforeach; ?>
             </select>
         </div>
@@ -80,7 +81,8 @@ window.ATEM_DASH = <?php echo json_encode(array(
                 <option value="4">Q4 (Oct &ndash; Dec)</option>
             </select>
         </div>
-        <div class="col-md-3 col-sm-6" id="dash-dept-col"<?php if (empty($dash_dept_options)) { echo ' style="display:none;"'; } ?>>
+        <div class="col-md-3 col-sm-6" id="dash-dept-col"
+            <?php if (empty($dash_dept_options)) { echo ' style="display:none;"'; } ?>>
             <label class="form-label">Department</label>
             <select id="dash-filter-dept" class="form-select form-select-sm">
                 <option value="">All Departments</option>
@@ -110,7 +112,8 @@ window.ATEM_DASH = <?php echo json_encode(array(
             <div class="atem-card-title mb-1">Active / On Hand</div>
             <div class="atem-stat-value atem-stat-value--blue" id="dash-active">---</div>
             <div class="atem-stat-label">not yet closed</div>
-            <div class="atem-stat-label" id="dash-extended-label" style="display:none;color:#fd7e14;margin-top:2px;"></div>
+            <div class="atem-stat-label" id="dash-extended-label" style="display:none;color:#fd7e14;margin-top:2px;">
+            </div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
@@ -217,7 +220,8 @@ window.ATEM_DASH = <?php echo json_encode(array(
     <div class="col-12">
         <div class="atem-card">
             <h6 class="atem-card-title mb-0">Department Breakdown</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and incentive forecast by issuer department</div>
+            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and incentive forecast
+                by issuer department</div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                     <thead>
@@ -232,7 +236,9 @@ window.ATEM_DASH = <?php echo json_encode(array(
                         </tr>
                     </thead>
                     <tbody id="dash-dept-body">
-                        <tr><td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td></tr>
+                        <tr>
+                            <td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>

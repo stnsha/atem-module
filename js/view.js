@@ -5,11 +5,23 @@
     'use strict';
 
     var CFG = window.ATEM_VIEW || { rows: [], levels: [], statuses: [] };
-    var rows = CFG.rows || [];
-    var PER_PAGE = 30;
-    var page = 1;
-    var sortCol = null;
-    var sortDir = 1;
+    var allRows    = CFG.rows || [];
+    var hqRows     = allRows.filter(function (r) { return (parseInt(r.atem_type, 10) || 1) === 1; });
+    var outletRows = allRows.filter(function (r) { return parseInt(r.atem_type, 10) === 2; });
+    // Looks up the current array by reference each call (rather than a
+    // snapshot object) so it stays correct after hqRows/outletRows are
+    // reassigned, e.g. by the delete-row handler.
+    function rowsForTab(prefix) { return (prefix === 'hq') ? hqRows : outletRows; }
+
+    // HQ and Outlet tabs render into separate tables and are sorted/paginated
+    // independently, but share the one filter bar above them. Only the
+    // active tab is (re-)rendered when a filter changes; the other tab
+    // catches up with the current filters when it's switched to.
+    var activeTab = 'hq';
+    var tabState = {
+        hq:     { page: 1, sortCol: null, sortDir: 1, perPage: 30 },
+        outlet: { page: 1, sortCol: null, sortDir: 1, perPage: 30 }
+    };
 
     var TODAY         = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
     var presetClosed  = false;
@@ -46,71 +58,95 @@
     // ----------------------------------------------------------- filter setup
     function distinct(key) {
         var seen = {}, out = [];
-        for (var i = 0; i < rows.length; i++) {
-            var v = rows[i][key];
+        for (var i = 0; i < allRows.length; i++) {
+            var v = allRows[i][key];
             if (v && !seen[v]) { seen[v] = true; out.push(v); }
         }
         out.sort();
         return out;
     }
 
-    function buildFilters() {
-        var lvl = $('vf-level');
-        var levels = CFG.levels || [];
-        var lh = '<option value="">All levels</option>';
-        for (var i = 0; i < levels.length; i++) { lh += '<option value="' + escapeHtml(levels[i].level) + '">' + escapeHtml(levels[i].level) + '</option>'; }
-        lvl.innerHTML = lh;
-
-        var dep = $('vf-dept');
-        var depts = CFG.departments || [];
-        var dh = '<option value="">All departments</option>';
-        for (var d = 0; d < depts.length; d++) { dh += '<option value="' + escapeHtml(depts[d]) + '">' + escapeHtml(depts[d]) + '</option>'; }
-        dep.innerHTML = dh;
-
-        var st = $('vf-status');
-        var statuses = CFG.statuses || [];
-        var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
-        var sh = '<option value="">All statuses</option>';
-        for (var s = 0; s < statuses.length; s++) {
-            if ((statuses[s].value === 'Deleted' || statuses[s].value === 'Suspended') && !canSeeDeleted) { continue; }
-            sh += '<option value="' + escapeHtml(statuses[s].value) + '">' + escapeHtml(statuses[s].value) + '</option>';
+    function fillSelect(selectEl, placeholder, options) {
+        if (!selectEl) { return; }
+        var html = '<option value="">' + escapeHtml(placeholder) + '</option>';
+        for (var i = 0; i < options.length; i++) {
+            html += '<option value="' + escapeHtml(options[i]) + '">' + escapeHtml(options[i]) + '</option>';
         }
-        st.innerHTML = sh;
-
-        var roleEl = $('vf-role');
-        var roleOptions = ['A', 'R', 'C', 'I', 'ARCI', 'Not Applicable'];
-        var rh = '<option value="">All roles</option>';
-        for (var ri = 0; ri < roleOptions.length; ri++) { rh += '<option value="' + escapeHtml(roleOptions[ri]) + '">' + escapeHtml(roleOptions[ri]) + '</option>'; }
-        roleEl.innerHTML = rh;
-
-        buildIssuerDropdown();
+        selectEl.innerHTML = html;
     }
 
-    // ------------------------------------------------- issuer searchable dropdown
-    function buildIssuerDropdown() {
-        var listEl   = $('vf-issuer-list');
-        var searchEl = $('vf-issuer-search');
-        var btnEl    = $('vf-issuer-btn');
-        var dropEl   = $('vf-issuer-dropdown');
-        var valEl    = $('vf-issuer-value');
-        var labelEl  = btnEl; // button element is also the label
-        if (!listEl || !btnEl || !dropEl) { return; }
+    function buildFilters() {
+        var levels = (CFG.levels || []).map(function (l) { return l.level; });
+        fillSelect($('vf-level'), 'All levels', levels);
 
-        // Sync dimensions and border to adjacent form-select-sm exactly.
-        var refEl = $('vf-dept');
+        var depts = CFG.departments || [];
+        fillSelect($('vf-dept'), 'All departments', depts);
+
+        var pillars = (CFG.pillars || []).map(function (p) { return p.name; });
+        fillSelect($('vfo-pillar'), 'All pillars', pillars);
+
+        var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
+        var statuses = (CFG.statuses || [])
+            .filter(function (s) { return canSeeDeleted || (s.value !== 'Deleted' && s.value !== 'Suspended'); })
+            .map(function (s) { return s.value; });
+        fillSelect($('vf-status'), 'All statuses', statuses);
+        fillSelect($('vfo-status'), 'All statuses', statuses);
+
+        var roleOptions = ['A', 'R', 'C', 'I', 'ARCI', 'Not Applicable'];
+        fillSelect($('vf-role'), 'All roles', roleOptions);
+        fillSelect($('vfo-role'), 'All roles', roleOptions);
+
+        var issuers = (CFG.issuers || []).map(function (i) { return { id: i.id, label: i.name }; });
+        buildS2Dropdown('vf-issuer', issuers, 'All issuers', 'vf-year', function () {
+            tabState.hq.page = 1; renderTable('hq', hqRows);
+        });
+        buildS2Dropdown('vfo-issuer', issuers, 'All issuers', 'vfo-year', function () {
+            tabState.outlet.page = 1; renderTable('outlet', outletRows);
+        });
+
+        var outlets = (CFG.outlets || []).map(function (o) { return { id: o.id, label: o.code }; });
+        buildS2Dropdown('vfo-outlet', outlets, 'All outlets', 'vfo-year', function () {
+            tabState.outlet.page = 1; renderTable('outlet', outletRows);
+        });
+    }
+
+    // ------------------------------------------- generic searchable dropdown
+    // baseId is the shared id prefix for this dropdown's elements, e.g.
+    // 'vf-issuer' -> #vf-issuer-list, #vf-issuer-btn, #vf-issuer-value, etc.
+    // sizeRefId is another control in the same filter bar to match height/
+    // border against (a plain <select> renders differently from this div).
+    // Copies height/border from a plain form-select-sm in the same filter bar
+    // so the custom dropdown button lines up with it exactly. Only works
+    // while the reference element is actually visible (offsetHeight reads 0
+    // on a hidden Bootstrap tab-pane), so this must be re-run once the tab
+    // containing it is shown - see the 'shown.bs.tab' listener in bind().
+    function syncS2ButtonSize(baseId, sizeRefId) {
+        var btnEl = $(baseId + '-btn');
+        var refEl = $(sizeRefId);
         if (refEl && btnEl) {
             var refStyle = window.getComputedStyle(refEl);
             btnEl.style.height       = refEl.offsetHeight + 'px';
             btnEl.style.border       = refStyle.border;
             btnEl.style.borderRadius = refStyle.borderRadius;
         }
+    }
 
-        var issuers = CFG.issuers || [];
+    function buildS2Dropdown(baseId, items, allLabel, sizeRefId, onSelect) {
+        var listEl   = $(baseId + '-list');
+        var searchEl = $(baseId + '-search');
+        var btnEl    = $(baseId + '-btn');
+        var dropEl   = $(baseId + '-dropdown');
+        var valEl    = $(baseId + '-value');
+        var wrapEl   = $(baseId + '-wrap');
+        var labelEl  = btnEl; // button element is also the label
+        if (!listEl || !btnEl || !dropEl) { return; }
 
-        // Build list items: "All issuers" first, then each issuer.
-        var html = '<li class="vf-s2-list-item" data-id="0">All issuers</li>';
-        for (var i = 0; i < issuers.length; i++) {
-            html += '<li class="vf-s2-list-item" data-id="' + issuers[i].id + '">' + escapeHtml(issuers[i].name) + '</li>';
+        syncS2ButtonSize(baseId, sizeRefId);
+
+        // Build list items: "All ..." first, then each item.
+        var html = '<li class="vf-s2-list-item" data-id="0">' + escapeHtml(allLabel) + '</li>';
+        for (var i = 0; i < items.length; i++) {
+            html += '<li class="vf-s2-list-item" data-id="' + items[i].id + '">' + escapeHtml(items[i].label) + '</li>';
         }
         listEl.innerHTML = html;
 
@@ -121,24 +157,24 @@
         function closeDropdown() { dropEl.classList.remove('open'); }
 
         function filterList(term) {
-            var items = listEl.querySelectorAll('li');
+            var listItems = listEl.querySelectorAll('li');
             var lower = term.toLowerCase();
             var anyVisible = false;
-            for (var j = 0; j < items.length; j++) {
-                var text = items[j].textContent || '';
+            for (var j = 0; j < listItems.length; j++) {
+                var text = listItems[j].textContent || '';
                 if (!lower || text.toLowerCase().indexOf(lower) >= 0) {
-                    items[j].classList.remove('hidden');
+                    listItems[j].classList.remove('hidden');
                     anyVisible = true;
                 } else {
-                    items[j].classList.add('hidden');
+                    listItems[j].classList.add('hidden');
                 }
             }
-            var emptyEl = $('vf-issuer-empty');
+            var emptyEl = $(baseId + '-empty');
             if (!anyVisible) {
                 if (!emptyEl) {
                     var em = document.createElement('div');
                     em.className = 'vf-s2-empty';
-                    em.id = 'vf-issuer-empty';
+                    em.id = baseId + '-empty';
                     em.textContent = 'No results found';
                     listEl.parentNode.appendChild(em);
                 }
@@ -147,12 +183,11 @@
             }
         }
 
-        function selectIssuer(id, name) {
+        function selectItem(id, label) {
             if (valEl) { valEl.value = id; }
-            if (labelEl) { labelEl.textContent = name; }
+            if (labelEl) { labelEl.textContent = label; }
             closeDropdown();
-            page = 1;
-            render();
+            if (onSelect) { onSelect(id); }
         }
 
         btnEl.addEventListener('click', function (e) {
@@ -171,26 +206,25 @@
         listEl.addEventListener('click', function (e) {
             var li = e.target.closest ? e.target.closest('li') : null;
             if (!li) { return; }
-            selectIssuer(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
+            selectItem(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
         });
 
         document.addEventListener('click', function (e) {
-            var wrap = $('vf-issuer-wrap');
-            if (wrap && !wrap.contains(e.target)) { closeDropdown(); }
+            if (wrapEl && !wrapEl.contains(e.target)) { closeDropdown(); }
         });
     }
 
-    function resetIssuerDropdown() {
-        var valEl  = $('vf-issuer-value');
-        var btnEl  = $('vf-issuer-btn');
-        var dropEl = $('vf-issuer-dropdown');
+    function resetS2Dropdown(baseId, allLabel) {
+        var valEl  = $(baseId + '-value');
+        var btnEl  = $(baseId + '-btn');
+        var dropEl = $(baseId + '-dropdown');
         if (valEl)  { valEl.value = '0'; }
-        if (btnEl)  { btnEl.textContent = 'All issuers'; }
+        if (btnEl)  { btnEl.textContent = allLabel; }
         if (dropEl) { dropEl.classList.remove('open'); }
     }
 
     // --------------------------------------------------------------- filtering
-    function applyFilters() {
+    function applyHqFilters(sourceRows) {
         var year  = $('vf-year')  ? parseInt($('vf-year').value,  10) || 0 : 0;
         var month = $('vf-month') ? parseInt($('vf-month').value, 10) || 0 : 0;
         var level = $('vf-level').value;
@@ -203,7 +237,7 @@
         var issuerValEl = $('vf-issuer-value');
         var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
 
-        return rows.filter(function (r) {
+        return sourceRows.filter(function (r) {
             if (year  && (!r.start_date || parseInt(r.start_date.substring(0, 4), 10) !== year))  { return false; }
             if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
             if (issuer && r.issuer_staff_id !== issuer) { return false; }
@@ -249,6 +283,63 @@
         });
     }
 
+    function applyOutletFilters(sourceRows) {
+        var year  = $('vfo-year')  ? parseInt($('vfo-year').value,  10) || 0 : 0;
+        var month = $('vfo-month') ? parseInt($('vfo-month').value, 10) || 0 : 0;
+        var status = $('vfo-status').value;
+        var pillar = $('vfo-pillar').value;
+        var role = $('vfo-role').value;
+        var from = $('vfo-from').value;
+        var to = $('vfo-to').value;
+        var term = $('vfo-search').value.toLowerCase().trim();
+        var issuerValEl = $('vfo-issuer-value');
+        var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
+        var outletValEl = $('vfo-outlet-value');
+        var outletId = outletValEl ? (parseInt(outletValEl.value, 10) || 0) : 0;
+        var outletCode = '';
+        if (outletId) {
+            var match = (CFG.outlets || []).filter(function (o) { return o.id === outletId; })[0];
+            outletCode = match ? match.code : '';
+        }
+
+        return sourceRows.filter(function (r) {
+            if (year  && (!r.start_date || parseInt(r.start_date.substring(0, 4), 10) !== year))  { return false; }
+            if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
+            if (issuer && r.issuer_staff_id !== issuer) { return false; }
+            if (status && r.status !== status) { return false; }
+            if (pillar && r.pillar_name !== pillar) { return false; }
+            if (outletCode && (!r.outlet_codes || r.outlet_codes.indexOf(outletCode) < 0)) { return false; }
+            if (role) {
+                if (role === 'ARCI') {
+                    if (!r.user_arci_roles || r.user_arci_roles.length === 0) { return false; }
+                } else if (role === 'Not Applicable') {
+                    if (r.user_arci_roles && r.user_arci_roles.length > 0) { return false; }
+                } else {
+                    if (!r.user_arci_roles || r.user_arci_roles.indexOf(role) < 0) { return false; }
+                }
+            }
+            if (presetClosed) {
+                if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
+            }
+            if (overdueFilter) {
+                var effectiveDue = ((r.is_extended || r.status === 'Extended') && r.extended_date_1)
+                    ? String(r.extended_date_1).substring(0, 10)
+                    : String(r.end_date || '').substring(0, 10);
+                if (r.status !== 'Active' && r.status !== 'Extended') { return false; }
+                if (!effectiveDue || effectiveDue >= TODAY) { return false; }
+            }
+            if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
+            if (to && (!r.start_date || r.start_date.substring(0, 10) > to)) { return false; }
+            if (term) {
+                var atemIdStr = 'at' + r.id;
+                var matchesTitle = String(r.title).toLowerCase().indexOf(term) >= 0;
+                var matchesId    = atemIdStr.indexOf(term.replace(/^#/, '')) >= 0;
+                if (!matchesTitle && !matchesId) { return false; }
+            }
+            return true;
+        });
+    }
+
     var STATUS_SORT_GROUP = {
         'Suspended': 0,
         'Draft': 1,
@@ -268,7 +359,7 @@
         return String(r.end_date || '');
     }
 
-    function sortRows(list) {
+    function sortRows(list, sortCol, sortDir) {
         if (sortCol === null) {
             return list.slice().sort(function (a, b) {
                 var ga = statusGroup(a.status), gb = statusGroup(b.status);
@@ -289,12 +380,13 @@
         });
     }
 
-    function updateSortIndicators() {
-        var ths = document.querySelectorAll('#atem-view-tbl th.atem-sortable');
+    function updateSortIndicators(prefix) {
+        var st = tabState[prefix];
+        var ths = document.querySelectorAll('#atem-view-tbl-' + prefix + ' th.atem-sortable');
         for (var i = 0; i < ths.length; i++) {
             ths[i].classList.remove('atem-sort-asc', 'atem-sort-desc');
-            if (sortCol !== null && ths[i].getAttribute('data-col') === sortCol) {
-                ths[i].classList.add(sortDir === 1 ? 'atem-sort-asc' : 'atem-sort-desc');
+            if (st.sortCol !== null && ths[i].getAttribute('data-col') === st.sortCol) {
+                ths[i].classList.add(st.sortDir === 1 ? 'atem-sort-asc' : 'atem-sort-desc');
             }
         }
     }
@@ -340,124 +432,213 @@
     }
 
     // --------------------------------------------------------------- rendering
-    function render() {
-        updateSortIndicators();
-        var list = sortRows(applyFilters());
-        var total = list.length;
-        var pages = Math.max(1, Math.ceil(total / PER_PAGE));
-        if (page > pages) { page = pages; }
-        var startIdx = (page - 1) * PER_PAGE;
-        var pageRows = list.slice(startIdx, startIdx + PER_PAGE);
-
-        var body = $('atem-view-body');
-        if (total === 0) {
-            body.innerHTML = '<tr><td colspan="10" class="atem-empty-state" style="text-align:center;padding:24px;">No ATEM cards match the current filters.</td></tr>';
-        } else {
-            var html = '';
-            for (var i = 0; i < pageRows.length; i++) {
-                var r = pageRows[i];
-                var levelCell = r.level_label ? pill(r.level_label, LEVEL_COLOR[r.level_label] || '#6c757d', r.system_name) : '-';
-                var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
-                var arciCell = '';
-                if (r.user_arci_roles && r.user_arci_roles.length > 0) {
-                    for (var ri = 0; ri < r.user_arci_roles.length; ri++) {
-                        var role = r.user_arci_roles[ri];
-                        var rc = ARCI_COLOR[role] || '#6c757d';
-                        arciCell += '<span style="display:inline-block;background:' + rc + ';color:#fff;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;margin:1px 2px;">' + escapeHtml(role) + '</span>';
-                    }
-                } else {
-                    arciCell = '<span style="color:#adb5bd;font-size:12px;">—</span>';
-                }
-                var accountableCell = '';
-                if (r.accountable && r.accountable.length > 0) {
-                    for (var ai = 0; ai < r.accountable.length; ai++) {
-                        if (ai > 0) {
-                            accountableCell += '<div style="border-top:1px solid #dee2e6;margin:4px 0;"></div>';
-                        }
-                        accountableCell += '<div style="font-size:13px;">' + escapeHtml(r.accountable[ai].name) + '</div>'
-                            + '<div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.accountable[ai].dept) + '</div>';
-                    }
-                } else {
-                    accountableCell = '<span style="color:#adb5bd;font-size:12px;">—</span>';
-                }
-                var endCell = fmtDate(r.end_date);
-                if (r.is_extended && r.extended_date_1) {
-                    endCell += '<div style="margin-top:3px;font-size:11px;color:#fd7e14;font-weight:500;">'
-                        + '<i class="bi bi-arrow-right" style="font-size:10px;"></i> Extended to '
-                        + fmtDate(r.extended_date_1) + '</div>';
-                }
-                var titleCell = escapeHtml(r.title);
-                var rowStyle = (r.is_deleted && r.status !== 'Suspended') ? ' style="opacity:0.55;"' : '';
-                var _canViewDeleted = CFG.isSuperAdmin || CFG.userGrade >= 4
-                    || (r.status === 'Suspended' && r.issuer_staff_id == CFG.staffId);
-                var actionCell = r.is_deleted
-                    ? (_canViewDeleted
-                        ? '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Suspended)"><i class="bi bi-eye"></i></a>'
-                        : '')
-                    + (canDeleteSuspended(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '')
-                    : '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
-                    + (canEdit(r) ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
-                    + (canUpdateProgress(r) ? ' <a href="atem/edit.php?id=' + r.id + '&mode=read#atem-progress-section" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
-                    + (canDelete(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '');
-                html += '<tr' + rowStyle + '>'
-                    + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
-                    + '<td>' + titleCell + '</td>'
-                    + '<td><div style="font-size:13px;">' + escapeHtml(r.issuer_name) + '</div><div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.department_name) + '</div></td>'
-                    + '<td>' + accountableCell + '</td>'
-                    + '<td>' + arciCell + '</td>'
-                    + '<td>' + levelCell + '</td>'
-                    + '<td>' + fmtDate(r.start_date) + '</td>'
-                    + '<td>' + endCell + '</td>'
-                    + '<td>' + statusCell + '</td>'
-                    + '<td class="atem-view-actions">' + actionCell + '</td></tr>';
-            }
-            body.innerHTML = html;
-        }
-        renderPager(total, pages, startIdx, pageRows.length);
+    function buildActionCell(r) {
+        var _canViewDeleted = CFG.isSuperAdmin || CFG.userGrade >= 4
+            || (r.status === 'Suspended' && r.issuer_staff_id == CFG.staffId);
+        return r.is_deleted
+            ? (_canViewDeleted
+                ? '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Suspended)"><i class="bi bi-eye"></i></a>'
+                : '')
+            + (canDeleteSuspended(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '')
+            : '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
+            + (canEdit(r) ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
+            + (canUpdateProgress(r) ? ' <a href="atem/edit.php?id=' + r.id + '&mode=read#atem-progress-section" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
+            + (canDelete(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '');
     }
 
-    function renderPager(total, pages, startIdx, shown) {
-        var pager = $('atem-pager');
+    function buildEndCell(r) {
+        var endCell = fmtDate(r.end_date);
+        if (r.is_extended && r.extended_date_1) {
+            endCell += '<div style="margin-top:3px;font-size:11px;color:#fd7e14;font-weight:500;">'
+                + '<i class="bi bi-arrow-right" style="font-size:10px;"></i> Extended to '
+                + fmtDate(r.extended_date_1) + '</div>';
+        }
+        return endCell;
+    }
+
+    function rowStyleFor(r) {
+        return (r.is_deleted && r.status !== 'Suspended') ? ' style="opacity:0.55;"' : '';
+    }
+
+    // Shared Issuer/Accountable cell styling (name + sub-label, divider
+    // between multiple accountable members) - used by both the HQ and
+    // Outlet tables, each as their own separate column.
+    function buildIssuerCell(r) {
+        return '<div style="font-size:13px;">' + escapeHtml(r.issuer_name) + '</div>'
+            + '<div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.department_name) + '</div>';
+    }
+
+    function buildAccountableCell(r) {
+        if (!r.accountable || r.accountable.length === 0) {
+            return '<span style="color:#adb5bd;font-size:12px;">—</span>';
+        }
+        var html = '';
+        for (var ai = 0; ai < r.accountable.length; ai++) {
+            if (ai > 0) {
+                html += '<div style="border-top:1px solid #dee2e6;margin:4px 0;"></div>';
+            }
+            html += '<div style="font-size:13px;">' + escapeHtml(r.accountable[ai].name) + '</div>'
+                + '<div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.accountable[ai].dept) + '</div>';
+        }
+        return html;
+    }
+
+    function buildHqRowHtml(r) {
+        var levelCell = r.level_label ? pill(r.level_label, LEVEL_COLOR[r.level_label] || '#6c757d', r.system_name) : '-';
+        var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
+        var arciCell = '';
+        if (r.user_arci_roles && r.user_arci_roles.length > 0) {
+            for (var ri = 0; ri < r.user_arci_roles.length; ri++) {
+                var role = r.user_arci_roles[ri];
+                var rc = ARCI_COLOR[role] || '#6c757d';
+                arciCell += '<span style="display:inline-block;background:' + rc + ';color:#fff;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;margin:1px 2px;">' + escapeHtml(role) + '</span>';
+            }
+        } else {
+            arciCell = '<span style="color:#adb5bd;font-size:12px;">—</span>';
+        }
+        return '<tr' + rowStyleFor(r) + '>'
+            + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
+            + '<td>' + escapeHtml(r.title) + '</td>'
+            + '<td>' + buildIssuerCell(r) + '</td>'
+            + '<td>' + buildAccountableCell(r) + '</td>'
+            + '<td>' + arciCell + '</td>'
+            + '<td>' + levelCell + '</td>'
+            + '<td>' + fmtDate(r.start_date) + '</td>'
+            + '<td>' + buildEndCell(r) + '</td>'
+            + '<td>' + statusCell + '</td>'
+            + '<td class="atem-view-actions">' + buildActionCell(r) + '</td></tr>';
+    }
+
+    function buildOutletRowHtml(r) {
+        var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
+        var pillarCell = r.pillar_name ? pill(r.pillar_name, '#0A5AA8') : '-';
+        return '<tr' + rowStyleFor(r) + '>'
+            + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
+            + '<td>' + escapeHtml(r.title) + '</td>'
+            + '<td>' + buildIssuerCell(r) + '</td>'
+            + '<td>' + buildAccountableCell(r) + '</td>'
+            + '<td>' + pillarCell + '</td>'
+            + '<td>' + fmtDate(r.start_date) + '</td>'
+            + '<td>' + buildEndCell(r) + '</td>'
+            + '<td>' + statusCell + '</td>'
+            + '<td class="atem-view-actions">' + buildActionCell(r) + '</td></tr>';
+    }
+
+    function renderTable(prefix, sourceRows) {
+        var st = tabState[prefix];
+        updateSortIndicators(prefix);
+        var filtered = (prefix === 'hq') ? applyHqFilters(sourceRows) : applyOutletFilters(sourceRows);
+        var list = sortRows(filtered, st.sortCol, st.sortDir);
+        var total = list.length;
+        var pages = Math.max(1, Math.ceil(total / st.perPage));
+        if (st.page > pages) { st.page = pages; }
+        var startIdx = (st.page - 1) * st.perPage;
+        var pageRows = list.slice(startIdx, startIdx + st.perPage);
+
+        var body = $('atem-view-body-' + prefix);
+        if (total === 0) {
+            var colCount = document.querySelectorAll('#atem-view-tbl-' + prefix + ' thead th').length || 9;
+            body.innerHTML = '<tr><td colspan="' + colCount + '" class="atem-empty-state" style="text-align:center;padding:24px;">No ATEM cards match the current filters.</td></tr>';
+        } else {
+            var html = '';
+            var buildRowHtml = (prefix === 'hq') ? buildHqRowHtml : buildOutletRowHtml;
+            for (var i = 0; i < pageRows.length; i++) { html += buildRowHtml(pageRows[i]); }
+            body.innerHTML = html;
+        }
+        renderPagerFor(prefix, total, pages, startIdx, pageRows.length);
+    }
+
+    function renderAll() {
+        renderTable('hq', hqRows);
+        renderTable('outlet', outletRows);
+    }
+
+    // Filter changes only re-render the currently visible tab - the other
+    // tab lazily catches up (see the tab 'shown.bs.tab' listener in bind()).
+    function renderActiveTab() {
+        renderTable(activeTab, rowsForTab(activeTab));
+    }
+
+    function renderPagerFor(prefix, total, pages, startIdx, shown) {
+        var st = tabState[prefix];
+        var pager = $('atem-pager-' + prefix);
         if (total === 0) { pager.innerHTML = ''; return; }
 
         var opts = [10, 30, 50, 100];
         var selHtml = '<select class="atem-perpage-select">';
         for (var oi = 0; oi < opts.length; oi++) {
-            selHtml += '<option value="' + opts[oi] + '"' + (PER_PAGE === opts[oi] ? ' selected' : '') + '>' + opts[oi] + '</option>';
+            selHtml += '<option value="' + opts[oi] + '"' + (st.perPage === opts[oi] ? ' selected' : '') + '>' + opts[oi] + '</option>';
         }
         selHtml += '</select>';
         var leftHtml = '<div class="atem-pager-left">Show ' + selHtml + ' entries</div>';
 
         var info = '<span class="atem-pager-info">Showing ' + (startIdx + 1) + ' to ' + (startIdx + shown) + ' of ' + total + ' entries</span>';
-        var btns = '<button type="button" class="atem-pager-btn" data-page="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + '>Previous</button>';
+        var btns = '<button type="button" class="atem-pager-btn" data-page="' + (st.page - 1) + '"' + (st.page <= 1 ? ' disabled' : '') + '>Previous</button>';
 
-        var win = 2, from = Math.max(1, page - win), to = Math.min(pages, page + win);
-        if (from > 1) { btns += pageBtn(1) + (from > 2 ? '<span class="atem-pager-gap">...</span>' : ''); }
-        for (var p = from; p <= to; p++) { btns += pageBtn(p); }
-        if (to < pages) { btns += (to < pages - 1 ? '<span class="atem-pager-gap">...</span>' : '') + pageBtn(pages); }
-        btns += '<button type="button" class="atem-pager-btn" data-page="' + (page + 1) + '"' + (page >= pages ? ' disabled' : '') + '>Next</button>';
+        var win = 2, from = Math.max(1, st.page - win), to = Math.min(pages, st.page + win);
+        if (from > 1) { btns += pageBtn(st.page, 1) + (from > 2 ? '<span class="atem-pager-gap">...</span>' : ''); }
+        for (var p = from; p <= to; p++) { btns += pageBtn(st.page, p); }
+        if (to < pages) { btns += (to < pages - 1 ? '<span class="atem-pager-gap">...</span>' : '') + pageBtn(st.page, pages); }
+        btns += '<button type="button" class="atem-pager-btn" data-page="' + (st.page + 1) + '"' + (st.page >= pages ? ' disabled' : '') + '>Next</button>';
 
         var rightHtml = '<div class="d-flex align-items-center gap-2">' + info + '<div class="atem-pager-bar">' + btns + '</div></div>';
         pager.innerHTML = leftHtml + rightHtml;
     }
 
-    function pageBtn(p) {
-        return '<button type="button" class="atem-pager-btn' + (p === page ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
+    function pageBtn(currentPage, p) {
+        return '<button type="button" class="atem-pager-btn' + (p === currentPage ? ' active' : '') + '" data-page="' + p + '">' + p + '</button>';
     }
 
     // --------------------------------------------------------------- wiring
     function bind() {
+        // HQ filter bar - always renders the HQ table (it's only visible
+        // while that tab is active anyway).
         ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
             var el = $(id);
-            if (el) { el.addEventListener('change', function () { presetClosed = false; overdueFilter = false; minLevelId = 0; page = 1; render(); }); }
+            if (el) {
+                el.addEventListener('change', function () {
+                    presetClosed = false; overdueFilter = false; minLevelId = 0;
+                    tabState.hq.page = 1;
+                    renderTable('hq', hqRows);
+                });
+            }
         });
-        $('vf-search').addEventListener('keyup', function () { page = 1; render(); });
+        $('vf-search').addEventListener('keyup', function () {
+            tabState.hq.page = 1;
+            renderTable('hq', hqRows);
+        });
         $('vf-reset').addEventListener('click', function () {
             ['vf-year', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
-            resetIssuerDropdown();
+            resetS2Dropdown('vf-issuer', 'All issuers');
             presetClosed = false; overdueFilter = false; minLevelId = 0;
-            page = 1; render();
+            tabState.hq.page = 1;
+            renderTable('hq', hqRows);
+        });
+
+        // Outlet filter bar - always renders the Outlet table.
+        ['vfo-year', 'vfo-month', 'vfo-status', 'vfo-pillar', 'vfo-from', 'vfo-to'].forEach(function (id) {
+            var el = $(id);
+            if (el) {
+                el.addEventListener('change', function () {
+                    presetClosed = false; overdueFilter = false;
+                    tabState.outlet.page = 1;
+                    renderTable('outlet', outletRows);
+                });
+            }
+        });
+        $('vfo-search').addEventListener('keyup', function () {
+            tabState.outlet.page = 1;
+            renderTable('outlet', outletRows);
+        });
+        $('vfo-reset').addEventListener('click', function () {
+            ['vfo-year', 'vfo-status', 'vfo-pillar', 'vfo-from', 'vfo-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            var monthEl2 = $('vfo-month'); if (monthEl2) { monthEl2.value = '0'; }
+            resetS2Dropdown('vfo-issuer', 'All issuers');
+            resetS2Dropdown('vfo-outlet', 'All outlets');
+            presetClosed = false; overdueFilter = false;
+            tabState.outlet.page = 1;
+            renderTable('outlet', outletRows);
         });
 
         var pendingDeleteId = null;
@@ -469,7 +650,8 @@
             return _deleteModal;
         }
 
-        var body = $('atem-view-body');
+        ['atem-view-body-hq', 'atem-view-body-outlet'].forEach(function (bodyId) {
+        var body = $(bodyId);
         if (body) {
             body.addEventListener('click', function (e) {
                 var btn = e.target.closest ? e.target.closest('.atem-delete-row') : null;
@@ -485,6 +667,7 @@
                 if (m) { m.show(); }
             });
         }
+        });
 
         var deleteConfirmBtn = document.getElementById('atem-delete-confirm');
         if (deleteConfirmBtn) {
@@ -506,8 +689,10 @@
                     body: JSON.stringify({ action: 'delete-atem', id: atemId, remarks: remark })
                 }).then(function (r) { return r.json(); }).then(function (res) {
                     if (res && res.success) {
-                        rows = rows.filter(function (r) { return r.id !== atemId; });
-                        page = 1; render();
+                        hqRows = hqRows.filter(function (r) { return r.id !== atemId; });
+                        outletRows = outletRows.filter(function (r) { return r.id !== atemId; });
+                        tabState.hq.page = 1; tabState.outlet.page = 1;
+                        renderActiveTab();
                     } else {
                         var msg = res && res.message ? res.message : 'Failed to delete ATEM.';
                         var msgEl2 = document.getElementById('atem-delete-modal-msg');
@@ -528,32 +713,57 @@
             });
         }
 
-        var ths = document.querySelectorAll('#atem-view-tbl th.atem-sortable');
-        for (var i = 0; i < ths.length; i++) {
-            ths[i].addEventListener('click', function () {
-                var col = this.getAttribute('data-col');
-                if (sortCol === col) { sortDir = -sortDir; } else { sortCol = col; sortDir = 1; }
-                page = 1; render();
-            });
-        }
+        ['hq', 'outlet'].forEach(function (prefix) {
+            var ths = document.querySelectorAll('#atem-view-tbl-' + prefix + ' th.atem-sortable');
+            for (var i = 0; i < ths.length; i++) {
+                ths[i].addEventListener('click', function () {
+                    var col = this.getAttribute('data-col');
+                    var st = tabState[prefix];
+                    if (st.sortCol === col) { st.sortDir = -st.sortDir; } else { st.sortCol = col; st.sortDir = 1; }
+                    renderTable(prefix, rowsForTab(prefix));
+                });
+            }
 
-        $('atem-pager').addEventListener('click', function (e) {
-            var btn = e.target.closest ? e.target.closest('.atem-pager-btn') : null;
-            if (!btn || btn.disabled) { return; }
-            var p = parseInt(btn.getAttribute('data-page'), 10);
-            if (p >= 1) { page = p; render(); }
-        });
+            var pagerEl = $('atem-pager-' + prefix);
+            if (pagerEl) {
+                pagerEl.addEventListener('click', function (e) {
+                    var btn = e.target.closest ? e.target.closest('.atem-pager-btn') : null;
+                    if (!btn || btn.disabled) { return; }
+                    var p = parseInt(btn.getAttribute('data-page'), 10);
+                    if (p >= 1) { tabState[prefix].page = p; renderTable(prefix, rowsForTab(prefix)); }
+                });
 
-        $('atem-pager').addEventListener('change', function (e) {
-            if (e.target.classList.contains('atem-perpage-select')) {
-                PER_PAGE = parseInt(e.target.value, 10);
-                page = 1;
-                render();
+                pagerEl.addEventListener('change', function (e) {
+                    if (e.target.classList.contains('atem-perpage-select')) {
+                        tabState[prefix].perPage = parseInt(e.target.value, 10);
+                        tabState[prefix].page = 1;
+                        renderTable(prefix, rowsForTab(prefix));
+                    }
+                });
             }
         });
+
+        var hqTabBtn = $('atem-tab-hq-btn');
+        var outletTabBtn = $('atem-tab-outlet-btn');
+        if (hqTabBtn) {
+            hqTabBtn.addEventListener('shown.bs.tab', function () { activeTab = 'hq'; renderActiveTab(); });
+        }
+        if (outletTabBtn) {
+            outletTabBtn.addEventListener('shown.bs.tab', function () {
+                activeTab = 'outlet';
+                // These were built while the Outlet tab-pane was hidden
+                // (display:none), so their height/border sync read 0 - redo
+                // it now that the pane is actually visible.
+                syncS2ButtonSize('vfo-issuer', 'vfo-year');
+                syncS2ButtonSize('vfo-outlet', 'vfo-year');
+                renderActiveTab();
+            });
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+        if ($('atem-tab-hq-count')) { $('atem-tab-hq-count').textContent = hqRows.length; }
+        if ($('atem-tab-outlet-count')) { $('atem-tab-outlet-count').textContent = outletRows.length; }
         buildFilters();
         var params = new URLSearchParams(window.location.search);
         if (params.get('status')) { $('vf-status').value = params.get('status'); }
@@ -581,6 +791,6 @@
         if (params.get('overdue')       === '1')      { overdueFilter = true; }
         if (params.get('min_level_id'))               { minLevelId = parseInt(params.get('min_level_id'), 10) || 0; }
         bind();
-        render();
+        renderAll();
     });
 })();

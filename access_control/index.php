@@ -35,7 +35,7 @@ $grade_badges = array(
 );
 
 $show_edit          = ($atem_permission > 1 || $_is_superadmin);
-$table_cols         = $show_edit ? 5 : 4;
+$table_cols         = $show_edit ? 6 : 5;
 $requester_dept_ids = array();
 
 if (isset($department) && $department !== '') {
@@ -205,6 +205,7 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                         <tr>
                             <th>Staff Name</th>
                             <th>Department</th>
+                            <th>Outlet</th>
                             <th>Grade</th>
                             <th>Evaluation Structure</th>
                             <?php if ($show_edit): ?><th></th><?php endif; ?>
@@ -228,8 +229,9 @@ if ($atem_permission >= 2 || $_is_superadmin) {
 
         <div class="bento-card">
             <p class="mb-3 text-muted"
-                style="font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600;">Update
-                Staff</p>
+                style="font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600;">
+                Create/Update
+                Staff Grade and Evaluation Structure</p>
 
             <div id="form-alert" class="alert alert-dismissible fade show mb-3" role="alert"
                 style="display:none !important; font-size: 12px !important;">
@@ -245,6 +247,8 @@ if ($atem_permission >= 2 || $_is_superadmin) {
             <div class="staff-info-box mb-3" id="staff-info">
                 <p><strong>Name:</strong> <span id="info-name"></span></p>
                 <p><strong>Department:</strong> <span id="info-dept"></span></p>
+                <p class="mb-1"><strong>Outlet:</strong></p>
+                <ul id="info-outlet" class="mb-2 ps-3"></ul>
                 <p><strong>Status:</strong> <span id="info-status"></span></p>
                 <p><strong>Current Grade:</strong> <span id="info-grade"></span></p>
                 <p><strong>Evaluation Structure:</strong> <span id="info-struct"></span></p>

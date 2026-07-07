@@ -172,8 +172,14 @@
         var structName  = staff.struct_name || '-';
         var structId    = parseInt(staff.struct_id, 10) || 0;
 
+        var outletCodes = staff.outlet_codes || [];
+        var outletHtml  = outletCodes.length
+            ? $.map(outletCodes, function (code) { return '<li>' + $('<span>').text(code).html() + '</li>'; }).join('')
+            : '<li>-</li>';
+
         $('#info-name').text(staff.nama_staff);
         $('#info-dept').text(staff.department_name || '-');
+        $('#info-outlet').html(outletHtml);
         $('#info-status').text(staff.status_semasa || '-');
         $('#info-grade').text(gradeLabel);
         $('#info-struct').text(structName);
@@ -202,6 +208,8 @@
         var staffName     = $(this).data('staff-name');
         var staffDept     = $(this).data('staff-dept');
         var staffDeptRaw  = $(this).data('staff-dept-raw') || '0';
+        var staffOutletRaw = String($(this).data('staff-outlet') || '');
+        var staffOutletCodes = staffOutletRaw === '' ? [] : staffOutletRaw.split(',');
         var staffStatus   = $(this).data('staff-status')      || '-';
         var staffGrade    = parseInt($(this).data('staff-grade'),     10) || 0;
         var staffStructId = parseInt($(this).data('staff-struct-id'), 10) || 0;
@@ -217,6 +225,7 @@
             nama_staff:      staffName,
             department_name: staffDept,
             dept_raw:        staffDeptRaw,
+            outlet_codes:    staffOutletCodes,
             status_semasa:   staffStatus,
             grade:           staffGrade,
             struct_id:       staffStructId,
@@ -275,10 +284,13 @@
             var structName = s.struct_name || '-';
             var structId   = s.struct_id   || 0;
             var canEdit    = canEditStaff(s.dept_raw);
+            var outletCodes = s.outlet_codes || [];
+            var outletHtml  = outletCodes.length ? $('<span>').text(outletCodes.join(',')).html() : '-';
 
             html += '<tr>' +
                 '<td>' + $('<span>').text(s.nama_staff).html() + '</td>' +
                 '<td class="text-muted">' + $('<span>').text(s.department_name).html() + '</td>' +
+                '<td class="text-muted">' + outletHtml + '</td>' +
                 '<td><span class="atem-pill ' + gradeBadge + '">' + gradeLabel + '</span></td>' +
                 '<td class="text-muted">' + $('<span>').text(structName).html() + '</td>';
 
@@ -289,6 +301,7 @@
                     ' data-staff-name="' + $('<span>').text(s.nama_staff).html() + '"' +
                     ' data-staff-dept="' + $('<span>').text(s.department_name).html() + '"' +
                     ' data-staff-dept-raw="' + $('<span>').text(s.dept_raw || '0').html() + '"' +
+                    ' data-staff-outlet="' + $('<span>').text(outletCodes.join(',')).html() + '"' +
                     ' data-staff-status="' + $('<span>').text(s.status_semasa).html() + '"' +
                     ' data-staff-grade="' + grade + '"' +
                     ' data-staff-struct-id="' + structId + '"' +
