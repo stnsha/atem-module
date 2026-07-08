@@ -1277,6 +1277,63 @@ function downloadAtemAttachment($id, $att_id, $staff_id)
     echo $body;
 }
 
+// Returns array of month numbers to match for a period, or null = "any month" (whole year).
+function atem_period_months($month, $quarter)
+{
+    $qmap = array(1 => array(1, 2, 3), 2 => array(4, 5, 6), 3 => array(7, 8, 9), 4 => array(10, 11, 12));
+    if ($quarter > 0 && isset($qmap[$quarter])) {
+        return $qmap[$quarter];
+    }
+    if ($month > 0) {
+        return array($month);
+    }
+    return null;
+}
+
+// True if $dateStr (YYYY-MM-DD...) falls within $year and (if not null) one of $months.
+function atem_date_in_period($dateStr, $months, $year)
+{
+    if (!$dateStr) {
+        return false;
+    }
+    $y = (int)substr($dateStr, 0, 4);
+    $m = (int)substr($dateStr, 5, 2);
+    if ($year > 0 && $y !== (int)$year) {
+        return false;
+    }
+    if ($months !== null && !in_array($m, $months, true)) {
+        return false;
+    }
+    return true;
+}
+
+// Mirrors CalculateBonusEligibility.php's per-column date basis exactly:
+// complete/extend/failed are bucketed by closure_date, active by start_date, atem = union of all four.
+function atem_matches_period_column($status, $start_date, $closure_date, $col, $month, $year, $quarter)
+{
+    $months = atem_period_months($month, $quarter);
+    switch ($col) {
+        case 'complete':
+            return in_array($status, array('Completed', 'Completed with Excellence', 'Completed with Extension'), true)
+                && atem_date_in_period($closure_date, $months, $year);
+        case 'active':
+            return $status === 'Active'
+                && atem_date_in_period($start_date, $months, $year);
+        case 'extend':
+            return $status === 'Extended'
+                && atem_date_in_period($closure_date, $months, $year);
+        case 'failed':
+            return $status === 'Failed'
+                && atem_date_in_period($closure_date, $months, $year);
+        case 'atem':
+        default:
+            return atem_matches_period_column($status, $start_date, $closure_date, 'complete', $month, $year, $quarter)
+                || atem_matches_period_column($status, $start_date, $closure_date, 'active', $month, $year, $quarter)
+                || atem_matches_period_column($status, $start_date, $closure_date, 'extend', $month, $year, $quarter)
+                || atem_matches_period_column($status, $start_date, $closure_date, 'failed', $month, $year, $quarter);
+    }
+}
+
 function getBonusEligibilityList($month, $year, $staff_id_param, $staff_id)
 {
     $params = array();
@@ -1474,6 +1531,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     $filterMonth   = isset($jsonData['filter_month'])   ? (int)$jsonData['filter_month']   : 0;
                     $filterQuarter = isset($jsonData['filter_quarter']) ? (int)$jsonData['filter_quarter'] : 0;
                     $filterDeptId  = isset($jsonData['filter_dept_id']) ? (int)$jsonData['filter_dept_id'] : 0;
+                    $filterStaffId = isset($jsonData['filter_staff_id']) ? (int)$jsonData['filter_staff_id'] : 0;
                     $quarterMonths = array(
                         1 => array(1, 2, 3),
                         2 => array(4, 5, 6),
@@ -1494,6 +1552,28 @@ if (!defined('API_JWT_INCLUDED')) {
                     $overdueCount = 0;
                     $byDept = array();
                     $today = date('Y-m-d');
+
+                    // Involvement breakdown — how many (filtered, non-deleted) cards
+                    // someone is tagged on as Issuer vs. each ARCI role. A single card
+                    // can count toward multiple roles (e.g. Issuer AND 'C'), but each
+                    // role is counted at most once per card.
+                    //
+                    // Scope depends on the active filters so grade 2+ users (who see
+                    // beyond their own cards) can drill in: selecting a Staff filter
+                    // shows that staff member's involvement; selecting a Department
+                    // (with no staff) aggregates involvement across everyone in that
+                    // department; with neither, it falls back to the logged-in user's
+                    // own involvement.
+                    $myScopeMode = 'me';
+                    $myScopeStaffId = (int)$staff_id;
+                    if ($filterStaffId > 0) {
+                        $myScopeMode = 'staff';
+                        $myScopeStaffId = $filterStaffId;
+                    } elseif ($filterDeptId > 0) {
+                        $myScopeMode = 'dept';
+                    }
+                    $myRoleBreakdown = array('issuer' => 0, 'A' => 0, 'R' => 0, 'C' => 0, 'I' => 0);
+                    $myInvolvedTotal = 0;
 
                     foreach ($items as $item) {
                         if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
@@ -1520,10 +1600,70 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                             if ($itemDeptId !== $filterDeptId && !in_array($filterDeptId, $itemArciDepts)) { continue; }
                         }
+                        if ($filterStaffId > 0) {
+                            $itemIssuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
+                            $itemIsArci = false;
+                            if (isset($item['arci']) && is_array($item['arci'])) {
+                                foreach ($item['arci'] as $_m) {
+                                    if (!empty($_m['staff_id']) && (int)$_m['staff_id'] === $filterStaffId) {
+                                        $itemIsArci = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if ($itemIssuerId !== $filterStaffId && !$itemIsArci) { continue; }
+                        }
 
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
                         if ($statusVal === 'Deleted' || $statusVal === 'Suspended' || !empty($item['deleted_at'])) { continue; }
                         $total++;
+
+                        if ($myScopeMode === 'dept') {
+                            // Department-wide aggregate: count the card toward 'issuer'
+                            // if the issuer belongs to the department, and toward each
+                            // ARCI role held by any member of that department.
+                            $_involved     = false;
+                            $_issuerDeptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
+                            if ($_issuerDeptId === $filterDeptId) {
+                                $myRoleBreakdown['issuer']++;
+                                $_involved = true;
+                            }
+                            if (isset($item['arci']) && is_array($item['arci'])) {
+                                $_seenRoles = array();
+                                foreach ($item['arci'] as $_m) {
+                                    $_mDeptId = !empty($_m['staff_dept_id']) ? (int)$_m['staff_dept_id'] : 0;
+                                    if ($_mDeptId === $filterDeptId
+                                        && !empty($_m['role']) && isset($myRoleBreakdown[$_m['role']])
+                                        && !in_array($_m['role'], $_seenRoles)) {
+                                        $myRoleBreakdown[$_m['role']]++;
+                                        $_seenRoles[] = $_m['role'];
+                                        $_involved = true;
+                                    }
+                                }
+                            }
+                            if ($_involved) { $myInvolvedTotal++; }
+                        } elseif ($myScopeStaffId > 0) {
+                            $_involved  = false;
+                            $_issuerId  = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
+                            if ($_issuerId === $myScopeStaffId) {
+                                $myRoleBreakdown['issuer']++;
+                                $_involved = true;
+                            }
+                            if (isset($item['arci']) && is_array($item['arci'])) {
+                                $_seenRoles = array();
+                                foreach ($item['arci'] as $_m) {
+                                    if (!empty($_m['staff_id']) && (int)$_m['staff_id'] === $myScopeStaffId
+                                        && !empty($_m['role']) && isset($myRoleBreakdown[$_m['role']])
+                                        && !in_array($_m['role'], $_seenRoles)) {
+                                        $myRoleBreakdown[$_m['role']]++;
+                                        $_seenRoles[] = $_m['role'];
+                                        $_involved = true;
+                                    }
+                                }
+                            }
+                            if ($_involved) { $myInvolvedTotal++; }
+                        }
+
                         $levelStr  = isset($item['level_structure']['level']) ? $item['level_structure']['level'] : '';
                         preg_match('/\d+/', $levelStr, $lvlMatch);
                         $levelNum  = $lvlMatch ? (int)$lvlMatch[0] : 0;
@@ -1641,6 +1781,15 @@ if (!defined('API_JWT_INCLUDED')) {
                             'incentive_total' => $incentiveTotal,
                             'overdue_count'   => $overdueCount,
                             'by_department'   => $byDepartment,
+                            'my_roles'        => array(
+                                'issuer'   => $myRoleBreakdown['issuer'],
+                                'A'        => $myRoleBreakdown['A'],
+                                'R'        => $myRoleBreakdown['R'],
+                                'C'        => $myRoleBreakdown['C'],
+                                'I'        => $myRoleBreakdown['I'],
+                                'involved' => $myInvolvedTotal,
+                                'scope'    => $myScopeMode,
+                            ),
                         ),
                     );
                     break;
@@ -1932,16 +2081,19 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'get-performance-list':
-                    $pl_perm = 0;
+                    $pl_perm  = 0;
+                    $pl_is_sa = false;
                     if (isset($atem_permission)) {
-                        $pl_perm = (int)$atem_permission;
+                        $pl_perm  = (int)$atem_permission;
+                        $pl_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
                     } elseif ($staff_id) {
                         $_pp_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_pp_res && ($_pp_row = mysqli_fetch_assoc($_pp_res))) {
-                            $pl_perm = ((int)$_pp_row['atem'] === 1) ? 6 : (int)$_pp_row['grade'];
+                            $pl_perm  = (int)$_pp_row['grade'];
+                            $pl_is_sa = ((int)$_pp_row['atem'] === 1);
                         }
                     }
-                    if ($pl_perm < 4) {
+                    if ($pl_perm < 4 && !$pl_is_sa) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
@@ -2001,10 +2153,11 @@ if (!defined('API_JWT_INCLUDED')) {
                         $pl_rec_grade  = isset($pl_rec['staff_grade'])   ? (int)$pl_rec['staff_grade']   : 0;
                         $pl_rec_struct = isset($pl_rec['staff_struct'])  ? (int)$pl_rec['staff_struct']  : 0;
 
-                        if ($pl_perm < 3 && $pl_rec_dept !== $pl_caller_dept) { continue; }
+                        if ($pl_perm < 3 && !$pl_is_sa && $pl_rec_dept !== $pl_caller_dept) { continue; }
                         if ($pl_dept   > 0 && $pl_rec_dept   !== $pl_dept)   { continue; }
                         if ($pl_grade  > 0 && $pl_rec_grade  !== $pl_grade)  { continue; }
                         if ($pl_struct > 0 && $pl_rec_struct !== $pl_struct) { continue; }
+                        if (!isset($pl_rec['total_atem']) || (int)$pl_rec['total_atem'] <= 0) { continue; }
 
                         $pl_sid       = isset($pl_rec['staff_id']) ? (int)$pl_rec['staff_id'] : 0;
                         $pl_grade_id  = isset($pl_rec['staff_grade'])  ? (int)$pl_rec['staff_grade']  : null;
@@ -2013,6 +2166,8 @@ if (!defined('API_JWT_INCLUDED')) {
                         $pl_out[] = array(
                             'id'           => isset($pl_rec['id'])             ? (int)$pl_rec['id'] : 0,
                             'staff_id'     => $pl_sid,
+                            'month'        => isset($pl_rec['month']) ? (int)$pl_rec['month'] : 0,
+                            'year'         => isset($pl_rec['year'])  ? (int)$pl_rec['year']  : 0,
                             'staff_name'   => isset($pl_staff_names[$pl_sid]) ? $pl_staff_names[$pl_sid] : ('Staff #' . $pl_sid),
                             'dept_id'      => $pl_rec_dept,
                             'dept_name'    => ($pl_rec_dept && isset($pl_dept_names[$pl_rec_dept])) ? $pl_dept_names[$pl_rec_dept] : '-',
@@ -2033,16 +2188,19 @@ if (!defined('API_JWT_INCLUDED')) {
 
                 case 'get-staff-atem-list':
                     // Resolve caller permission — $atem_permission is set when included from a page, not in direct-access mode.
-                    $caller_perm = 0;
+                    $caller_perm  = 0;
+                    $caller_is_sa = false;
                     if (isset($atem_permission)) {
-                        $caller_perm = (int)$atem_permission;
+                        $caller_perm  = (int)$atem_permission;
+                        $caller_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
                     } elseif ($staff_id) {
                         $_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_perm_res && ($_perm_row = mysqli_fetch_assoc($_perm_res))) {
-                            $caller_perm = ((int)$_perm_row['atem'] === 1) ? 6 : (int)$_perm_row['grade'];
+                            $caller_perm  = (int)$_perm_row['grade'];
+                            $caller_is_sa = ((int)$_perm_row['atem'] === 1);
                         }
                     }
-                    if ($caller_perm < 3) {
+                    if ($caller_perm < 3 && !$caller_is_sa) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
@@ -2056,6 +2214,13 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = array('success' => false, 'message' => isset($list_result['message']) ? $list_result['message'] : 'Failed');
                         break;
                     }
+
+                    $gsl_has_period = isset($jsonData['year']);
+                    $gsl_col        = isset($jsonData['col'])     ? $jsonData['col']         : 'atem';
+                    $gsl_month      = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
+                    $gsl_year       = isset($jsonData['year'])    ? (int)$jsonData['year']    : 0;
+                    $gsl_quarter    = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
+                    if ($gsl_quarter < 1 || $gsl_quarter > 4) { $gsl_quarter = 0; }
 
                     // Build name lookup maps for enrichment.
                     $_s_names = array();
@@ -2103,14 +2268,23 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
                         $_my_role = !empty($_role_parts) ? $_role_parts : null;
+                        $_row_status = $_status ? $_status['value'] : '';
+                        $_row_start  = isset($_a['start_date'])   ? $_a['start_date']   : '';
+                        $_row_closure = isset($_a['closure_date']) ? $_a['closure_date'] : '';
+
+                        if ($gsl_has_period && !atem_matches_period_column($_row_status, $_row_start, $_row_closure, $gsl_col, $gsl_month, $gsl_year, $gsl_quarter)) {
+                            continue;
+                        }
+
                         $_enriched[] = array(
                             'id'          => (int)$_a['id'],
                             'title'       => isset($_a['title']) ? $_a['title'] : '',
                             'level_label' => $_level ? $_level['level'] : '',
                             'system_name' => $_level ? (isset($_level['system_name']) ? $_level['system_name'] : '') : '',
-                            'start_date'  => isset($_a['start_date']) ? $_a['start_date'] : '',
+                            'start_date'  => $_row_start,
                             'end_date'    => isset($_a['end_date']) ? $_a['end_date'] : '',
-                            'status'      => $_status ? $_status['value'] : '',
+                            'closure_date' => $_row_closure,
+                            'status'      => $_row_status,
                             'accountable' => $_accountable,
                             'is_extended' => !empty($_a['is_extended']),
                             'extended_date_1' => isset($_a['extended_date_1']) ? $_a['extended_date_1'] : '',

@@ -26,10 +26,11 @@ if ($gr) { while ($row = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$row['id'
 $str_r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
 if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$row['id']] = $row['struct_name']; } }
 
-// Build department options respecting grade
+// Build department options respecting grade — SuperAdmin always sees all departments
+// regardless of their real grade (mirrors $_is_superadmin, never a bumped $atem_permission).
 $dept_filter_options = array();
 foreach ($dept_names as $did => $dname) {
-    if ((int)$atem_permission >= 3) {
+    if ((int)$atem_permission >= 3 || $_is_superadmin) {
         $dept_filter_options[$did] = $dname;
     } elseif (isset($department) && (int)$department === $did) {
         $dept_filter_options[$did] = $dname;
@@ -100,7 +101,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
             </select>
         </div>
         <div class="col-md-2 col-sm-4">
-            <label class="form-label">Month</label>
+            <label class="form-label">Closure Month</label>
             <select id="perf-filter-month" class="form-select form-select-sm">
                 <option value="0">All Month</option>
                 <?php foreach (array(1=>'January',2=>'February',3=>'March',4=>'April',5=>'May',6=>'June',7=>'July',8=>'August',9=>'September',10=>'October',11=>'November',12=>'December') as $mn => $ml): ?>
@@ -149,7 +150,6 @@ for ($y = 2026; $y <= $init_year; $y++) {
             </select>
         </div>
         <div class="col-auto d-flex align-items-end gap-2 ms-auto">
-            <button class="btn btn-sm btn-primary" id="perf-apply-filter">Apply</button>
             <button class="btn btn-sm btn-outline-secondary" id="perf-reset-filter">Reset</button>
             <a id="perf-export-all-btn" href="#" class="btn btn-outline-success btn-sm">Export</a>
         </div>
@@ -208,7 +208,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
 
 <!-- ATEM Detail Modal -->
 <div class="modal fade" id="atemDetailModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header py-2">
                 <h6 class="modal-title mb-0" id="atem-detail-modal-title">ATEM Details</h6>
@@ -226,6 +226,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
                                 <th>Level / Complexity</th>
                                 <th>Start</th>
                                 <th>End</th>
+                                <th>Closure Date</th>
                                 <th>Status</th>
                                 <th>My Role</th>
                             </tr>
@@ -250,13 +251,6 @@ var PERF_CFG = <?php echo json_encode(array(
 
 var PERF_API_URL = PERF_CFG.apiUrl;
 
-var PERF_COL_STATUSES = {
-    'atem': null,
-    'complete': ['Completed', 'Completed with Excellence'],
-    'active': ['Active'],
-    'extend': ['Extended'],
-    'failed': ['Failed']
-};
 var PERF_COL_LABELS = {
     'atem': 'All ATEM',
     'complete': 'Completed',
@@ -269,6 +263,7 @@ var STATUS_COLOR = {
     'Active': '#0d6efd',
     'Completed': '#198754',
     'Completed with Excellence': '#0dcaf0',
+    'Completed with Extension': '#20c997',
     'Extended': '#fd7e14',
     'Failed': '#dc3545'
 };
@@ -465,6 +460,11 @@ function renderTable(data, payload) {
             '<span class="text-muted">0</span>';
     }
 
+    var quarter = (payload && payload.quarter) ? payload.quarter : 0;
+    var dept = (payload && payload.dept) ? payload.dept : 0;
+    var grade = (payload && payload.grade) ? payload.grade : 0;
+    var struct = (payload && payload.struct) ? payload.struct : 0;
+
     var html = '';
     for (var i = 0; i < pageData.length; i++) {
         var rec = pageData[i];
@@ -472,7 +472,8 @@ function renderTable(data, payload) {
         var editUrl = '/odb/atem/staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
             '&month=' + month + '&year=' + year;
         var exportUrl = '/odb/atem/staff_performance/export.php?type=performance&ids=' + rec.id +
-            '&month=' + month + '&year=' + year;
+            '&month=' + month + '&year=' + year + '&quarter=' + quarter +
+            '&dept=' + dept + '&grade=' + grade + '&struct=' + struct;
 
         html += '<tr>' +
             '<td><input type="checkbox" class="perf-row-cb" value="' + rec.id + '"></td>' +
@@ -483,18 +484,18 @@ function renderTable(data, payload) {
             '<td>' + escHtml(rec.grade_label) + '</td>' +
             '<td>' + escHtml(rec.struct_label) + '</td>' +
             '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="atem" style="cursor:pointer;">' + countCell(rec.total_atem) + '</td>' +
+            '" data-col="atem" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.total_atem) + '</td>' +
             '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="complete" style="cursor:pointer;">' + countCell(rec.complete_count) + '</td>' +
+            '" data-col="complete" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.complete_count) + '</td>' +
             '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="active" style="cursor:pointer;">' + countCell(rec.active_count) + '</td>' +
+            '" data-col="active" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.active_count) + '</td>' +
             '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="extend" style="cursor:pointer;">' + countCell(rec.extend_count) + '</td>' +
+            '" data-col="extend" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.extend_count) + '</td>' +
             '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="failed" style="cursor:pointer;">' + countCell(rec.failed_count) + '</td>' +
+            '" data-col="failed" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.failed_count) + '</td>' +
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
             '<td style="white-space:nowrap;">' +
-            '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '">Edit</a>' +
+            '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '">View</a>' +
             '<a class="btn btn-sm btn-outline-success perf-row-export" href="' + escHtml(exportUrl) + '">Export</a>' +
             '</td>' +
             '</tr>';
@@ -568,11 +569,6 @@ document.addEventListener('DOMContentLoaded', function() {
         struct: 0
     });
 
-    // Apply filter
-    document.getElementById('perf-apply-filter').addEventListener('click', function() {
-        loadPerformance(buildPayload());
-    });
-
     // Reset filter
     document.getElementById('perf-reset-filter').addEventListener('click', function() {
         document.getElementById('perf-filter-year').value = PERF_CFG.initYear;
@@ -600,17 +596,30 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Month / quarter mutual exclusion
+    // Month / quarter mutual exclusion, then auto-apply
     document.getElementById('perf-filter-month').addEventListener('change', function() {
         if (this.value && this.value !== '0') {
             document.getElementById('perf-filter-quarter').value = '0';
         }
+        loadPerformance(buildPayload());
     });
     document.getElementById('perf-filter-quarter').addEventListener('change', function() {
         if (this.value && this.value !== '0') {
             document.getElementById('perf-filter-month').value = '0';
         }
+        loadPerformance(buildPayload());
     });
+
+    // Auto-apply on every other filter change
+    var _perfAutoFilterIds = ['perf-filter-year', 'perf-filter-dept', 'perf-filter-grade', 'perf-filter-struct'];
+    for (var _pfi = 0; _pfi < _perfAutoFilterIds.length; _pfi++) {
+        var _pfEl = document.getElementById(_perfAutoFilterIds[_pfi]);
+        if (_pfEl) {
+            _pfEl.addEventListener('change', function() {
+                loadPerformance(buildPayload());
+            });
+        }
+    }
 
     // Select-all checkbox
     var selectAll = document.getElementById('select-all');
@@ -657,8 +666,12 @@ document.addEventListener('DOMContentLoaded', function() {
             var month = _currentPayload.month || 0;
             var year = _currentPayload.year || PERF_CFG.initYear;
             var quarter = _currentPayload.quarter || 0;
+            var dept = _currentPayload.dept || 0;
+            var grade = _currentPayload.grade || 0;
+            var struct = _currentPayload.struct || 0;
             var qs = 'type=performance&ids=' + ids.join(',') +
-                '&month=' + month + '&year=' + year + '&quarter=' + quarter;
+                '&month=' + month + '&year=' + year + '&quarter=' + quarter +
+                '&dept=' + dept + '&grade=' + grade + '&struct=' + struct;
             triggerExport('/odb/atem/staff_performance/export.php?' + qs);
         });
     }
@@ -674,6 +687,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         var targetSid = parseInt(cell.getAttribute('data-staff-id'), 10);
         var col = cell.getAttribute('data-col');
+        var targetMonth = parseInt(cell.getAttribute('data-month'), 10) || 0;
+        var targetYear = parseInt(cell.getAttribute('data-year'), 10) || 0;
         if (!targetSid) {
             return;
         }
@@ -698,7 +713,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 body: JSON.stringify({
                     action: 'get-staff-atem-list',
-                    target_staff_id: targetSid
+                    target_staff_id: targetSid,
+                    month: targetMonth,
+                    year: targetYear,
+                    quarter: 0,
+                    col: col
                 })
             })
             .then(function(r) {
@@ -712,12 +731,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
                 var data = res.data || [];
-                var statuses = PERF_COL_STATUSES[col];
-                if (statuses !== null) {
-                    data = data.filter(function(r) {
-                        return statuses.indexOf(r.status) !== -1;
-                    });
-                }
                 var ROLE_COLOR = {
                     'Issuer': '#198754',
                     'A': '#6610f2',
@@ -727,7 +740,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 };
                 if (!data.length) {
                     tbody.innerHTML =
-                        '<tr><td colspan="7" class="text-center text-muted py-3">No records.</td></tr>';
+                        '<tr><td colspan="8" class="text-center text-muted py-3">No records.</td></tr>';
                 } else {
                     var html = '';
                     for (var i = 0; i < data.length; i++) {
@@ -737,6 +750,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             escHtml(row.status || '-') + '</span>';
                         var endDate = row.is_extended && row.extended_date_1 ? formatDate(row
                             .extended_date_1) : formatDate(row.end_date);
+                        var closureDate = formatDate(row.closure_date);
                         var roleCell = '-';
                         if (row.my_role && row.my_role.length) {
                             var badges = [];
@@ -754,6 +768,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             '<td>' + escHtml(row.level_label || '-') + '</td>' +
                             '<td>' + formatDate(row.start_date) + '</td>' +
                             '<td>' + endDate + '</td>' +
+                            '<td>' + closureDate + '</td>' +
                             '<td>' + statusBadge + '</td>' +
                             '<td>' + roleCell + '</td>' +
                             '</tr>';

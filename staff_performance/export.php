@@ -107,6 +107,7 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
                     ? $a['extended_date_1']
                     : (isset($a['end_date']) ? $a['end_date'] : '');
     $end       = fmt_ex_date($end_raw);
+    $closure   = fmt_ex_date(isset($a['closure_date']) ? $a['closure_date'] : '');
     $status    = ex_status_val($a);
     $is_issuer = (isset($a['issuer_staff_id']) && (int)$a['issuer_staff_id'] === $sid);
     $issuer_yn = $is_issuer ? 'Yes' : 'No';
@@ -146,7 +147,7 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
             fputcsv($out, array(
                 $ex_year, $ex_month,
                 $name, $dept, $grade, $struct,
-                $atem_id, $title, $level, $start, $end,
+                $atem_id, $title, $level, $start, $end, $closure,
                 $issuer_yn, $role, $status, $reward
             ));
         }
@@ -154,7 +155,7 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
         fputcsv($out, array(
             $ex_year, $ex_month,
             $name, $dept, $grade, $struct,
-            $atem_id, $title, $level, $start, $end,
+            $atem_id, $title, $level, $start, $end, $closure,
             $issuer_yn, '', $status, number_format(0, 2)
         ));
     }
@@ -164,7 +165,7 @@ $csv_headers = array(
     'Year', 'Month',
     'Name', 'Department', 'Grade', 'Evaluation Structure',
     'ATEM ID', 'ATEM Title', 'Level / Complexity',
-    'Start Date', 'End Date', 'Issuer', 'ARCI', 'ATEM Status', 'Est. Reward (RM)'
+    'Start Date', 'End Date', 'Closure Date', 'Issuer', 'ARCI', 'ATEM Status', 'Est. Reward (RM)'
 );
 
 // ----------------------------------------
@@ -275,6 +276,9 @@ if ($type === 'performance') {
         $p_grade  = ($grade_id  && isset($grade_labels[$grade_id]))              ? $grade_labels[$grade_id]   : '-';
         $p_struct = ($struct_id && isset($struct_labels[$struct_id]))            ? $struct_labels[$struct_id] : '-';
 
+        $rec_month = isset($rec['month']) ? (int)$rec['month'] : 0;
+        $rec_year  = isset($rec['year'])  ? (int)$rec['year']  : 0;
+
         foreach ($all_atems as $_a) {
             $iid = isset($_a['issuer_staff_id']) ? (int)$_a['issuer_staff_id'] : 0;
             $inv = ($iid === $sid);
@@ -287,6 +291,16 @@ if ($type === 'performance') {
                 }
             }
             if (!$inv) { continue; }
+
+            if (!atem_matches_period_column(
+                    ex_status_val($_a),
+                    isset($_a['start_date'])   ? $_a['start_date']   : null,
+                    isset($_a['closure_date']) ? $_a['closure_date'] : null,
+                    'atem', $rec_month, $rec_year, 0
+                )) {
+                continue;
+            }
+
             emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a);
         }
     }
