@@ -39,9 +39,28 @@ $filter_grade   = isset($_GET['grade'])    ? (int)$_GET['grade']      : 0;
 $filter_struct  = isset($_GET['struct'])   ? (int)$_GET['struct']     : 0;
 $ids_raw        = isset($_GET['ids'])      ? trim($_GET['ids'])        : '';
 $target_staff   = isset($_GET['staff_id']) ? (int)$_GET['staff_id']   : 0;
+$statuses_raw   = isset($_GET['statuses']) ? trim($_GET['statuses'])   : '';
+// Distinct from $target_staff (used only by the single-staff 'staff-atem' export
+// type) — this is the Staff filter on the bulk 'performance' export/table.
+$filter_staff_id = isset($_GET['staff_filter_id']) ? (int)$_GET['staff_filter_id'] : 0;
 
 if ($filter_quarter < 1 || $filter_quarter > 4) { $filter_quarter = 0; }
 if ($filter_quarter > 0) { $filter_month = 0; }
+
+// Whitelist against the 6 selectable statuses (see atem_performance_status_options()
+// in api.php); defaults to Completed + Completed with Excellence, matching the
+// Staff Performance page's own default, if the caller didn't specify any.
+$filter_statuses = array();
+if ($statuses_raw !== '') {
+    foreach (explode(',', $statuses_raw) as $_st) {
+        $_st = trim($_st);
+        if ($_st !== '') { $filter_statuses[] = $_st; }
+    }
+    $filter_statuses = array_values(array_intersect($filter_statuses, atem_performance_status_options()));
+}
+if (empty($filter_statuses)) {
+    $filter_statuses = array('Completed', 'Completed with Excellence');
+}
 
 $ids = array();
 if ($ids_raw !== '') {
@@ -224,29 +243,43 @@ if ($type === 'staff-atem') {
 // Export: performance records (bulk)
 // ----------------------------------------
 if ($type === 'performance') {
-    $quarter_months = array(1=>array(1,2,3), 2=>array(4,5,6), 3=>array(7,8,9), 4=>array(10,11,12));
-    $records = array();
+    $live = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id);
+    if (empty($live['success'])) {
+        http_response_code(502);
+        exit('Unable to reach the ATEM API. Please try again later.');
+    }
 
-    if ($filter_quarter > 0) {
-        foreach ($quarter_months[$filter_quarter] as $qm) {
-            $res2 = getBonusEligibilityList($qm, $filter_year, null, $staff_id);
-            if (!empty($res2['success']) && !empty($res2['data'])) {
-                foreach ($res2['data'] as $r) { $records[] = $r; }
-            }
+    // Resolve current grade/struct live from ODB (dept comes from each aggregate's
+    // own ATEM-card context, same as the main performance list).
+    $staff_grade  = array();
+    $staff_struct = array();
+    $_gs_res = mysqli_query($conn, "SELECT id, grade, struct FROM staff WHERE recycle != 1");
+    if ($_gs_res) {
+        while ($_gs_r = mysqli_fetch_assoc($_gs_res)) {
+            $_gs_id = (int)$_gs_r['id'];
+            $staff_grade[$_gs_id]  = ($_gs_r['grade']  !== null) ? (int)$_gs_r['grade']  : null;
+            $staff_struct[$_gs_id] = ($_gs_r['struct'] !== null) ? (int)$_gs_r['struct'] : null;
         }
-    } else {
-        $res2    = getBonusEligibilityList($filter_month, $filter_year, null, $staff_id);
-        $records = (!empty($res2['success']) && isset($res2['data'])) ? $res2['data'] : array();
     }
 
     // Apply filters
     $out_records = array();
-    foreach ($records as $rec) {
-        if (!empty($ids) && !in_array((int)$rec['id'], $ids)) { continue; }
-        if ($filter_dept   > 0 && (int)$rec['staff_dept_id'] !== $filter_dept)   { continue; }
-        if ($filter_grade  > 0 && (int)$rec['staff_grade']   !== $filter_grade)  { continue; }
-        if ($filter_struct > 0 && (int)$rec['staff_struct']  !== $filter_struct) { continue; }
-        $out_records[] = $rec;
+    foreach ($live['data'] as $sid => $rec) {
+        $sid       = (int)$sid;
+        $dept_id   = isset($rec['dept_id']) ? (int)$rec['dept_id'] : 0;
+        $grade_id  = isset($staff_grade[$sid])  ? $staff_grade[$sid]  : null;
+        $struct_id = isset($staff_struct[$sid]) ? $staff_struct[$sid] : null;
+
+        if (!empty($ids)        && !in_array($sid, $ids, true))    { continue; }
+        if ($filter_dept     > 0 && $dept_id !== $filter_dept)     { continue; }
+        if ($filter_grade    > 0 && $grade_id !== $filter_grade)   { continue; }
+        if ($filter_struct   > 0 && $struct_id !== $filter_struct) { continue; }
+        if ($filter_staff_id > 0 && $sid !== $filter_staff_id)     { continue; }
+
+        $total = $rec['complete'] + $rec['active'] + $rec['extend'] + $rec['failed'];
+        if ($total <= 0) { continue; }
+
+        $out_records[] = array('staff_id' => $sid, 'dept_id' => $dept_id, 'grade_id' => $grade_id, 'struct_id' => $struct_id);
     }
 
     // Fetch all ATEMs once
@@ -265,19 +298,18 @@ if ($type === 'performance') {
     fputs($out, "\xEF\xBB\xBF");
     fputcsv($out, $csv_headers);
 
+    $period_months = atem_period_months($filter_month, $filter_quarter);
+
     foreach ($out_records as $rec) {
-        $sid       = isset($rec['staff_id'])      ? (int)$rec['staff_id']      : 0;
-        $dept_id   = isset($rec['staff_dept_id']) ? (int)$rec['staff_dept_id'] : 0;
-        $grade_id  = isset($rec['staff_grade'])   ? (int)$rec['staff_grade']   : 0;
-        $struct_id = isset($rec['staff_struct'])  ? (int)$rec['staff_struct']  : 0;
+        $sid       = $rec['staff_id'];
+        $dept_id   = $rec['dept_id'];
+        $grade_id  = $rec['grade_id'];
+        $struct_id = $rec['struct_id'];
 
-        $p_name   = isset($staff_names[$sid])                                    ? $staff_names[$sid]         : ('Staff #' . $sid);
-        $p_dept   = ($dept_id   && isset($dept_names[$dept_id]))                 ? $dept_names[$dept_id]      : '-';
-        $p_grade  = ($grade_id  && isset($grade_labels[$grade_id]))              ? $grade_labels[$grade_id]   : '-';
-        $p_struct = ($struct_id && isset($struct_labels[$struct_id]))            ? $struct_labels[$struct_id] : '-';
-
-        $rec_month = isset($rec['month']) ? (int)$rec['month'] : 0;
-        $rec_year  = isset($rec['year'])  ? (int)$rec['year']  : 0;
+        $p_name   = isset($staff_names[$sid])   ? $staff_names[$sid]              : ('Staff #' . $sid);
+        $p_dept   = ($dept_id   && isset($dept_names[$dept_id]))     ? $dept_names[$dept_id]      : '-';
+        $p_grade  = ($grade_id  !== null && isset($grade_labels[$grade_id]))   ? $grade_labels[$grade_id]   : '-';
+        $p_struct = ($struct_id !== null && isset($struct_labels[$struct_id])) ? $struct_labels[$struct_id] : '-';
 
         foreach ($all_atems as $_a) {
             $iid = isset($_a['issuer_staff_id']) ? (int)$_a['issuer_staff_id'] : 0;
@@ -292,14 +324,12 @@ if ($type === 'performance') {
             }
             if (!$inv) { continue; }
 
-            if (!atem_matches_period_column(
-                    ex_status_val($_a),
-                    isset($_a['start_date'])   ? $_a['start_date']   : null,
-                    isset($_a['closure_date']) ? $_a['closure_date'] : null,
-                    'atem', $rec_month, $rec_year, 0
-                )) {
-                continue;
-            }
+            $_status = ex_status_val($_a);
+            if (!in_array($_status, $filter_statuses, true)) { continue; }
+
+            $_dateField = atem_status_period_field($_status);
+            $_dateStr   = isset($_a[$_dateField]) ? $_a[$_dateField] : null;
+            if (!atem_date_in_period($_dateStr, $period_months, $filter_year)) { continue; }
 
             emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a);
         }

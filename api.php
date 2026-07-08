@@ -1334,6 +1334,121 @@ function atem_matches_period_column($status, $start_date, $closure_date, $col, $
     }
 }
 
+// The 6 exact ATEM statuses selectable on the Staff Performance status filter.
+// Draft/Suspended/Deleted are never relevant to performance tracking.
+function atem_performance_status_options()
+{
+    return array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
+}
+
+// Which performance-table column ('complete'/'active'/'extend'/'failed') a status
+// belongs to, or null if it's not a performance-relevant status at all.
+function atem_status_bucket($status)
+{
+    if (in_array($status, array('Completed', 'Completed with Excellence', 'Completed with Extension'), true)) {
+        return 'complete';
+    }
+    if ($status === 'Active')   { return 'active'; }
+    if ($status === 'Extended') { return 'extend'; }
+    if ($status === 'Failed')   { return 'failed'; }
+    return null;
+}
+
+// Mirrors CalculateBonusEligibility.php's date basis: completed-family/extended/
+// failed are matched by closure_date, active by start_date.
+function atem_status_period_field($status)
+{
+    return ($status === 'Active') ? 'start_date' : 'closure_date';
+}
+
+// Live, per-status equivalent of the old atem_bonus_eligibilities snapshot table.
+// Computes per-staff Complete/Active/Extend/Failed counts and total_incentive
+// directly from current ATEM records, counting ONLY the caller-selected exact
+// statuses — any status not in $selectedStatuses contributes nothing anywhere,
+// so its bucket reads 0 rather than a stale/mismatched snapshot value.
+function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $staff_id)
+{
+    $listResult = getAtemList($staff_id);
+    if (!$listResult['success']) {
+        return array('success' => false, 'message' => 'Failed to load ATEM data', 'data' => array());
+    }
+
+    $months = atem_period_months($month, $quarter);
+    $aggregates = array();
+
+    foreach ($listResult['data'] as $item) {
+        $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
+        if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
+
+        $bucket = atem_status_bucket($statusVal);
+        if ($bucket === null) { continue; }
+
+        $dateField = atem_status_period_field($statusVal);
+        $dateStr   = isset($item[$dateField]) ? $item[$dateField] : '';
+        if (!atem_date_in_period($dateStr, $months, $year)) { continue; }
+
+        // Involved staff: issuer + every ARCI member, each keyed by their
+        // dept_id for this specific card (mirrors CalculateBonusEligibility).
+        $involved = array();
+        $issuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
+        if ($issuerId) {
+            $involved[$issuerId] = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
+        }
+        if (isset($item['arci']) && is_array($item['arci'])) {
+            foreach ($item['arci'] as $m) {
+                if (!empty($m['staff_id'])) {
+                    $involved[(int)$m['staff_id']] = isset($m['staff_dept_id']) ? (int)$m['staff_dept_id'] : 0;
+                }
+            }
+        }
+
+        // Incentive only ever applies to completed-family cards, and only once
+        // the payout was actually approved (final_incentive_amount > 0) — same
+        // rule as CalculateBonusEligibility.php.
+        $incentivePerStaff = array();
+        if ($bucket === 'complete'
+            && isset($item['final_incentive_amount']) && (float)$item['final_incentive_amount'] > 0
+            && isset($item['arci']) && is_array($item['arci'])
+        ) {
+            $incACount = 0;
+            $incRCount = 0;
+            foreach ($item['arci'] as $m) {
+                if (empty($m['is_incentivised'])) { continue; }
+                if ($m['role'] === 'A') { $incACount++; }
+                if ($m['role'] === 'R') { $incRCount++; }
+            }
+            foreach ($item['arci'] as $m) {
+                if (empty($m['staff_id']) || empty($m['is_incentivised'])) { continue; }
+                $sid = (int)$m['staff_id'];
+                if ($m['role'] === 'A' && $incACount > 0) {
+                    $amt = (float)(isset($item['a_incentive_amount']) ? $item['a_incentive_amount'] : 0) / $incACount;
+                    $incentivePerStaff[$sid] = (isset($incentivePerStaff[$sid]) ? $incentivePerStaff[$sid] : 0.0) + $amt;
+                } elseif ($m['role'] === 'R' && $incRCount > 0) {
+                    $amt = (float)(isset($item['r_incentive_amount']) ? $item['r_incentive_amount'] : 0) / $incRCount;
+                    $incentivePerStaff[$sid] = (isset($incentivePerStaff[$sid]) ? $incentivePerStaff[$sid] : 0.0) + $amt;
+                }
+            }
+        }
+
+        foreach ($involved as $sid => $deptId) {
+            if (!isset($aggregates[$sid])) {
+                $aggregates[$sid] = array(
+                    'dept_id' => $deptId,
+                    'complete' => 0, 'active' => 0, 'extend' => 0, 'failed' => 0,
+                    'total_incentive' => 0.0,
+                );
+            }
+            $aggregates[$sid][$bucket]++;
+            if ($deptId) { $aggregates[$sid]['dept_id'] = $deptId; }
+            if (isset($incentivePerStaff[$sid])) {
+                $aggregates[$sid]['total_incentive'] += $incentivePerStaff[$sid];
+            }
+        }
+    }
+
+    return array('success' => true, 'data' => $aggregates);
+}
+
 function getBonusEligibilityList($month, $year, $staff_id_param, $staff_id)
 {
     $params = array();
@@ -2104,42 +2219,44 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pl_dept    = isset($jsonData['dept'])    ? (int)$jsonData['dept']    : 0;
                     $pl_grade   = isset($jsonData['grade'])   ? (int)$jsonData['grade']   : 0;
                     $pl_struct  = isset($jsonData['struct'])  ? (int)$jsonData['struct']  : 0;
+                    $pl_staff   = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
 
                     if ($pl_quarter < 1 || $pl_quarter > 4) { $pl_quarter = 0; }
                     if ($pl_quarter > 0) { $pl_month = 0; }
                     if ($pl_month < 1 || $pl_month > 12) { $pl_month = 0; }
 
-                    $pl_qm_map  = array(1=>array(1,2,3), 2=>array(4,5,6), 3=>array(7,8,9), 4=>array(10,11,12));
-                    $pl_records = array();
-                    $pl_ok      = true;
+                    // Whitelist against the 6 selectable statuses — anything not
+                    // selected contributes 0 to every bucket, never a stale/mismatched
+                    // count, since it's excluded before any aggregation happens.
+                    $pl_allowed_statuses = atem_performance_status_options();
+                    $pl_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
+                        ? array_values(array_intersect($jsonData['statuses'], $pl_allowed_statuses))
+                        : array('Completed', 'Completed with Excellence');
 
-                    if ($pl_quarter > 0) {
-                        foreach ($pl_qm_map[$pl_quarter] as $pl_qm) {
-                            $pl_res = getBonusEligibilityList($pl_qm, $pl_year, null, $staff_id);
-                            if (empty($pl_res['success'])) { $pl_ok = false; break; }
-                            if (!empty($pl_res['data'])) {
-                                foreach ($pl_res['data'] as $pl_r) { $pl_records[] = $pl_r; }
-                            }
-                        }
-                    } else {
-                        $pl_res  = getBonusEligibilityList($pl_month, $pl_year, null, $staff_id);
-                        $pl_ok   = !empty($pl_res['success']);
-                        $pl_records = ($pl_ok && isset($pl_res['data'])) ? $pl_res['data'] : array();
-                    }
-
-                    if (!$pl_ok) {
+                    $pl_live = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id);
+                    if (empty($pl_live['success'])) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;
                     }
 
+                    // Resolve current staff details from ODB directly (live, not a
+                    // point-in-time snapshot) — name, department, grade, struct.
                     $pl_staff_names   = array();
+                    $pl_staff_grade   = array();
+                    $pl_staff_struct  = array();
                     $pl_dept_names    = array();
                     $pl_grade_labels  = array();
                     $pl_struct_labels = array();
-                    $pl_caller_dept   = isset($department) ? (int)$department : 0;
 
-                    $pl_sr = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1");
-                    if ($pl_sr) { while ($pl_r = mysqli_fetch_assoc($pl_sr)) { $pl_staff_names[(int)$pl_r['id']] = $pl_r['nama_staff']; } }
+                    $pl_sr = mysqli_query($conn, "SELECT id, nama_staff, grade, struct FROM staff WHERE recycle != 1");
+                    if ($pl_sr) {
+                        while ($pl_r = mysqli_fetch_assoc($pl_sr)) {
+                            $pl_id_ = (int)$pl_r['id'];
+                            $pl_staff_names[$pl_id_]  = $pl_r['nama_staff'];
+                            $pl_staff_grade[$pl_id_]  = ($pl_r['grade']  !== null) ? (int)$pl_r['grade']  : null;
+                            $pl_staff_struct[$pl_id_] = ($pl_r['struct'] !== null) ? (int)$pl_r['struct'] : null;
+                        }
+                    }
                     $pl_dr = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
                     if ($pl_dr) { while ($pl_r = mysqli_fetch_assoc($pl_dr)) { $pl_dept_names[(int)$pl_r['id']] = $pl_r['depart_name']; } }
                     $pl_gr = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade ORDER BY id ASC");
@@ -2148,26 +2265,24 @@ if (!defined('API_JWT_INCLUDED')) {
                     if ($pl_str) { while ($pl_r = mysqli_fetch_assoc($pl_str)) { $pl_struct_labels[(int)$pl_r['id']] = $pl_r['struct_name']; } }
 
                     $pl_out = array();
-                    foreach ($pl_records as $pl_rec) {
-                        $pl_rec_dept   = isset($pl_rec['staff_dept_id']) ? (int)$pl_rec['staff_dept_id'] : 0;
-                        $pl_rec_grade  = isset($pl_rec['staff_grade'])   ? (int)$pl_rec['staff_grade']   : 0;
-                        $pl_rec_struct = isset($pl_rec['staff_struct'])  ? (int)$pl_rec['staff_struct']  : 0;
+                    foreach ($pl_live['data'] as $pl_sid => $pl_rec) {
+                        $pl_rec_dept   = isset($pl_rec['dept_id']) ? (int)$pl_rec['dept_id'] : 0;
+                        $pl_grade_id   = isset($pl_staff_grade[$pl_sid])  ? $pl_staff_grade[$pl_sid]  : null;
+                        $pl_struct_id  = isset($pl_staff_struct[$pl_sid]) ? $pl_staff_struct[$pl_sid] : null;
 
-                        if ($pl_perm < 3 && !$pl_is_sa && $pl_rec_dept !== $pl_caller_dept) { continue; }
-                        if ($pl_dept   > 0 && $pl_rec_dept   !== $pl_dept)   { continue; }
-                        if ($pl_grade  > 0 && $pl_rec_grade  !== $pl_grade)  { continue; }
-                        if ($pl_struct > 0 && $pl_rec_struct !== $pl_struct) { continue; }
-                        if (!isset($pl_rec['total_atem']) || (int)$pl_rec['total_atem'] <= 0) { continue; }
+                        if ($pl_dept   > 0 && $pl_rec_dept  !== $pl_dept)   { continue; }
+                        if ($pl_grade  > 0 && $pl_grade_id  !== $pl_grade)  { continue; }
+                        if ($pl_struct > 0 && $pl_struct_id !== $pl_struct) { continue; }
+                        if ($pl_staff  > 0 && (int)$pl_sid  !== $pl_staff)  { continue; }
 
-                        $pl_sid       = isset($pl_rec['staff_id']) ? (int)$pl_rec['staff_id'] : 0;
-                        $pl_grade_id  = isset($pl_rec['staff_grade'])  ? (int)$pl_rec['staff_grade']  : null;
-                        $pl_struct_id = isset($pl_rec['staff_struct']) ? (int)$pl_rec['staff_struct'] : null;
+                        $pl_total = $pl_rec['complete'] + $pl_rec['active'] + $pl_rec['extend'] + $pl_rec['failed'];
+                        if ($pl_total <= 0) { continue; }
 
                         $pl_out[] = array(
-                            'id'           => isset($pl_rec['id'])             ? (int)$pl_rec['id'] : 0,
-                            'staff_id'     => $pl_sid,
-                            'month'        => isset($pl_rec['month']) ? (int)$pl_rec['month'] : 0,
-                            'year'         => isset($pl_rec['year'])  ? (int)$pl_rec['year']  : 0,
+                            'id'           => (int)$pl_sid,
+                            'staff_id'     => (int)$pl_sid,
+                            'month'        => $pl_month,
+                            'year'         => $pl_year,
                             'staff_name'   => isset($pl_staff_names[$pl_sid]) ? $pl_staff_names[$pl_sid] : ('Staff #' . $pl_sid),
                             'dept_id'      => $pl_rec_dept,
                             'dept_name'    => ($pl_rec_dept && isset($pl_dept_names[$pl_rec_dept])) ? $pl_dept_names[$pl_rec_dept] : '-',
@@ -2175,12 +2290,12 @@ if (!defined('API_JWT_INCLUDED')) {
                             'grade_label'  => ($pl_grade_id !== null && isset($pl_grade_labels[$pl_grade_id])) ? $pl_grade_labels[$pl_grade_id] : '-',
                             'struct_id'    => $pl_struct_id,
                             'struct_label' => ($pl_struct_id !== null && isset($pl_struct_labels[$pl_struct_id])) ? $pl_struct_labels[$pl_struct_id] : '-',
-                            'total_atem'      => isset($pl_rec['total_atem'])      ? (int)$pl_rec['total_atem']        : 0,
-                            'complete_count'  => isset($pl_rec['complete_count'])  ? (int)$pl_rec['complete_count']    : 0,
-                            'active_count'    => isset($pl_rec['active_count'])    ? (int)$pl_rec['active_count']      : 0,
-                            'extend_count'    => isset($pl_rec['extend_count'])    ? (int)$pl_rec['extend_count']      : 0,
-                            'failed_count'    => isset($pl_rec['failed_count'])    ? (int)$pl_rec['failed_count']      : 0,
-                            'total_incentive' => isset($pl_rec['total_incentive']) ? (float)$pl_rec['total_incentive'] : 0.0,
+                            'total_atem'      => $pl_total,
+                            'complete_count'  => $pl_rec['complete'],
+                            'active_count'    => $pl_rec['active'],
+                            'extend_count'    => $pl_rec['extend'],
+                            'failed_count'    => $pl_rec['failed'],
+                            'total_incentive' => round($pl_rec['total_incentive'], 2),
                         );
                     }
                     $response = array('success' => true, 'data' => $pl_out);
@@ -2221,6 +2336,14 @@ if (!defined('API_JWT_INCLUDED')) {
                     $gsl_year       = isset($jsonData['year'])    ? (int)$jsonData['year']    : 0;
                     $gsl_quarter    = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
                     if ($gsl_quarter < 1 || $gsl_quarter > 4) { $gsl_quarter = 0; }
+
+                    // Optional exact-status restriction — lets the Staff Performance
+                    // modal mirror whichever statuses are checked in its Status
+                    // filter, instead of the coarse 4-bucket match below, which
+                    // would otherwise surface statuses the summary table excluded.
+                    $gsl_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']) && !empty($jsonData['statuses']))
+                        ? array_values(array_intersect($jsonData['statuses'], atem_performance_status_options()))
+                        : null;
 
                     // Build name lookup maps for enrichment.
                     $_s_names = array();
@@ -2273,6 +2396,9 @@ if (!defined('API_JWT_INCLUDED')) {
                         $_row_closure = isset($_a['closure_date']) ? $_a['closure_date'] : '';
 
                         if ($gsl_has_period && !atem_matches_period_column($_row_status, $_row_start, $_row_closure, $gsl_col, $gsl_month, $gsl_year, $gsl_quarter)) {
+                            continue;
+                        }
+                        if ($gsl_statuses !== null && !in_array($_row_status, $gsl_statuses, true)) {
                             continue;
                         }
 

@@ -176,7 +176,7 @@
         '4': ['10-01', '12-31']
     };
 
-    function buildViewUrl(statusOverride, levelIdOverride, deptOverride, presetOverride, overdueOnly, incentiveOnly, roleOverride, issuerOverride, mineOverride) {
+    function buildViewUrl(statusOverride, levelIdOverride, deptOverride, statusesOverride, overdueOnly, incentiveOnly, roleOverride, issuerOverride, mineOverride) {
         var yearEl    = document.getElementById('dash-filter-year');
         var monthEl   = document.getElementById('dash-filter-month');
         var quarterEl = document.getElementById('dash-filter-quarter');
@@ -191,7 +191,7 @@
         var params = [];
         if (statusOverride)  { params.push('status='      + encodeURIComponent(statusOverride)); }
         if (levelIdOverride) { params.push('level_id='    + encodeURIComponent(levelIdOverride)); }
-        if (presetOverride)  { params.push('preset='      + encodeURIComponent(presetOverride)); }
+        if (statusesOverride && statusesOverride.length) { params.push('statuses=' + encodeURIComponent(statusesOverride.join(','))); }
         if (overdueOnly)     { params.push('overdue=1'); }
         if (incentiveOnly)   { params.push('min_level_id=2'); }
         if (roleOverride)    { params.push('role='       + encodeURIComponent(roleOverride)); }
@@ -543,11 +543,12 @@
                     // ignore clicks on them while showing a Staff/Department scope.
                     if ((role || issuerMine || mine) && currentInvolvementScope !== 'me') { return; }
 
-                    var status      = card.getAttribute('data-status')    || '';
-                    var preset      = card.getAttribute('data-preset')    || '';
-                    var isOverdue   = card.getAttribute('data-overdue')   === '1';
-                    var isIncentive = card.getAttribute('data-incentive') === '1';
-                    window.location.href = buildViewUrl(status, '', '', preset, isOverdue, isIncentive, role, issuerMine, mine);
+                    var status       = card.getAttribute('data-status')    || '';
+                    var statusesAttr = card.getAttribute('data-statuses')  || '';
+                    var statuses     = statusesAttr ? statusesAttr.split(',') : [];
+                    var isOverdue    = card.getAttribute('data-overdue')   === '1';
+                    var isIncentive  = card.getAttribute('data-incentive') === '1';
+                    window.location.href = buildViewUrl(status, '', '', statuses, isOverdue, isIncentive, role, issuerMine, mine);
                 });
             }(dashStats[si]));
         }

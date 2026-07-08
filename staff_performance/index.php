@@ -43,6 +43,31 @@ $year_options = array();
 for ($y = 2026; $y <= $init_year; $y++) {
     $year_options[] = $y;
 }
+
+// Status filter — exact statuses only (mirrors atem_performance_status_options()
+// in api.php). Defaults to Completed + Completed with Excellence only; every
+// other status (including Completed with Extension) starts unchecked, so its
+// column reads 0 until explicitly selected.
+$perf_status_options = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
+$perf_default_statuses = array('Completed', 'Completed with Excellence');
+
+// Staff filter dropdown (searchable, like the one on index.php). This page is
+// already gated to grade 4+/SuperAdmin, who see every department anyway, so
+// the list is never narrowed by the caller's own grade/department the way
+// index.php's version is. dept_ids lets the frontend narrow options further
+// when a specific Department filter is also selected.
+$perf_staff_options = array();
+$_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+if ($_pso_res) {
+    while ($_pso_row = mysqli_fetch_assoc($_pso_res)) {
+        $_deptIds = array();
+        foreach (explode(',', (string)$_pso_row['department']) as $_p) {
+            $_p = (int)trim($_p);
+            if ($_p > 0) { $_deptIds[] = $_p; }
+        }
+        $perf_staff_options[] = array('id' => (int)$_pso_row['id'], 'name' => $_pso_row['nama_staff'], 'dept_ids' => $_deptIds);
+    }
+}
 ?>
 
 <style>
@@ -91,7 +116,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
 <div class="atem-card atem-filter mb-3">
     <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
     <div class="row g-2 mt-1 align-items-end">
-        <div class="col-md-2 col-sm-4">
+        <div class="col-md-3 col-sm-6">
             <label class="form-label">Year</label>
             <select id="perf-filter-year" class="form-select form-select-sm">
                 <?php foreach ($year_options as $y): ?>
@@ -100,7 +125,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="col-md-2 col-sm-4">
+        <div class="col-md-3 col-sm-6">
             <label class="form-label">Closure Month</label>
             <select id="perf-filter-month" class="form-select form-select-sm">
                 <option value="0">All Month</option>
@@ -110,7 +135,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="col-md-2 col-sm-4">
+        <div class="col-md-3 col-sm-6">
             <label class="form-label">Quarter</label>
             <select id="perf-filter-quarter" class="form-select form-select-sm">
                 <option value="0">All Quarter</option>
@@ -121,7 +146,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
             </select>
         </div>
         <?php if (!empty($dept_filter_options)): ?>
-        <div class="col-md-2 col-sm-6">
+        <div class="col-md-3 col-sm-6">
             <label class="form-label">Department</label>
             <select id="perf-filter-dept" class="form-select form-select-sm">
                 <option value="0">All Department</option>
@@ -131,7 +156,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
             </select>
         </div>
         <?php endif; ?>
-        <div class="col-md-2 col-sm-6">
+        <div class="col-md-3 col-sm-6">
             <label class="form-label">Grade</label>
             <select id="perf-filter-grade" class="form-select form-select-sm">
                 <option value="0">All Grade</option>
@@ -140,7 +165,7 @@ for ($y = 2026; $y <= $init_year; $y++) {
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="col-md-2 col-sm-6">
+        <div class="col-md-3 col-sm-6">
             <label class="form-label">Evaluation Structure</label>
             <select id="perf-filter-struct" class="form-select form-select-sm">
                 <option value="0">All Evaluation Structure</option>
@@ -148,6 +173,37 @@ for ($y = 2026; $y <= $init_year; $y++) {
                 <option value="<?php echo $sid2; ?>"><?php echo htmlspecialchars($sname); ?></option>
                 <?php endforeach; ?>
             </select>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Status</label>
+            <div class="vf-issuer-wrap" id="perf-status-wrap">
+                <div class="vf-s2-selection" id="perf-status-btn" tabindex="0">Loading...</div>
+                <div class="vf-s2-dropdown" id="perf-status-dropdown">
+                    <ul class="vf-s2-list" style="padding:4px 0;">
+                        <?php foreach ($perf_status_options as $_pso): ?>
+                        <li class="vf-s2-list-item" style="cursor:default;">
+                            <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                <input type="checkbox" class="perf-status-cb" value="<?php echo htmlspecialchars($_pso); ?>"<?php echo in_array($_pso, $perf_default_statuses, true) ? ' checked' : ''; ?>>
+                                <?php echo htmlspecialchars($_pso); ?>
+                            </label>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Staff</label>
+            <div class="vf-issuer-wrap" id="perf-staff-wrap">
+                <div class="vf-s2-selection" id="perf-staff-btn" tabindex="0">All staff</div>
+                <div class="vf-s2-dropdown" id="perf-staff-dropdown">
+                    <div class="vf-s2-search-wrap">
+                        <input class="vf-s2-search" id="perf-staff-search" type="search" placeholder="Search name...">
+                    </div>
+                    <ul class="vf-s2-list" id="perf-staff-list"></ul>
+                </div>
+                <input type="hidden" id="perf-staff-value" value="0">
+            </div>
         </div>
         <div class="col-auto d-flex align-items-end gap-2 ms-auto">
             <button class="btn btn-sm btn-outline-secondary" id="perf-reset-filter">Reset</button>
@@ -243,10 +299,12 @@ for ($y = 2026; $y <= $init_year; $y++) {
 
 <script>
 var PERF_CFG = <?php echo json_encode(array(
-    'apiUrl'     => '/odb/atem/api.php',
-    'permission' => $atem_permission,
-    'initMonth'  => $init_month,
-    'initYear'   => $init_year,
+    'apiUrl'          => '/odb/atem/api.php',
+    'permission'      => $atem_permission,
+    'initMonth'       => $init_month,
+    'initYear'        => $init_year,
+    'defaultStatuses' => $perf_default_statuses,
+    'staff'           => $perf_staff_options,
 )); ?>;
 
 var PERF_API_URL = PERF_CFG.apiUrl;
@@ -313,6 +371,147 @@ function formatNumber(n) {
     return x.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+// ----------------------------------------------------------- status filter
+function getSelectedStatuses() {
+    var boxes = document.querySelectorAll('.perf-status-cb:checked');
+    var out = [];
+    for (var i = 0; i < boxes.length; i++) { out.push(boxes[i].value); }
+    return out;
+}
+
+function updateStatusButtonLabel() {
+    var btn = document.getElementById('perf-status-btn');
+    if (!btn) { return; }
+    var selected = getSelectedStatuses();
+    var allBoxes = document.querySelectorAll('.perf-status-cb');
+    if (selected.length === 0) {
+        btn.textContent = 'No status selected';
+    } else if (selected.length === allBoxes.length) {
+        btn.textContent = 'All Statuses';
+    } else if (selected.length <= 2) {
+        btn.textContent = selected.join(', ');
+    } else {
+        btn.textContent = selected.length + ' statuses selected';
+    }
+}
+
+// ------------------------------------------------- staff searchable dropdown
+// Mirrors the Staff dropdown on index.php (js/index.js buildStaffDropdown).
+// Options narrow to the selected department, if any.
+function buildStaffDropdown() {
+    var listEl   = document.getElementById('perf-staff-list');
+    var searchEl = document.getElementById('perf-staff-search');
+    var btnEl    = document.getElementById('perf-staff-btn');
+    var dropEl   = document.getElementById('perf-staff-dropdown');
+    var valEl    = document.getElementById('perf-staff-value');
+    if (!listEl || !btnEl || !dropEl) { return; }
+
+    // Sync dimensions, border and font-size to a form-select-sm exactly —
+    // otherwise this custom div falls back to its own CSS box model and
+    // renders taller/rounder than the selects next to it.
+    var refEl = document.getElementById('perf-filter-year');
+    if (refEl && btnEl) {
+        var refStyle = window.getComputedStyle(refEl);
+        btnEl.style.height       = refEl.offsetHeight + 'px';
+        btnEl.style.border       = refStyle.border;
+        btnEl.style.borderRadius = refStyle.borderRadius;
+        btnEl.style.fontSize     = refStyle.fontSize;
+        btnEl.style.color        = refStyle.color;
+    }
+
+    function currentDeptId() {
+        var deptEl = document.getElementById('perf-filter-dept');
+        return deptEl ? (parseInt(deptEl.value, 10) || 0) : 0;
+    }
+
+    function visibleStaff() {
+        var all = PERF_CFG.staff || [];
+        var deptId = currentDeptId();
+        if (!deptId) { return all; }
+        return all.filter(function(s) {
+            return s.dept_ids && s.dept_ids.indexOf(deptId) !== -1;
+        });
+    }
+
+    function renderList() {
+        var staff = visibleStaff();
+        var html = '<li class="vf-s2-list-item" data-id="0">All staff</li>';
+        for (var i = 0; i < staff.length; i++) {
+            html += '<li class="vf-s2-list-item" data-id="' + staff[i].id + '">' + escHtml(staff[i].name) + '</li>';
+        }
+        listEl.innerHTML = html;
+    }
+
+    function openDropdown() {
+        renderList();
+        dropEl.classList.add('open');
+        if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
+    }
+    function closeDropdown() { dropEl.classList.remove('open'); }
+
+    function filterList(term) {
+        var items = listEl.querySelectorAll('li');
+        var lower = term.toLowerCase();
+        for (var j = 0; j < items.length; j++) {
+            var text = items[j].textContent || '';
+            items[j].classList.toggle('hidden', !(!lower || text.toLowerCase().indexOf(lower) >= 0));
+        }
+    }
+
+    function selectStaff(id, name) {
+        if (valEl) { valEl.value = id; }
+        if (btnEl) { btnEl.textContent = name; }
+        closeDropdown();
+        loadPerformance(buildPayload());
+    }
+
+    btnEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
+    });
+    btnEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
+    });
+    if (searchEl) {
+        searchEl.addEventListener('input', function() { filterList(this.value); });
+        searchEl.addEventListener('click', function(e) { e.stopPropagation(); });
+    }
+    listEl.addEventListener('click', function(e) {
+        var li = e.target.closest ? e.target.closest('li') : null;
+        if (!li) { return; }
+        selectStaff(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
+    });
+    document.addEventListener('click', function(e) {
+        var wrap = document.getElementById('perf-staff-wrap');
+        if (wrap && !wrap.contains(e.target)) { closeDropdown(); }
+    });
+
+    // If the selected staff member falls outside the newly chosen department,
+    // clear the selection rather than keep a mismatched filter applied.
+    var deptFilterEl = document.getElementById('perf-filter-dept');
+    if (deptFilterEl) {
+        deptFilterEl.addEventListener('change', function() {
+            var deptId = currentDeptId();
+            var selectedId = valEl ? (parseInt(valEl.value, 10) || 0) : 0;
+            if (deptId && selectedId) {
+                var match = (PERF_CFG.staff || []).some(function(s) {
+                    return s.id === selectedId && s.dept_ids && s.dept_ids.indexOf(deptId) !== -1;
+                });
+                if (!match) { resetStaffDropdown(); }
+            }
+        });
+    }
+}
+
+function resetStaffDropdown() {
+    var valEl = document.getElementById('perf-staff-value');
+    var btnEl = document.getElementById('perf-staff-btn');
+    var dropEl = document.getElementById('perf-staff-dropdown');
+    if (valEl)  { valEl.value = '0'; }
+    if (btnEl)  { btnEl.textContent = 'All staff'; }
+    if (dropEl) { dropEl.classList.remove('open'); }
+}
+
 function buildPayload() {
     var year = parseInt(document.getElementById('perf-filter-year').value, 10) || PERF_CFG.initYear;
     var month = parseInt(document.getElementById('perf-filter-month').value, 10) || 0;
@@ -320,9 +519,11 @@ function buildPayload() {
     var deptEl = document.getElementById('perf-filter-dept');
     var gradeEl = document.getElementById('perf-filter-grade');
     var structEl = document.getElementById('perf-filter-struct');
+    var staffEl = document.getElementById('perf-staff-value');
     var dept = deptEl ? (parseInt(deptEl.value, 10) || 0) : 0;
     var grade = gradeEl ? (parseInt(gradeEl.value, 10) || 0) : 0;
     var struct = structEl ? (parseInt(structEl.value, 10) || 0) : 0;
+    var staffId = staffEl ? (parseInt(staffEl.value, 10) || 0) : 0;
     if (quarter > 0) {
         month = 0;
     }
@@ -332,7 +533,9 @@ function buildPayload() {
         quarter: quarter,
         dept: dept,
         grade: grade,
-        struct: struct
+        struct: struct,
+        staff_id: staffId,
+        statuses: getSelectedStatuses()
     };
 }
 
@@ -361,12 +564,16 @@ function updateActionUrls(payload) {
     var dept = payload.dept || 0;
     var grade = payload.grade || 0;
     var struct = payload.struct || 0;
+    var staffId = payload.staff_id || 0;
 
     var exportBtn = document.getElementById('perf-export-all-btn');
     if (exportBtn) {
+        var statuses = (payload.statuses || []).join(',');
         exportBtn.href = '/odb/atem/staff_performance/export.php?type=performance' +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
-            '&dept=' + dept + '&grade=' + grade + '&struct=' + struct;
+            '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
+            '&staff_filter_id=' + staffId +
+            '&statuses=' + encodeURIComponent(statuses);
     }
 
     var recalcBtn = document.getElementById('recalc-btn');
@@ -464,16 +671,19 @@ function renderTable(data, payload) {
     var dept = (payload && payload.dept) ? payload.dept : 0;
     var grade = (payload && payload.grade) ? payload.grade : 0;
     var struct = (payload && payload.struct) ? payload.struct : 0;
+    var statuses = (payload && payload.statuses) ? payload.statuses : [];
+    var statusesQs = encodeURIComponent(statuses.join(','));
 
     var html = '';
     for (var i = 0; i < pageData.length; i++) {
         var rec = pageData[i];
 
         var editUrl = '/odb/atem/staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
-            '&month=' + month + '&year=' + year;
+            '&month=' + month + '&year=' + year + '&statuses=' + statusesQs;
         var exportUrl = '/odb/atem/staff_performance/export.php?type=performance&ids=' + rec.id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
-            '&dept=' + dept + '&grade=' + grade + '&struct=' + struct;
+            '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
+            '&statuses=' + statusesQs;
 
         html += '<tr>' +
             '<td><input type="checkbox" class="perf-row-cb" value="' + rec.id + '"></td>' +
@@ -483,16 +693,11 @@ function renderTable(data, payload) {
             '</td>' +
             '<td>' + escHtml(rec.grade_label) + '</td>' +
             '<td>' + escHtml(rec.struct_label) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="atem" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.total_atem) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="complete" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.complete_count) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="active" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.active_count) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="extend" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.extend_count) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id +
-            '" data-col="failed" data-month="' + month + '" data-year="' + year + '" style="cursor:pointer;">' + countCell(rec.failed_count) + '</td>' +
+            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="atem" style="cursor:pointer;">' + countCell(rec.total_atem) + '</td>' +
+            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="complete" style="cursor:pointer;">' + countCell(rec.complete_count) + '</td>' +
+            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="active" style="cursor:pointer;">' + countCell(rec.active_count) + '</td>' +
+            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="extend" style="cursor:pointer;">' + countCell(rec.extend_count) + '</td>' +
+            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="failed" style="cursor:pointer;">' + countCell(rec.failed_count) + '</td>' +
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '">View</a>' +
@@ -559,20 +764,58 @@ function loadPerformance(payload) {
 
 document.addEventListener('DOMContentLoaded', function() {
 
-    // Initial load
-    loadPerformance({
-        year: PERF_CFG.initYear,
-        month: 0,
-        quarter: 0,
-        dept: 0,
-        grade: 0,
-        struct: 0
+    buildStaffDropdown();
+
+    // Status filter dropdown (checkbox list, styled like the Issuer searchable dropdown)
+    var statusBtn = document.getElementById('perf-status-btn');
+    var statusDropdown = document.getElementById('perf-status-dropdown');
+    var statusWrap = document.getElementById('perf-status-wrap');
+    updateStatusButtonLabel();
+
+    // Sync dimensions, border and font-size to a form-select-sm exactly —
+    // otherwise this custom div falls back to its own CSS box model and
+    // renders taller/rounder than the selects next to it.
+    var statusRefEl = document.getElementById('perf-filter-year');
+    if (statusRefEl && statusBtn) {
+        var statusRefStyle = window.getComputedStyle(statusRefEl);
+        statusBtn.style.height       = statusRefEl.offsetHeight + 'px';
+        statusBtn.style.border       = statusRefStyle.border;
+        statusBtn.style.borderRadius = statusRefStyle.borderRadius;
+        statusBtn.style.fontSize     = statusRefStyle.fontSize;
+        statusBtn.style.color        = statusRefStyle.color;
+    }
+
+    if (statusBtn && statusDropdown) {
+        statusBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            statusDropdown.classList.toggle('open');
+        });
+        statusBtn.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                statusDropdown.classList.toggle('open');
+            }
+        });
+        document.addEventListener('click', function(e) {
+            if (statusWrap && !statusWrap.contains(e.target)) {
+                statusDropdown.classList.remove('open');
+            }
+        });
+    }
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.classList.contains('perf-status-cb')) {
+            updateStatusButtonLabel();
+            loadPerformance(buildPayload());
+        }
     });
+
+    // Initial load
+    loadPerformance(buildPayload());
 
     // Reset filter
     document.getElementById('perf-reset-filter').addEventListener('click', function() {
         document.getElementById('perf-filter-year').value = PERF_CFG.initYear;
-        document.getElementById('perf-filter-month').value = PERF_CFG.initMonth;
+        document.getElementById('perf-filter-month').value = '0';
         document.getElementById('perf-filter-quarter').value = '0';
         var deptEl = document.getElementById('perf-filter-dept');
         var gradeEl = document.getElementById('perf-filter-grade');
@@ -586,14 +829,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (structEl) {
             structEl.value = '0';
         }
-        loadPerformance({
-            year: PERF_CFG.initYear,
-            month: 0,
-            quarter: 0,
-            dept: 0,
-            grade: 0,
-            struct: 0
-        });
+        var statusBoxes = document.querySelectorAll('.perf-status-cb');
+        for (var _si = 0; _si < statusBoxes.length; _si++) {
+            statusBoxes[_si].checked = (PERF_CFG.defaultStatuses || []).indexOf(statusBoxes[_si].value) !== -1;
+        }
+        updateStatusButtonLabel();
+        resetStaffDropdown();
+        loadPerformance(buildPayload());
     });
 
     // Month / quarter mutual exclusion, then auto-apply
@@ -669,9 +911,11 @@ document.addEventListener('DOMContentLoaded', function() {
             var dept = _currentPayload.dept || 0;
             var grade = _currentPayload.grade || 0;
             var struct = _currentPayload.struct || 0;
+            var statuses = _currentPayload.statuses || [];
             var qs = 'type=performance&ids=' + ids.join(',') +
                 '&month=' + month + '&year=' + year + '&quarter=' + quarter +
-                '&dept=' + dept + '&grade=' + grade + '&struct=' + struct;
+                '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
+                '&statuses=' + encodeURIComponent(statuses.join(','));
             triggerExport('/odb/atem/staff_performance/export.php?' + qs);
         });
     }
@@ -687,8 +931,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         var targetSid = parseInt(cell.getAttribute('data-staff-id'), 10);
         var col = cell.getAttribute('data-col');
-        var targetMonth = parseInt(cell.getAttribute('data-month'), 10) || 0;
-        var targetYear = parseInt(cell.getAttribute('data-year'), 10) || 0;
+        var targetMonth = _currentPayload.month || 0;
+        var targetYear = _currentPayload.year || PERF_CFG.initYear;
+        var targetQuarter = _currentPayload.quarter || 0;
+        var targetStatuses = _currentPayload.statuses || [];
         if (!targetSid) {
             return;
         }
@@ -716,7 +962,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     target_staff_id: targetSid,
                     month: targetMonth,
                     year: targetYear,
-                    quarter: 0,
+                    quarter: targetQuarter,
+                    statuses: targetStatuses,
                     col: col
                 })
             })
