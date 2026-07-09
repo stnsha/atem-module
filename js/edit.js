@@ -19,8 +19,6 @@
         }
         return false;
     }());
-    // Issuer and all ARCI members (A/R/C/I) see all progress entries.
-    var CAN_VIEW_ALL_PROGRESS = IS_TAGGED_ON_CARD;
     // True for any user tagged on the card (Issuer or any ARCI role A/R/C/I).
     var IS_TAGGED_ON_CARD = IS_ISSUER || (function () {
         var arci = REC.arci || [];
@@ -29,6 +27,8 @@
         }
         return false;
     }());
+    // Issuer, all ARCI members (A/R/C/I), and SuperAdmin see all progress entries.
+    var CAN_VIEW_ALL_PROGRESS = IS_TAGGED_ON_CARD || !!CFG.isSuperAdmin;
     var TERMINAL_STATUSES = ['Failed', 'Completed', 'Completed with Excellence', 'Completed with Extension'];
     var quillEditor = null;
     var arciState = { A: [], R: [], C: [], I: [] };
