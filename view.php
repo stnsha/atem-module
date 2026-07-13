@@ -94,8 +94,9 @@ foreach ($rows as $a) {
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 
-    $arci_ids      = array();
-    $arci_dept_ids = array();
+    $arci_ids        = array();
+    $arci_dept_ids   = array();
+    $arci_dept_names = array();
     $user_roles    = array();
     $accountable   = array();
     if (isset($a['arci']) && is_array($a['arci'])) {
@@ -104,7 +105,11 @@ foreach ($rows as $a) {
                 $m_id = (int) $m['staff_id'];
                 $arci_ids[] = $m_id;
                 if (!empty($m['staff_dept_id'])) {
-                    $arci_dept_ids[] = (int) $m['staff_dept_id'];
+                    $m_dept_id = (int) $m['staff_dept_id'];
+                    $arci_dept_ids[] = $m_dept_id;
+                    if (isset($dept_names[$m_dept_id])) {
+                        $arci_dept_names[] = $dept_names[$m_dept_id];
+                    }
                 }
                 if ($m_id === (int) $staff_id && !empty($m['role'])) {
                     $user_roles[] = $m['role'];
@@ -134,6 +139,7 @@ foreach ($rows as $a) {
         'extended_date_1' => isset($a['extended_date_1']) ? $a['extended_date_1'] : '',
         'issuer_staff_id' => $issuer_id,
         'arci_staff_ids'  => $arci_ids,
+        'arci_dept_names' => array_values(array_unique($arci_dept_names)),
         'user_arci_roles' => $user_roles,
         'accountable'     => $accountable,
         'is_extended'     => !empty($a['is_extended']),
@@ -237,79 +243,6 @@ $view_config = array(
 </div>
 <?php endif; ?>
 
-<style>
-.vf-issuer-wrap { position: relative; }
-.vf-s2-selection {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    padding-left: 0.5rem;
-    padding-right: 2.25rem;
-    font-size: 0.875rem;
-    font-weight: 400;
-    color: #212529;
-    background-color: #fff;
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 0.75rem center;
-    background-size: 16px 12px;
-    border: var(--bs-border-width) solid var(--bs-border-color);
-    border-radius: var(--bs-border-radius-sm);
-    cursor: pointer;
-    user-select: none;
-    outline: none;
-    box-sizing: border-box;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    font-family: 'Inter', sans-serif;
-}
-.vf-s2-selection:focus,
-.vf-s2-selection:hover { outline: none; box-shadow: none; border-color: var(--bs-border-color); }
-.vf-s2-dropdown {
-    position: absolute;
-    top: calc(100% + 2px);
-    left: 0;
-    right: 0;
-    background: #fff;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0,0,0,.1);
-    z-index: 9999;
-    display: none;
-}
-.vf-s2-dropdown.open { display: block; }
-.vf-s2-search-wrap { padding: 6px 6px 4px; }
-.vf-s2-search {
-    width: 100%;
-    box-sizing: border-box;
-    font-size: 12px;
-    font-family: 'Inter', sans-serif;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 4px 8px;
-    outline: none;
-}
-.vf-s2-search:focus { border-color: #86b7fe; }
-.vf-s2-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    max-height: 200px;
-    overflow-y: auto;
-}
-.vf-s2-list li {
-    padding: 6px 10px;
-    font-size: 12px;
-    font-family: 'Inter', sans-serif;
-    cursor: pointer;
-}
-.vf-s2-list li:hover,
-.vf-s2-list li.active { background: #0d6efd; color: #fff; }
-.vf-s2-list li.hidden { display: none; }
-.vf-s2-empty { padding: 8px 10px; font-size: 12px; color: #6c757d; font-family: 'Inter', sans-serif; }
-</style>
-
 <!-- Filter bar -->
 <div class="atem-card atem-filter mb-3">
     <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
@@ -353,9 +286,12 @@ $view_config = array(
         </div>
         <div class="col">
             <label class="form-label">Status</label>
-            <select class="form-select form-select-sm" id="vf-status">
-                <option value="">All statuses</option>
-            </select>
+            <div class="vf-issuer-wrap" id="vf-status-wrap">
+                <div class="vf-s2-selection" id="vf-status-btn" tabindex="0">All statuses</div>
+                <div class="vf-s2-dropdown" id="vf-status-dropdown">
+                    <ul class="vf-s2-list" id="vf-status-list" style="padding:4px 0;"></ul>
+                </div>
+            </div>
         </div>
     </div>
 

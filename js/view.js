@@ -12,9 +12,9 @@
     var sortDir = 1;
 
     var TODAY         = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
-    var presetClosed  = false;
     var overdueFilter = false;
     var minLevelId    = 0;
+    var mineFilter    = false;
 
     var LEVEL_COLOR = { 'Level 1': '#6c757d', 'Level 2': '#0d6efd', 'Level 3': '#6610f2', 'Level 4': '#003B73' };
     var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
@@ -67,15 +67,20 @@
         for (var d = 0; d < depts.length; d++) { dh += '<option value="' + escapeHtml(depts[d]) + '">' + escapeHtml(depts[d]) + '</option>'; }
         dep.innerHTML = dh;
 
-        var st = $('vf-status');
+        var stList = $('vf-status-list');
         var statuses = CFG.statuses || [];
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
-        var sh = '<option value="">All statuses</option>';
+        var sh = '';
         for (var s = 0; s < statuses.length; s++) {
             if ((statuses[s].value === 'Deleted' || statuses[s].value === 'Suspended') && !canSeeDeleted) { continue; }
-            sh += '<option value="' + escapeHtml(statuses[s].value) + '">' + escapeHtml(statuses[s].value) + '</option>';
+            var sv = statuses[s].value;
+            sh += '<li class="vf-s2-list-item" style="cursor:default;">' +
+                '<label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">' +
+                '<input type="checkbox" class="vf-status-cb" value="' + escapeHtml(sv) + '" checked> ' + escapeHtml(sv) +
+                '</label></li>';
         }
-        st.innerHTML = sh;
+        stList.innerHTML = sh;
+        buildStatusDropdown();
 
         var roleEl = $('vf-role');
         var roleOptions = ['A', 'R', 'C', 'I', 'ARCI', 'Not Applicable'];
@@ -151,6 +156,7 @@
             if (valEl) { valEl.value = id; }
             if (labelEl) { labelEl.textContent = name; }
             closeDropdown();
+            mineFilter = false;
             page = 1;
             render();
         }
@@ -189,13 +195,88 @@
         if (dropEl) { dropEl.classList.remove('open'); }
     }
 
+    // ------------------------------------------------- status checkbox dropdown
+    function getSelectedStatuses() {
+        var boxes = document.querySelectorAll('.vf-status-cb:checked');
+        var out = [];
+        for (var i = 0; i < boxes.length; i++) { out.push(boxes[i].value); }
+        return out;
+    }
+
+    function allStatusCheckboxes() { return document.querySelectorAll('.vf-status-cb'); }
+
+    function updateStatusButtonLabel() {
+        var btn = $('vf-status-btn');
+        if (!btn) { return; }
+        var selected = getSelectedStatuses();
+        var all = allStatusCheckboxes();
+        if (selected.length === 0) {
+            btn.textContent = 'No status selected';
+        } else if (selected.length === all.length) {
+            btn.textContent = 'All statuses';
+        } else if (selected.length <= 2) {
+            btn.textContent = selected.join(', ');
+        } else {
+            btn.textContent = selected.length + ' statuses selected';
+        }
+    }
+
+    function resetStatusDropdown() {
+        var boxes = allStatusCheckboxes();
+        for (var i = 0; i < boxes.length; i++) { boxes[i].checked = true; }
+        updateStatusButtonLabel();
+        var dropEl = $('vf-status-dropdown');
+        if (dropEl) { dropEl.classList.remove('open'); }
+    }
+
+    function buildStatusDropdown() {
+        var btnEl  = $('vf-status-btn');
+        var dropEl = $('vf-status-dropdown');
+        var wrapEl = $('vf-status-wrap');
+        if (!btnEl || !dropEl) { return; }
+
+        // Sync dimensions, border and font-size to a form-select-sm exactly —
+        // otherwise this custom div falls back to its own CSS box model and
+        // renders taller/rounder than the selects next to it.
+        var refEl = $('vf-level');
+        if (refEl) {
+            var refStyle = window.getComputedStyle(refEl);
+            btnEl.style.height       = refEl.offsetHeight + 'px';
+            btnEl.style.border       = refStyle.border;
+            btnEl.style.borderRadius = refStyle.borderRadius;
+            btnEl.style.fontSize     = refStyle.fontSize;
+            btnEl.style.color        = refStyle.color;
+        }
+
+        updateStatusButtonLabel();
+
+        btnEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+            dropEl.classList.toggle('open');
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dropEl.classList.toggle('open'); }
+        });
+        document.addEventListener('click', function (e) {
+            if (wrapEl && !wrapEl.contains(e.target)) { dropEl.classList.remove('open'); }
+        });
+        document.addEventListener('change', function (e) {
+            if (e.target && e.target.classList.contains('vf-status-cb')) {
+                updateStatusButtonLabel();
+                overdueFilter = false; minLevelId = 0;
+                page = 1; render();
+            }
+        });
+    }
+
     // --------------------------------------------------------------- filtering
     function applyFilters() {
         var year  = $('vf-year')  ? parseInt($('vf-year').value,  10) || 0 : 0;
         var month = $('vf-month') ? parseInt($('vf-month').value, 10) || 0 : 0;
         var level = $('vf-level').value;
         var dept = $('vf-dept').value;
-        var status = $('vf-status').value;
+        var statuses = getSelectedStatuses();
+        var allStatusCount = allStatusCheckboxes().length;
         var role = $('vf-role').value;
         var from = $('vf-from').value;
         var to = $('vf-to').value;
@@ -208,11 +289,13 @@
             if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
             if (issuer && r.issuer_staff_id !== issuer) { return false; }
             if (level && r.level_label !== level) { return false; }
-            if (dept && r.department_name !== dept) { return false; }
-            if (status && r.status !== status) { return false; }
-            if (presetClosed) {
-                if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
+            if (dept) {
+                var deptMatches = (r.department_name === dept) ||
+                    (r.arci_dept_names && r.arci_dept_names.indexOf(dept) !== -1);
+                if (!deptMatches) { return false; }
             }
+            if (statuses.length === 0) { return false; }
+            if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
             if (overdueFilter) {
                 var effectiveDue = ((r.is_extended || r.status === 'Extended') && r.extended_date_1)
                     ? String(r.extended_date_1).substring(0, 10)
@@ -232,6 +315,11 @@
                 } else {
                     if (!r.user_arci_roles || r.user_arci_roles.indexOf(role) < 0) { return false; }
                 }
+            }
+            if (mineFilter) {
+                var isMyIssue = CFG.staffId && r.issuer_staff_id == CFG.staffId;
+                var isMyArci  = r.user_arci_roles && r.user_arci_roles.length > 0;
+                if (!isMyIssue && !isMyArci) { return false; }
             }
             if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
             if (to && (!r.start_date || r.start_date.substring(0, 10) > to)) { return false; }
@@ -443,16 +531,17 @@
 
     // --------------------------------------------------------------- wiring
     function bind() {
-        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
+        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
             var el = $(id);
-            if (el) { el.addEventListener('change', function () { presetClosed = false; overdueFilter = false; minLevelId = 0; page = 1; render(); }); }
+            if (el) { el.addEventListener('change', function () { overdueFilter = false; minLevelId = 0; mineFilter = false; page = 1; render(); }); }
         });
         $('vf-search').addEventListener('keyup', function () { page = 1; render(); });
         $('vf-reset').addEventListener('click', function () {
-            ['vf-year', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vf-year', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
             resetIssuerDropdown();
-            presetClosed = false; overdueFilter = false; minLevelId = 0;
+            resetStatusDropdown();
+            overdueFilter = false; minLevelId = 0; mineFilter = false;
             page = 1; render();
         });
 
@@ -552,7 +641,21 @@
     document.addEventListener('DOMContentLoaded', function () {
         buildFilters();
         var params = new URLSearchParams(window.location.search);
-        if (params.get('status')) { $('vf-status').value = params.get('status'); }
+        if (params.get('statuses')) {
+            var wantedList = params.get('statuses').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+            var statusBoxes2 = allStatusCheckboxes();
+            for (var sbi2 = 0; sbi2 < statusBoxes2.length; sbi2++) {
+                statusBoxes2[sbi2].checked = (wantedList.indexOf(statusBoxes2[sbi2].value) !== -1);
+            }
+            updateStatusButtonLabel();
+        } else if (params.get('status')) {
+            var wantedStatus = params.get('status');
+            var statusBoxes = allStatusCheckboxes();
+            for (var sbi = 0; sbi < statusBoxes.length; sbi++) {
+                statusBoxes[sbi].checked = (statusBoxes[sbi].value === wantedStatus);
+            }
+            updateStatusButtonLabel();
+        }
         if (params.get('year'))  { var ye = $('vf-year');  if (ye) { ye.value = params.get('year'); } }
         if (params.get('month')) { var mo = $('vf-month'); if (mo) { mo.value = params.get('month'); } }
         if (params.get('level')) { var lv = $('vf-level'); if (lv) { lv.value = params.get('level'); } }
@@ -571,11 +674,25 @@
             }
         }
         if (params.get('dept'))  { var de = $('vf-dept');  if (de) { de.value = params.get('dept'); } }
+        if (params.get('role'))  { var ro = $('vf-role');  if (ro) { ro.value = params.get('role'); } }
         if (params.get('from'))  { var fr = $('vf-from');  if (fr) { fr.value = params.get('from'); } }
         if (params.get('to'))    { var to = $('vf-to');    if (to) { to.value = params.get('to'); } }
-        if (params.get('preset')        === 'closed') { presetClosed  = true; }
         if (params.get('overdue')       === '1')      { overdueFilter = true; }
         if (params.get('min_level_id'))               { minLevelId = parseInt(params.get('min_level_id'), 10) || 0; }
+        if (params.get('mine')          === '1')      { mineFilter = true; }
+        if (params.get('issuer') === 'me' && CFG.staffId) {
+            var ivEl = $('vf-issuer-value');
+            var ibEl = $('vf-issuer-btn');
+            if (ivEl) { ivEl.value = CFG.staffId; }
+            if (ibEl) {
+                var meName = 'Me';
+                var issuersList = CFG.issuers || [];
+                for (var mi = 0; mi < issuersList.length; mi++) {
+                    if (issuersList[mi].id == CFG.staffId) { meName = issuersList[mi].name; break; }
+                }
+                ibEl.textContent = meName;
+            }
+        }
         bind();
         render();
     });
