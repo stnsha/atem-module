@@ -132,7 +132,7 @@ function getApiHost()
     if ($env === 'local') {
         return 'http://127.0.0.1:8000/api/';
     } else {
-        return 'http://mytotalhealth.com.my/atem-api/public/api/';
+        return 'https://mytotalhealth.com.my/atem-api/public/api/';
     }
 }
 
@@ -2400,7 +2400,7 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
                         $_my_role = !empty($_role_parts) ? $_role_parts : null;
-                        $_row_status = $_status ? $_status['value'] : '';
+                        $_row_status = ($_status && isset($_status['value'])) ? $_status['value'] : '';
                         $_row_start  = isset($_a['start_date'])   ? $_a['start_date']   : '';
                         $_row_closure = isset($_a['closure_date']) ? $_a['closure_date'] : '';
 
