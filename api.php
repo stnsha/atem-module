@@ -132,7 +132,7 @@ function getApiHost()
     if ($env === 'local') {
         return 'http://127.0.0.1:8000/api/';
     } else {
-        return 'https://mytotalhealth.com.my/atem-api/public/api/';
+        return 'http://mytotalhealth.com.my/atem-api/public/api/';
     }
 }
 
