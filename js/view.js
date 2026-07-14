@@ -39,12 +39,11 @@
     };
     function $(id) { return document.getElementById(id); }
 
-    // Keeps the "Create New ATEM" button pre-selecting the matching ATEM Type
-    // on create.php, so switching tabs here carries over to which type is
-    // active there.
-    function updateCreateBtnHref() {
-        var btn = $('atem-create-btn');
-        if (btn) { btn.href = 'atem/create.php' + (activeTab === 'outlet' ? '?type=outlet' : ''); }
+    // Remembers which tab is active so create.php can pre-select the matching
+    // ATEM Type on load, without a URL param - read once via sessionStorage,
+    // the manual HQ/Outlet toggle there still works exactly as before.
+    function rememberActiveTabForCreate() {
+        try { sessionStorage.setItem('atem_create_type', activeTab); } catch (e) { /* storage unavailable, ignore */ }
     }
 
     function escapeHtml(s) {
@@ -870,12 +869,12 @@
         var hqTabBtn = $('atem-tab-hq-btn');
         var outletTabBtn = $('atem-tab-outlet-btn');
         if (hqTabBtn) {
-            hqTabBtn.addEventListener('shown.bs.tab', function () { activeTab = 'hq'; updateCreateBtnHref(); renderActiveTab(); });
+            hqTabBtn.addEventListener('shown.bs.tab', function () { activeTab = 'hq'; rememberActiveTabForCreate(); renderActiveTab(); });
         }
         if (outletTabBtn) {
             outletTabBtn.addEventListener('shown.bs.tab', function () {
                 activeTab = 'outlet';
-                updateCreateBtnHref();
+                rememberActiveTabForCreate();
                 // These were built while the Outlet tab-pane was hidden
                 // (display:none), so their height/border sync read 0 - redo
                 // it now that the pane is actually visible.
@@ -890,7 +889,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         if ($('atem-tab-hq-count')) { $('atem-tab-hq-count').textContent = hqRows.length; }
         if ($('atem-tab-outlet-count')) { $('atem-tab-outlet-count').textContent = outletRows.length; }
-        updateCreateBtnHref();
+        rememberActiveTabForCreate();
         buildFilters();
         var params = new URLSearchParams(window.location.search);
         if (params.get('statuses')) {

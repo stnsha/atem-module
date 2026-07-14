@@ -1384,8 +1384,9 @@
             });
         }
         initEditor();
-        var _urlParams = new URLSearchParams(window.location.search);
-        setStaffType(_urlParams.get('type') === 'outlet' ? 'outlet' : 'hq');
+        var _rememberedType = 'hq';
+        try { _rememberedType = sessionStorage.getItem('atem_create_type') === 'outlet' ? 'outlet' : 'hq'; } catch (e) { /* storage unavailable, keep default */ }
+        setStaffType(_rememberedType);
         hydrate(CFG.draft);
         bind();
         recalcIncentive();
