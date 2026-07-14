@@ -7,18 +7,24 @@ include('header.php');
 // header.php bootstrapped the odb connection ($conn) and current staff.
 // Build id -> name maps from odb so we can show issuer and department names
 // for the FK ids returned by the atem-api.
-$staff_names     = array();
-$staff_positions = array();
-$dept_names      = array();
+$staff_names      = array();
+$staff_positions  = array();
+$staff_has_outlet = array();
+$dept_names       = array();
 
-$staff_res = mysqli_query($conn, "SELECT s.id, s.nama_staff, p.position_name
+$staff_res = mysqli_query($conn, "SELECT s.id, s.nama_staff, s.outlet, p.position_name
                                    FROM staff s
                                    LEFT JOIN position_rymnet p ON p.id = s.status_rym
                                    WHERE s.recycle != 1");
 if ($staff_res) {
     while ($srow = mysqli_fetch_assoc($staff_res)) {
-        $staff_names[(int) $srow['id']]     = $srow['nama_staff'];
-        $staff_positions[(int) $srow['id']] = $srow['position_name'];
+        $staff_names[(int) $srow['id']]      = $srow['nama_staff'];
+        $staff_positions[(int) $srow['id']]  = $srow['position_name'];
+        // A staff member "is from outlet" based on their own staff.outlet
+        // assignment (can be several, e.g. Area Managers), not on whether a
+        // single ATEM's ARCI row happens to carry an outlet_id - an Area
+        // Manager accountable for many outlets has no one outlet to pin to.
+        $staff_has_outlet[(int) $srow['id']] = !empty($srow['outlet']);
     }
 }
 $dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
@@ -143,15 +149,13 @@ foreach ($rows as $a) {
                     $user_roles[] = $m['role'];
                 }
                 if (isset($m['role']) && $m['role'] === 'A') {
-                    $a_dept_id   = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
-                    $a_outlet_id = isset($m['outlet_id']) ? (int) $m['outlet_id'] : 0;
+                    $a_dept_id = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
                     $accountable[] = array(
                         'name' => isset($staff_names[$m_id]) ? $staff_names[$m_id] : ('Staff #' . $m_id),
-                        // Outlet-scoped member (outlet_id set) shows their position -
-                        // a staff member can belong to several outlets, so a single
-                        // outlet code wouldn't be a meaningful label here.
-                        // HQ/department-scoped member (no outlet_id) shows the department.
-                        'dept' => $a_outlet_id
+                        // Staff member is from outlet (their own staff.outlet is set,
+                        // e.g. Area Managers covering several outlets) -> show position.
+                        // Otherwise they're HQ/department staff -> show department.
+                        'dept' => !empty($staff_has_outlet[$m_id])
                             ? (!empty($staff_positions[$m_id]) ? $staff_positions[$m_id] : '-')
                             : (($a_dept_id && isset($dept_names[$a_dept_id])) ? $dept_names[$a_dept_id] : '-'),
                     );
