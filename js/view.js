@@ -23,13 +23,11 @@
         outlet: { page: 1, sortCol: null, sortDir: 1, perPage: 30 }
     };
 
-    var TODAY         = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
+    var TODAY           = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
+    var presetClosed    = false;
     var overdueFilter   = false;
     var minLevelId      = 0;
     var mineFilter      = false;
-    // Set only from a `?statuses=A,B` deep link (e.g. dashboard stat cards);
-    // overrides the vf-status/vfo-status select until the user changes a filter.
-    var statusesPreset  = [];
 
     var LEVEL_COLOR = { 'Level 1': '#6c757d', 'Level 2': '#0d6efd', 'Level 3': '#6610f2', 'Level 4': '#003B73' };
     var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
@@ -92,8 +90,16 @@
         var statuses = (CFG.statuses || [])
             .filter(function (s) { return canSeeDeleted || (s.value !== 'Deleted' && s.value !== 'Suspended'); })
             .map(function (s) { return s.value; });
-        fillSelect($('vf-status'), 'All statuses', statuses);
-        fillSelect($('vfo-status'), 'All statuses', statuses);
+        buildStatusOptions('vf-status', statuses);
+        buildStatusOptions('vfo-status', statuses);
+        buildStatusDropdown('vf-status', 'vf-year', function () {
+            presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false;
+            tabState.hq.page = 1; renderTable('hq', hqRows);
+        });
+        buildStatusDropdown('vfo-status', 'vfo-year', function () {
+            presetClosed = false; overdueFilter = false; mineFilter = false;
+            tabState.outlet.page = 1; renderTable('outlet', outletRows);
+        });
 
         var roleOptions = ['A', 'R', 'C', 'I', 'ARCI', 'Not Applicable'];
         fillSelect($('vf-role'), 'All roles', roleOptions);
@@ -227,13 +233,109 @@
         if (dropEl) { dropEl.classList.remove('open'); }
     }
 
+    // ------------------------------------------------- status checkbox dropdown
+    // baseId is 'vf-status' (HQ tab) or 'vfo-status' (Outlet tab) - each tab
+    // has its own independent multi-select so switching tabs doesn't reset it.
+    function buildStatusOptions(baseId, statusValues) {
+        var listEl = $(baseId + '-list');
+        if (!listEl) { return; }
+        var html = '';
+        for (var s = 0; s < statusValues.length; s++) {
+            var sv = statusValues[s];
+            html += '<li class="vf-s2-list-item" style="cursor:default;">' +
+                '<label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">' +
+                '<input type="checkbox" value="' + escapeHtml(sv) + '" checked> ' + escapeHtml(sv) +
+                '</label></li>';
+        }
+        listEl.innerHTML = html;
+    }
+
+    function allStatusCheckboxes(baseId) {
+        var listEl = $(baseId + '-list');
+        return listEl ? listEl.querySelectorAll('input[type=checkbox]') : [];
+    }
+
+    function getSelectedStatuses(baseId) {
+        var listEl = $(baseId + '-list');
+        if (!listEl) { return []; }
+        var boxes = listEl.querySelectorAll('input[type=checkbox]:checked');
+        var out = [];
+        for (var i = 0; i < boxes.length; i++) { out.push(boxes[i].value); }
+        return out;
+    }
+
+    function updateStatusButtonLabel(baseId) {
+        var btn = $(baseId + '-btn');
+        if (!btn) { return; }
+        var selected = getSelectedStatuses(baseId);
+        var all = allStatusCheckboxes(baseId);
+        if (selected.length === 0) {
+            btn.textContent = 'No status selected';
+        } else if (selected.length === all.length) {
+            btn.textContent = 'All statuses';
+        } else if (selected.length <= 2) {
+            btn.textContent = selected.join(', ');
+        } else {
+            btn.textContent = selected.length + ' statuses selected';
+        }
+    }
+
+    function resetStatusDropdown(baseId) {
+        var boxes = allStatusCheckboxes(baseId);
+        for (var i = 0; i < boxes.length; i++) { boxes[i].checked = true; }
+        updateStatusButtonLabel(baseId);
+        var dropEl = $(baseId + '-dropdown');
+        if (dropEl) { dropEl.classList.remove('open'); }
+    }
+
+    function buildStatusDropdown(baseId, sizeRefId, onChange) {
+        var btnEl  = $(baseId + '-btn');
+        var dropEl = $(baseId + '-dropdown');
+        var wrapEl = $(baseId + '-wrap');
+        if (!btnEl || !dropEl) { return; }
+
+        // Sync dimensions, border and font-size to a form-select-sm exactly —
+        // otherwise this custom div falls back to its own CSS box model and
+        // renders taller/rounder than the selects next to it. Only works while
+        // the reference element is visible - re-run on tab show, see bind().
+        var refEl = $(sizeRefId);
+        if (refEl) {
+            var refStyle = window.getComputedStyle(refEl);
+            btnEl.style.height       = refEl.offsetHeight + 'px';
+            btnEl.style.border       = refStyle.border;
+            btnEl.style.borderRadius = refStyle.borderRadius;
+            btnEl.style.fontSize     = refStyle.fontSize;
+            btnEl.style.color        = refStyle.color;
+        }
+
+        updateStatusButtonLabel(baseId);
+
+        btnEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+            dropEl.classList.toggle('open');
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dropEl.classList.toggle('open'); }
+        });
+        document.addEventListener('click', function (e) {
+            if (wrapEl && !wrapEl.contains(e.target)) { dropEl.classList.remove('open'); }
+        });
+        dropEl.addEventListener('change', function (e) {
+            if (e.target && e.target.type === 'checkbox') {
+                updateStatusButtonLabel(baseId);
+                if (onChange) { onChange(); }
+            }
+        });
+    }
+
     // --------------------------------------------------------------- filtering
     function applyHqFilters(sourceRows) {
         var year  = $('vf-year')  ? parseInt($('vf-year').value,  10) || 0 : 0;
         var month = $('vf-month') ? parseInt($('vf-month').value, 10) || 0 : 0;
         var level = $('vf-level').value;
         var dept = $('vf-dept').value;
-        var status = $('vf-status').value;
+        var statuses = getSelectedStatuses('vf-status');
+        var allStatusCount = allStatusCheckboxes('vf-status').length;
         var role = $('vf-role').value;
         var from = $('vf-from').value;
         var to = $('vf-to').value;
@@ -251,8 +353,11 @@
                     (r.arci_dept_names && r.arci_dept_names.indexOf(dept) !== -1);
                 if (!deptMatches) { return false; }
             }
-            if (status && r.status !== status) { return false; }
-            if (statusesPreset.length && statusesPreset.indexOf(r.status) === -1) { return false; }
+            if (statuses.length === 0) { return false; }
+            if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
+            if (presetClosed) {
+                if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
+            }
             if (overdueFilter) {
                 var effectiveDue = ((r.is_extended || r.status === 'Extended') && r.extended_date_1)
                     ? String(r.extended_date_1).substring(0, 10)
@@ -293,7 +398,8 @@
     function applyOutletFilters(sourceRows) {
         var year  = $('vfo-year')  ? parseInt($('vfo-year').value,  10) || 0 : 0;
         var month = $('vfo-month') ? parseInt($('vfo-month').value, 10) || 0 : 0;
-        var status = $('vfo-status').value;
+        var statuses = getSelectedStatuses('vfo-status');
+        var allStatusCount = allStatusCheckboxes('vfo-status').length;
         var pillar = $('vfo-pillar').value;
         var role = $('vfo-role').value;
         var from = $('vfo-from').value;
@@ -313,8 +419,8 @@
             if (year  && (!r.start_date || parseInt(r.start_date.substring(0, 4), 10) !== year))  { return false; }
             if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
             if (issuer && r.issuer_staff_id !== issuer) { return false; }
-            if (status && r.status !== status) { return false; }
-            if (statusesPreset.length && statusesPreset.indexOf(r.status) === -1) { return false; }
+            if (statuses.length === 0) { return false; }
+            if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
             if (pillar && r.pillar_name !== pillar) { return false; }
             if (outletCode && (!r.outlet_codes || r.outlet_codes.indexOf(outletCode) < 0)) { return false; }
             if (role) {
@@ -601,11 +707,11 @@
     function bind() {
         // HQ filter bar - always renders the HQ table (it's only visible
         // while that tab is active anyway).
-        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
+        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
-                    presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false; statusesPreset = [];
+                    presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false;
                     tabState.hq.page = 1;
                     renderTable('hq', hqRows);
                 });
@@ -616,20 +722,21 @@
             renderTable('hq', hqRows);
         });
         $('vf-reset').addEventListener('click', function () {
-            ['vf-year', 'vf-status', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vf-year', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
             resetS2Dropdown('vf-issuer', 'All issuers');
-            presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false; statusesPreset = [];
+            resetStatusDropdown('vf-status');
+            presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false;
             tabState.hq.page = 1;
             renderTable('hq', hqRows);
         });
 
         // Outlet filter bar - always renders the Outlet table.
-        ['vfo-year', 'vfo-month', 'vfo-status', 'vfo-pillar', 'vfo-from', 'vfo-to'].forEach(function (id) {
+        ['vfo-year', 'vfo-month', 'vfo-pillar', 'vfo-from', 'vfo-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
-                    presetClosed = false; overdueFilter = false; mineFilter = false; statusesPreset = [];
+                    presetClosed = false; overdueFilter = false; mineFilter = false;
                     tabState.outlet.page = 1;
                     renderTable('outlet', outletRows);
                 });
@@ -640,11 +747,12 @@
             renderTable('outlet', outletRows);
         });
         $('vfo-reset').addEventListener('click', function () {
-            ['vfo-year', 'vfo-status', 'vfo-pillar', 'vfo-from', 'vfo-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vfo-year', 'vfo-pillar', 'vfo-from', 'vfo-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl2 = $('vfo-month'); if (monthEl2) { monthEl2.value = '0'; }
             resetS2Dropdown('vfo-issuer', 'All issuers');
             resetS2Dropdown('vfo-outlet', 'All outlets');
-            presetClosed = false; overdueFilter = false; mineFilter = false; statusesPreset = [];
+            resetStatusDropdown('vfo-status');
+            presetClosed = false; overdueFilter = false; mineFilter = false;
             tabState.outlet.page = 1;
             renderTable('outlet', outletRows);
         });
@@ -764,6 +872,7 @@
                 // it now that the pane is actually visible.
                 syncS2ButtonSize('vfo-issuer', 'vfo-year');
                 syncS2ButtonSize('vfo-outlet', 'vfo-year');
+                syncS2ButtonSize('vfo-status', 'vfo-year');
                 renderActiveTab();
             });
         }
@@ -775,9 +884,19 @@
         buildFilters();
         var params = new URLSearchParams(window.location.search);
         if (params.get('statuses')) {
-            statusesPreset = params.get('statuses').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+            var wantedList = params.get('statuses').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+            ['vf-status', 'vfo-status'].forEach(function (baseId) {
+                var boxes = allStatusCheckboxes(baseId);
+                for (var i = 0; i < boxes.length; i++) { boxes[i].checked = (wantedList.indexOf(boxes[i].value) !== -1); }
+                updateStatusButtonLabel(baseId);
+            });
         } else if (params.get('status')) {
-            statusesPreset = [params.get('status')];
+            var wantedStatus = params.get('status');
+            ['vf-status', 'vfo-status'].forEach(function (baseId) {
+                var boxes = allStatusCheckboxes(baseId);
+                for (var i = 0; i < boxes.length; i++) { boxes[i].checked = (boxes[i].value === wantedStatus); }
+                updateStatusButtonLabel(baseId);
+            });
         }
         if (params.get('year'))  { var ye = $('vf-year');  if (ye) { ye.value = params.get('year'); } }
         if (params.get('month')) { var mo = $('vf-month'); if (mo) { mo.value = params.get('month'); } }
@@ -800,6 +919,7 @@
         if (params.get('role'))  { var ro = $('vf-role');  if (ro) { ro.value = params.get('role'); } }
         if (params.get('from'))  { var fr = $('vf-from');  if (fr) { fr.value = params.get('from'); } }
         if (params.get('to'))    { var to = $('vf-to');    if (to) { to.value = params.get('to'); } }
+        if (params.get('preset')        === 'closed') { presetClosed  = true; }
         if (params.get('overdue')       === '1')      { overdueFilter = true; }
         if (params.get('min_level_id'))               { minLevelId = parseInt(params.get('min_level_id'), 10) || 0; }
         if (params.get('mine')          === '1')      { mineFilter = true; }

@@ -333,9 +333,12 @@ $view_config = array(
                     </div>
                     <div class="col">
                         <label class="form-label">Status</label>
-                        <select class="form-select form-select-sm" id="vf-status">
-                            <option value="">All statuses</option>
-                        </select>
+                        <div class="vf-issuer-wrap" id="vf-status-wrap">
+                            <div class="vf-s2-selection" id="vf-status-btn" tabindex="0">All statuses</div>
+                            <div class="vf-s2-dropdown" id="vf-status-dropdown">
+                                <ul class="vf-s2-list" id="vf-status-list" style="padding:4px 0;"></ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -449,9 +452,12 @@ $view_config = array(
                     </div>
                     <div class="col">
                         <label class="form-label">Status</label>
-                        <select class="form-select form-select-sm" id="vfo-status">
-                            <option value="">All statuses</option>
-                        </select>
+                        <div class="vf-issuer-wrap" id="vfo-status-wrap">
+                            <div class="vf-s2-selection" id="vfo-status-btn" tabindex="0">All statuses</div>
+                            <div class="vf-s2-dropdown" id="vfo-status-dropdown">
+                                <ul class="vf-s2-list" id="vfo-status-list" style="padding:4px 0;"></ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
