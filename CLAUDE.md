@@ -2,17 +2,17 @@
 
 ## Environment
 
-- **PHP version:** 5.6 (XAMPP, `C:\xampp\htdocs\odb\`)
-- **Runtime:** Apache via XAMPP on Windows
+- **PHP version:** 8.2 (Laragon, `C:\laragon\www\odb\`) — upgraded 2026-07-14 from the legacy PHP 5.6 copy at `C:\xampp\htdocs\odb\`
+- **Runtime:** Apache via Laragon on Windows
 - **Database:** MySQL via `$conn` (MySQLi), connection provided by `common/index_adv.php`
 - **Backend API:** Laravel `atem-api` at `C:\laragon\www\atem-api` (local: `http://127.0.0.1:8000/api/`)
 
 ## PHP Syntax Rules
 
-- Always use `array()` — never short `[]` syntax
-- No namespaces, traits, scalar type hints, return types, null coalescing (`??`), or short ternary
+- Modern PHP 8.2 syntax is available: short array `[]` syntax, namespaces, traits, scalar type hints, return type declarations, null coalescing (`??`/`??=`), short ternary (`?:`), arrow functions, match expressions
+- Existing `array()` usage does not need to be mass-refactored, but new code may use `[]` freely
 - Use `mysqli_*` functions directly — no PDO
-- PHP 5.6 is available: `CURLFile` is safe to use for multipart uploads
+- `CURLFile` remains safe to use for multipart uploads
 
 ## Architecture
 

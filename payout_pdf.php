@@ -75,7 +75,7 @@ $is_issuer = ($staff_id && (int) $staff_id === (int) (isset($record['issuer_staf
 $is_arci_member = false;
 if (isset($record['arci']) && is_array($record['arci'])) {
     foreach ($record['arci'] as $m) {
-        if ((int) $m['staff_id'] === (int) $staff_id) { $is_arci_member = true; break; }
+        if ((int) (isset($m['staff_id']) ? $m['staff_id'] : 0) === (int) $staff_id) { $is_arci_member = true; break; }
     }
 }
 $can_view = $_is_superadmin || (int) $atem_permission >= 2 || $is_issuer || $is_arci_member;

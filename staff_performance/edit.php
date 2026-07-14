@@ -16,6 +16,17 @@ $rec_id       = isset($_GET['id'])    ? (int)$_GET['id']    : 0;
 $target_sid   = isset($_GET['sid'])   ? (int)$_GET['sid']   : 0;
 $filter_month   = isset($_GET['month']) ? (int)$_GET['month'] : 0;
 $filter_year    = isset($_GET['year'])  ? (int)$_GET['year']  : (int)date('Y');
+// Carries over the Status checkboxes selected on the Staff Performance summary
+// page, so the ATEM list here starts scoped to the same statuses instead of
+// defaulting to "All statuses". Empty means no carry-over — all checked.
+$filter_statuses_raw = isset($_GET['statuses']) ? trim($_GET['statuses']) : '';
+$filter_statuses_init = array();
+if ($filter_statuses_raw !== '') {
+    foreach (explode(',', $filter_statuses_raw) as $_fs) {
+        $_fs = trim($_fs);
+        if ($_fs !== '') { $filter_statuses_init[] = $_fs; }
+    }
+}
 $_edit_cur_year = max(2026, (int)date('Y'));
 $year_options   = array();
 for ($y = 2026; $y <= $_edit_cur_year; $y++) {
@@ -79,6 +90,7 @@ $status_colors = array(
     'Active'                    => '#0d6efd',
     'Completed'                 => '#198754',
     'Completed with Excellence' => '#0dcaf0',
+    'Completed with Extension'  => '#20c997',
     'Extended'                  => '#fd7e14',
     'Failed'                    => '#dc3545',
 );
@@ -150,7 +162,7 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
             </select>
         </div>
         <div class="col-md-3">
-            <label class="form-label">Month</label>
+            <label class="form-label">Closure Month</label>
             <select class="form-select form-select-sm" id="ef-month">
                 <option value="0">All Month</option>
                 <?php foreach ($month_names as $mnum => $mname): ?>
@@ -174,9 +186,12 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
         </div>
         <div class="col-md-3">
             <label class="form-label">Status</label>
-            <select class="form-select form-select-sm" id="ef-status">
-                <option value="">All statuses</option>
-            </select>
+            <div class="vf-issuer-wrap" id="ef-status-wrap">
+                <div class="vf-s2-selection" id="ef-status-btn" tabindex="0">Loading...</div>
+                <div class="vf-s2-dropdown" id="ef-status-dropdown">
+                    <ul class="vf-s2-list" id="ef-status-list" style="padding:4px 0;"></ul>
+                </div>
+            </div>
         </div>
         <div class="col-md-3">
             <label class="form-label">Role</label>
@@ -229,9 +244,10 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
     );
     $edit_atem_js_rows = array();
     foreach ($atem_rows as $a) {
-        $a_status   = is_array($a['status'])
-            ? (isset($a['status']['value']) ? $a['status']['value'] : '')
-            : (string)($a['status'] ?: '');
+        $a_status_raw = isset($a['status']) ? $a['status'] : null;
+        $a_status   = is_array($a_status_raw)
+            ? (isset($a_status_raw['value']) ? $a_status_raw['value'] : '')
+            : (string)($a_status_raw ?: '');
         $a_level    = (!empty($a['level_structure']) && is_array($a['level_structure']))
             ? (isset($a['level_structure']['level']) ? $a['level_structure']['level'] : '')
             : (isset($a['level_label']) ? $a['level_label'] : '');
@@ -266,8 +282,40 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
         if ($issuer_id === $target_sid) {
             array_unshift($target_roles, 'Issuer');
         }
+
+        // Estimated Reward: the target staff member's own share of the incentive,
+        // only for closing statuses and only when the amount was actually approved
+        // (final_incentive_amount stays 0 unless approved — a_incentive_amount/
+        // r_incentive_amount are always the raw rule-based estimate regardless).
+        $closing_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
+        $est_reward = null;
+        if (in_array($a_status, $closing_statuses, true)
+            && isset($a['final_incentive_amount']) && (float)$a['final_incentive_amount'] > 0
+            && !empty($a['arci']) && is_array($a['arci'])
+        ) {
+            $incACount = 0;
+            $incRCount = 0;
+            foreach ($a['arci'] as $_m) {
+                if (empty($_m['is_incentivised'])) { continue; }
+                if (isset($_m['role']) && $_m['role'] === 'A') { $incACount++; }
+                if (isset($_m['role']) && $_m['role'] === 'R') { $incRCount++; }
+            }
+
+            $est_reward = 0.0;
+            foreach ($a['arci'] as $_m) {
+                if (empty($_m['staff_id']) || (int)$_m['staff_id'] !== $target_sid || empty($_m['is_incentivised'])) {
+                    continue;
+                }
+                if ($_m['role'] === 'A' && $incACount > 0) {
+                    $est_reward += (float)(isset($a['a_incentive_amount']) ? $a['a_incentive_amount'] : 0) / $incACount;
+                } elseif ($_m['role'] === 'R' && $incRCount > 0) {
+                    $est_reward += (float)(isset($a['r_incentive_amount']) ? $a['r_incentive_amount'] : 0) / $incRCount;
+                }
+            }
+        }
+
         $edit_atem_js_rows[] = array(
-            'id'          => (int)$a['id'],
+            'id'          => (int)(isset($a['id']) ? $a['id'] : 0),
             'title'       => isset($a['title']) ? $a['title'] : '',
             'issuer_name' => $issuer_name,
             'issuer_dept' => $iss_dept,
@@ -278,10 +326,12 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
             'level_color' => $a_lvl_color,
             'start_date'  => isset($a['start_date']) ? $a['start_date'] : '',
             'end_date'    => isset($a['end_date'])   ? $a['end_date']   : '',
+            'closure_date'=> isset($a['closure_date']) ? $a['closure_date'] : '',
             'ext_date'    => !empty($a['extended_date_1']) ? $a['extended_date_1'] : '',
             'is_extended' => !empty($a['is_extended']),
             'status'      => $a_status,
             'status_color'=> $a_color,
+            'est_reward'  => $est_reward,
         );
     }
     ?>
@@ -298,11 +348,12 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
                     <th>Start</th>
                     <th>End</th>
                     <th>Status</th>
+                    <th class="text-end">Est. Reward</th>
                     <th style="width:60px;">Action</th>
                 </tr>
             </thead>
             <tbody id="edit-atem-tbody">
-                <tr><td colspan="10" class="text-center text-muted py-4">Loading...</td></tr>
+                <tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -321,6 +372,7 @@ window.EDIT_ATEM_ROWS = <?php echo json_encode($edit_atem_js_rows); ?>;
 window.EDIT_ATEM_ROWS = [];
 <?php endif; ?>
 window.EDIT_LOOKUPS = <?php echo json_encode($edit_lookups); ?>;
+window.EDIT_INIT_STATUSES = <?php echo json_encode($filter_statuses_init); ?>;
 
 var _editPage         = 1;
 var _editPerPage      = 30;
@@ -339,14 +391,21 @@ function buildEditFilters() {
         levelEl.innerHTML = lh;
     }
 
-    var statusEl = document.getElementById('ef-status');
-    if (statusEl) {
+    var statusListEl = document.getElementById('ef-status-list');
+    if (statusListEl) {
         var statuses = lookups.statuses || [];
-        var sh = '<option value="">All statuses</option>';
+        var initStatuses = window.EDIT_INIT_STATUSES || [];
+        var sh = '';
         for (var si = 0; si < statuses.length; si++) {
-            sh += '<option value="' + editEsc(statuses[si].value) + '">' + editEsc(statuses[si].value) + '</option>';
+            var sv = statuses[si].value;
+            var checked = initStatuses.length ? (initStatuses.indexOf(sv) !== -1) : true;
+            sh += '<li class="vf-s2-list-item" style="cursor:default;">' +
+                '<label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">' +
+                '<input type="checkbox" class="ef-status-cb" value="' + editEsc(sv) + '"' + (checked ? ' checked' : '') + '> ' + editEsc(sv) +
+                '</label></li>';
         }
-        statusEl.innerHTML = sh;
+        statusListEl.innerHTML = sh;
+        buildEditStatusDropdown();
     }
 
     var roleEl = document.getElementById('ef-role');
@@ -360,22 +419,121 @@ function buildEditFilters() {
     }
 }
 
+// ------------------------------------------------- status checkbox dropdown
+function getSelectedEditStatuses() {
+    var boxes = document.querySelectorAll('.ef-status-cb:checked');
+    var out = [];
+    for (var i = 0; i < boxes.length; i++) { out.push(boxes[i].value); }
+    return out;
+}
+
+function allEditStatusCheckboxes() { return document.querySelectorAll('.ef-status-cb'); }
+
+function updateEditStatusButtonLabel() {
+    var btn = document.getElementById('ef-status-btn');
+    if (!btn) { return; }
+    var selected = getSelectedEditStatuses();
+    var all = allEditStatusCheckboxes();
+    if (selected.length === 0) {
+        btn.textContent = 'No status selected';
+    } else if (selected.length === all.length) {
+        btn.textContent = 'All statuses';
+    } else if (selected.length <= 2) {
+        btn.textContent = selected.join(', ');
+    } else {
+        btn.textContent = selected.length + ' statuses selected';
+    }
+}
+
+function resetEditStatusDropdown() {
+    var boxes = allEditStatusCheckboxes();
+    for (var i = 0; i < boxes.length; i++) { boxes[i].checked = true; }
+    updateEditStatusButtonLabel();
+    var dropEl = document.getElementById('ef-status-dropdown');
+    if (dropEl) { dropEl.classList.remove('open'); }
+}
+
+var _efStatusDropdownBuilt = false;
+function buildEditStatusDropdown() {
+    var btnEl  = document.getElementById('ef-status-btn');
+    var dropEl = document.getElementById('ef-status-dropdown');
+    var wrapEl = document.getElementById('ef-status-wrap');
+    if (!btnEl || !dropEl) { return; }
+
+    // Sync dimensions, border and font-size to a form-select-sm exactly —
+    // otherwise this custom div falls back to its own CSS box model and
+    // renders taller/rounder than the selects next to it.
+    var refEl = document.getElementById('ef-year');
+    if (refEl) {
+        var refStyle = window.getComputedStyle(refEl);
+        btnEl.style.height       = refEl.offsetHeight + 'px';
+        btnEl.style.border       = refStyle.border;
+        btnEl.style.borderRadius = refStyle.borderRadius;
+        btnEl.style.fontSize     = refStyle.fontSize;
+        btnEl.style.color        = refStyle.color;
+    }
+
+    updateEditStatusButtonLabel();
+
+    // buildEditFilters() (which calls this) can re-run if EDIT_LOOKUPS changes,
+    // but the open/close/change listeners only need to be attached once.
+    if (_efStatusDropdownBuilt) { return; }
+    _efStatusDropdownBuilt = true;
+
+    btnEl.addEventListener('click', function (e) {
+        e.stopPropagation();
+        dropEl.classList.toggle('open');
+    });
+    btnEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dropEl.classList.toggle('open'); }
+    });
+    document.addEventListener('click', function (e) {
+        if (wrapEl && !wrapEl.contains(e.target)) { dropEl.classList.remove('open'); }
+    });
+    document.addEventListener('change', function (e) {
+        if (e.target && e.target.classList.contains('ef-status-cb')) {
+            updateEditStatusButtonLabel();
+            applyEditFilters();
+        }
+    });
+}
+
+// Mirrors the Closure Month rule used everywhere else in the app: closing statuses
+// (Completed family, Extended-with-a-recorded-date, Failed) are matched by closure_date;
+// Active is matched by start_date; anything else (Draft/Suspended/Deleted/pending-Extended)
+// falls back to start_date so it still shows up somewhere rather than vanishing silently.
+var EDIT_CLOSURE_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Extended', 'Failed'];
+
+function editInPeriod(r, year, month) {
+    if (!year && !month) { return true; }
+
+    var dateStr = (EDIT_CLOSURE_STATUSES.indexOf(r.status) !== -1) ? r.closure_date : r.start_date;
+    if (!dateStr) { return false; }
+
+    var y = parseInt(dateStr.substring(0, 4), 10);
+    var m = parseInt(dateStr.substring(5, 7), 10);
+    if (year && y !== year) { return false; }
+    if (month && m !== month) { return false; }
+    return true;
+}
+
 function applyEditFilters() {
     var data   = window.EDIT_ATEM_ROWS || [];
     var year   = document.getElementById('ef-year')   ? parseInt(document.getElementById('ef-year').value,   10) || 0 : 0;
     var month  = document.getElementById('ef-month')  ? parseInt(document.getElementById('ef-month').value,  10) || 0 : 0;
     var level  = document.getElementById('ef-level')  ? document.getElementById('ef-level').value  : '';
-    var status = document.getElementById('ef-status') ? document.getElementById('ef-status').value : '';
+    var statuses = getSelectedEditStatuses();
+    var allStatusCount = allEditStatusCheckboxes().length;
     var role   = document.getElementById('ef-role')   ? document.getElementById('ef-role').value   : '';
     var from   = document.getElementById('ef-from')   ? document.getElementById('ef-from').value   : '';
     var to     = document.getElementById('ef-to')     ? document.getElementById('ef-to').value     : '';
     var term   = document.getElementById('ef-search') ? document.getElementById('ef-search').value.toLowerCase().trim() : '';
 
     _editFilteredData = data.filter(function(r) {
-        if (year  && r.start_date && parseInt(r.start_date.substring(0, 4), 10) !== year)  { return false; }
-        if (month && r.start_date && parseInt(r.start_date.substring(5, 7), 10) !== month) { return false; }
+        if (!editInPeriod(r, year, month)) { return false; }
         if (level  && r.level  !== level)  { return false; }
-        if (status && r.status !== status) { return false; }
+        if (statuses.length === 0) { return false; }
+        if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
         if (role && (!r.roles || r.roles.indexOf(role) < 0)) { return false; }
         if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
         if (to   && (!r.start_date || r.start_date.substring(0, 10) > to))   { return false; }
@@ -396,6 +554,11 @@ function editFmtDate(d) {
     if (!d) { return '-'; }
     var p = String(d).substring(0, 10).split('-');
     return (p.length === 3) ? (p[2] + '-' + p[1] + '-' + p[0]) : d;
+}
+
+function editFmtMoney(n) {
+    var x = parseFloat(n) || 0;
+    return x.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 function editPageBtn(p) {
@@ -440,7 +603,7 @@ function renderEditAtemTable() {
         var emptyMsg = (window.EDIT_ATEM_ROWS && window.EDIT_ATEM_ROWS.length > 0)
             ? 'No records match the current filters.'
             : 'No ATEM records found for this staff.';
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">' + emptyMsg + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">' + emptyMsg + '</td></tr>';
         renderEditAtemPager(0);
         return;
     }
@@ -487,6 +650,10 @@ function renderEditAtemTable() {
                 + '<i class="bi bi-arrow-right" style="font-size:10px;"></i> Extended to ' + editFmtDate(a.ext_date) + '</div>';
         }
 
+        var rewardHtml = (a.est_reward === null || a.est_reward === undefined)
+            ? '<span class="text-muted">-</span>'
+            : 'RM ' + editFmtMoney(a.est_reward);
+
         html += '<tr>'
             + '<td><span class="atem-id">#AT' + a.id + '</span></td>'
             + '<td>' + editEsc(a.title) + '</td>'
@@ -500,6 +667,7 @@ function renderEditAtemTable() {
             + '<td style="white-space:nowrap;">' + editFmtDate(a.start_date) + '</td>'
             + '<td style="white-space:nowrap;">' + endHtml + '</td>'
             + '<td><span class="atem-pill" style="background-color:' + editEsc(a.status_color) + '">' + editEsc(a.status || '-') + '</span></td>'
+            + '<td class="text-end">' + rewardHtml + '</td>'
             + '<td><a class="btn btn-sm btn-outline-primary" href="atem/edit.php?id=' + a.id + '&mode=read" title="View"><i class="bi bi-eye"></i></a></td>'
             + '</tr>';
     }
@@ -513,7 +681,7 @@ document.addEventListener('DOMContentLoaded', function() {
     applyEditFilters();
 
     // Filter events
-    var _efIds = ['ef-year', 'ef-month', 'ef-level', 'ef-status', 'ef-role', 'ef-from', 'ef-to'];
+    var _efIds = ['ef-year', 'ef-month', 'ef-level', 'ef-role', 'ef-from', 'ef-to'];
     for (var _efi = 0; _efi < _efIds.length; _efi++) {
         var _efEl = document.getElementById(_efIds[_efi]);
         if (_efEl) { _efEl.addEventListener('change', applyEditFilters); }
@@ -523,12 +691,13 @@ document.addEventListener('DOMContentLoaded', function() {
     var efReset = document.getElementById('ef-reset');
     if (efReset) {
         efReset.addEventListener('click', function() {
-            ['ef-year', 'ef-level', 'ef-status', 'ef-role', 'ef-from', 'ef-to', 'ef-search'].forEach(function(id) {
+            ['ef-year', 'ef-level', 'ef-role', 'ef-from', 'ef-to', 'ef-search'].forEach(function(id) {
                 var el = document.getElementById(id);
                 if (el) { el.value = ''; }
             });
             var efMonth = document.getElementById('ef-month');
             if (efMonth) { efMonth.value = '0'; }
+            resetEditStatusDropdown();
             applyEditFilters();
         });
     }

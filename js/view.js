@@ -24,9 +24,12 @@
     };
 
     var TODAY         = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
-    var presetClosed  = false;
-    var overdueFilter = false;
-    var minLevelId    = 0;
+    var overdueFilter   = false;
+    var minLevelId      = 0;
+    var mineFilter      = false;
+    // Set only from a `?statuses=A,B` deep link (e.g. dashboard stat cards);
+    // overrides the vf-status/vfo-status select until the user changes a filter.
+    var statusesPreset  = [];
 
     var LEVEL_COLOR = { 'Level 1': '#6c757d', 'Level 2': '#0d6efd', 'Level 3': '#6610f2', 'Level 4': '#003B73' };
     var ARCI_COLOR  = { 'A': '#6610f2', 'R': '#0d6efd', 'C': '#fd7e14', 'I': '#6c757d' };
@@ -187,6 +190,7 @@
             if (valEl) { valEl.value = id; }
             if (labelEl) { labelEl.textContent = label; }
             closeDropdown();
+            mineFilter = false;
             if (onSelect) { onSelect(id); }
         }
 
@@ -248,9 +252,7 @@
                 if (!deptMatches) { return false; }
             }
             if (status && r.status !== status) { return false; }
-            if (presetClosed) {
-                if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
-            }
+            if (statusesPreset.length && statusesPreset.indexOf(r.status) === -1) { return false; }
             if (overdueFilter) {
                 var effectiveDue = ((r.is_extended || r.status === 'Extended') && r.extended_date_1)
                     ? String(r.extended_date_1).substring(0, 10)
@@ -270,6 +272,11 @@
                 } else {
                     if (!r.user_arci_roles || r.user_arci_roles.indexOf(role) < 0) { return false; }
                 }
+            }
+            if (mineFilter) {
+                var isMyIssue = CFG.staffId && r.issuer_staff_id == CFG.staffId;
+                var isMyArci  = r.user_arci_roles && r.user_arci_roles.length > 0;
+                if (!isMyIssue && !isMyArci) { return false; }
             }
             if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
             if (to && (!r.start_date || r.start_date.substring(0, 10) > to)) { return false; }
@@ -307,6 +314,7 @@
             if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
             if (issuer && r.issuer_staff_id !== issuer) { return false; }
             if (status && r.status !== status) { return false; }
+            if (statusesPreset.length && statusesPreset.indexOf(r.status) === -1) { return false; }
             if (pillar && r.pillar_name !== pillar) { return false; }
             if (outletCode && (!r.outlet_codes || r.outlet_codes.indexOf(outletCode) < 0)) { return false; }
             if (role) {
@@ -597,7 +605,7 @@
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
-                    presetClosed = false; overdueFilter = false; minLevelId = 0;
+                    presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false; statusesPreset = [];
                     tabState.hq.page = 1;
                     renderTable('hq', hqRows);
                 });
@@ -608,10 +616,10 @@
             renderTable('hq', hqRows);
         });
         $('vf-reset').addEventListener('click', function () {
-            ['vf-year', 'vf-level', 'vf-dept', 'vf-status', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vf-year', 'vf-status', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
             resetS2Dropdown('vf-issuer', 'All issuers');
-            presetClosed = false; overdueFilter = false; minLevelId = 0;
+            presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false; statusesPreset = [];
             tabState.hq.page = 1;
             renderTable('hq', hqRows);
         });
@@ -621,7 +629,7 @@
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
-                    presetClosed = false; overdueFilter = false;
+                    presetClosed = false; overdueFilter = false; mineFilter = false; statusesPreset = [];
                     tabState.outlet.page = 1;
                     renderTable('outlet', outletRows);
                 });
@@ -636,7 +644,7 @@
             var monthEl2 = $('vfo-month'); if (monthEl2) { monthEl2.value = '0'; }
             resetS2Dropdown('vfo-issuer', 'All issuers');
             resetS2Dropdown('vfo-outlet', 'All outlets');
-            presetClosed = false; overdueFilter = false;
+            presetClosed = false; overdueFilter = false; mineFilter = false; statusesPreset = [];
             tabState.outlet.page = 1;
             renderTable('outlet', outletRows);
         });
@@ -766,7 +774,11 @@
         if ($('atem-tab-outlet-count')) { $('atem-tab-outlet-count').textContent = outletRows.length; }
         buildFilters();
         var params = new URLSearchParams(window.location.search);
-        if (params.get('status')) { $('vf-status').value = params.get('status'); }
+        if (params.get('statuses')) {
+            statusesPreset = params.get('statuses').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        } else if (params.get('status')) {
+            statusesPreset = [params.get('status')];
+        }
         if (params.get('year'))  { var ye = $('vf-year');  if (ye) { ye.value = params.get('year'); } }
         if (params.get('month')) { var mo = $('vf-month'); if (mo) { mo.value = params.get('month'); } }
         if (params.get('level')) { var lv = $('vf-level'); if (lv) { lv.value = params.get('level'); } }
@@ -785,11 +797,25 @@
             }
         }
         if (params.get('dept'))  { var de = $('vf-dept');  if (de) { de.value = params.get('dept'); } }
+        if (params.get('role'))  { var ro = $('vf-role');  if (ro) { ro.value = params.get('role'); } }
         if (params.get('from'))  { var fr = $('vf-from');  if (fr) { fr.value = params.get('from'); } }
         if (params.get('to'))    { var to = $('vf-to');    if (to) { to.value = params.get('to'); } }
-        if (params.get('preset')        === 'closed') { presetClosed  = true; }
         if (params.get('overdue')       === '1')      { overdueFilter = true; }
         if (params.get('min_level_id'))               { minLevelId = parseInt(params.get('min_level_id'), 10) || 0; }
+        if (params.get('mine')          === '1')      { mineFilter = true; }
+        if (params.get('issuer') === 'me' && CFG.staffId) {
+            var ivEl = $('vf-issuer-value');
+            var ibEl = $('vf-issuer-btn');
+            if (ivEl) { ivEl.value = CFG.staffId; }
+            if (ibEl) {
+                var meName = 'Me';
+                var issuersList = CFG.issuers || [];
+                for (var mi = 0; mi < issuersList.length; mi++) {
+                    if (issuersList[mi].id == CFG.staffId) { meName = issuersList[mi].name; break; }
+                }
+                ibEl.textContent = meName;
+            }
+        }
         bind();
         renderAll();
     });

@@ -149,17 +149,17 @@ foreach ($rows as $a) {
     }
 
     $view_rows[] = array(
-        'id'              => (int) $a['id'],
+        'id'              => (int) (isset($a['id']) ? $a['id'] : 0),
         'title'           => isset($a['title']) ? $a['title'] : '',
         'atem_type'       => isset($a['atem_type']) ? (int) $a['atem_type'] : 1,
         'outlet_codes'    => $outlet_codes,
         'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
         'department_name' => isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : '-',
         'department_id'   => $dept_id,
-        'level_label'     => $level ? $level['level'] : '',
-        'system_name'     => $level ? $level['system_name'] : '',
-        'pillar_name'     => $pillar ? $pillar['name'] : '',
-        'status'          => $status ? $status['value'] : '',
+        'level_label'     => ($level && isset($level['level']))       ? $level['level']       : '',
+        'system_name'     => ($level && isset($level['system_name'])) ? $level['system_name'] : '',
+        'pillar_name'     => ($pillar && isset($pillar['name']))      ? $pillar['name']       : '',
+        'status'          => ($status && isset($status['value']))     ? $status['value']      : '',
         'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
         'extended_date_1' => isset($a['extended_date_1']) ? $a['extended_date_1'] : '',
@@ -270,138 +270,6 @@ $view_config = array(
     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
 <?php endif; ?>
-
-<style>
-.vf-issuer-wrap { position: relative; }
-.vf-s2-selection {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    padding-left: 0.5rem;
-    padding-right: 2.25rem;
-    font-size: 0.875rem;
-    font-weight: 400;
-    color: #212529;
-    background-color: #fff;
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 0.75rem center;
-    background-size: 16px 12px;
-    border: var(--bs-border-width) solid var(--bs-border-color);
-    border-radius: var(--bs-border-radius-sm);
-    cursor: pointer;
-    user-select: none;
-    outline: none;
-    box-sizing: border-box;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    font-family: 'Inter', sans-serif;
-}
-.vf-s2-selection:focus,
-.vf-s2-selection:hover { outline: none; box-shadow: none; border-color: var(--bs-border-color); }
-.vf-s2-dropdown {
-    position: absolute;
-    top: calc(100% + 2px);
-    left: 0;
-    right: 0;
-    background: #fff;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0,0,0,.1);
-    z-index: 9999;
-    display: none;
-}
-.vf-s2-dropdown.open { display: block; }
-.vf-s2-search-wrap { padding: 6px 6px 4px; }
-.vf-s2-search {
-    width: 100%;
-    box-sizing: border-box;
-    font-size: 12px;
-    font-family: 'Inter', sans-serif;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 4px 8px;
-    outline: none;
-}
-.vf-s2-search:focus { border-color: #86b7fe; }
-.vf-s2-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    max-height: 200px;
-    overflow-y: auto;
-}
-.vf-s2-list li {
-    padding: 6px 10px;
-    font-size: 12px;
-    font-family: 'Inter', sans-serif;
-    cursor: pointer;
-}
-.vf-s2-list li:hover,
-.vf-s2-list li.active { background: #0d6efd; color: #fff; }
-.vf-s2-list li.hidden { display: none; }
-.vf-s2-empty { padding: 8px 10px; font-size: 12px; color: #6c757d; font-family: 'Inter', sans-serif; }
-
-.atem-view-tabs {
-    border-bottom: 1px solid #e9ecef;
-    gap: 28px;
-}
-.atem-view-tabs .nav-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 2px 12px;
-    margin-bottom: -1px;
-    border: none;
-    border-bottom: 3px solid transparent;
-    border-radius: 0;
-    background: none;
-    color: #6c757d;
-    font-size: 13px;
-    font-weight: 500;
-    transition: color .15s ease, border-color .15s ease;
-}
-.atem-view-tabs .nav-link:hover {
-    color: #495057;
-    border-color: transparent;
-    isolation: auto;
-}
-.atem-view-tabs .nav-link.active {
-    background: none;
-}
-.atem-view-tabs .nav-link.atem-tab-color-hq.active {
-    color: #fd7e14;
-    border-color: #fd7e14;
-}
-.atem-view-tabs .nav-link.atem-tab-color-outlet.active {
-    color: #0A5AA8;
-    border-color: #0A5AA8;
-}
-.atem-view-tabs .nav-link i {
-    font-size: 15px;
-}
-.atem-tab-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 26px;
-    padding: 1px 9px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 600;
-    background: #f1f3f5;
-    color: #6c757d;
-}
-.atem-view-tabs .nav-link.atem-tab-color-hq.active .atem-tab-count {
-    background: #fff1e6;
-    color: #fd7e14;
-}
-.atem-view-tabs .nav-link.atem-tab-color-outlet.active .atem-tab-count {
-    background: #e6eef7;
-    color: #0A5AA8;
-}
-</style>
 
 <!-- Table -->
 <div class="atem-card">

@@ -30,12 +30,47 @@ if ($_dept_res) {
         }
     }
 }
+
+// Staff filter dropdown, scoped the same way as the Issuer dropdown on view.php:
+// grade 1 sees only self, grades 2-3 see staff in their own department(s), grade
+// 4+/SuperAdmin see everyone. dept_ids lets the frontend narrow the list further
+// when a specific department is also selected.
+$dash_staff_options = array();
+if ((int)$atem_permission === 1 && !$_is_superadmin) {
+    $_me_id = (int)$staff_id;
+    $_me_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 AND id = " . $_me_id);
+    if ($_me_res && ($_me_row = mysqli_fetch_assoc($_me_res))) {
+        $_deptIds = array();
+        foreach (explode(',', (string)$_me_row['department']) as $_p) {
+            $_p = (int)trim($_p);
+            if ($_p > 0) { $_deptIds[] = $_p; }
+        }
+        $dash_staff_options[] = array('id' => (int)$_me_row['id'], 'name' => $_me_row['nama_staff'], 'dept_ids' => $_deptIds);
+    }
+} else {
+    $_staff_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+    if ($_staff_res) {
+        while ($_srow = mysqli_fetch_assoc($_staff_res)) {
+            $_deptIds = array();
+            foreach (explode(',', (string)$_srow['department']) as $_p) {
+                $_p = (int)trim($_p);
+                if ($_p > 0) { $_deptIds[] = $_p; }
+            }
+            if (((int)$atem_permission === 2 || (int)$atem_permission === 3) && !$_is_superadmin
+                && !array_intersect($_deptIds, $dash_user_dept_ids)) {
+                continue;
+            }
+            $dash_staff_options[] = array('id' => (int)$_srow['id'], 'name' => $_srow['nama_staff'], 'dept_ids' => $_deptIds);
+        }
+    }
+}
 ?>
 
 <script>
 window.ATEM_DASH = <?php echo json_encode(array(
     'apiUrl'      => 'atem/api.php',
     'departments' => $dash_dept_options,
+    'staff'       => $dash_staff_options,
 )); ?>;
 </script>
 
@@ -88,13 +123,23 @@ window.ATEM_DASH = <?php echo json_encode(array(
                 <option value="">All Departments</option>
             </select>
         </div>
-        <div class="col-md-3 col-sm-12 d-flex align-items-end gap-2">
-            <button class="btn btn-sm btn-primary" id="dash-apply-filter">Apply</button>
-            <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Staff</label>
+            <div class="vf-issuer-wrap" id="dash-staff-wrap">
+                <div class="vf-s2-selection" id="dash-staff-btn" tabindex="0">All staff</div>
+                <div class="vf-s2-dropdown" id="dash-staff-dropdown">
+                    <div class="vf-s2-search-wrap">
+                        <input class="vf-s2-search" id="dash-staff-search" type="search" placeholder="Search name...">
+                    </div>
+                    <ul class="vf-s2-list" id="dash-staff-list"></ul>
+                </div>
+                <input type="hidden" id="dash-staff-value" value="0">
+            </div>
         </div>
     </div>
-    <div class="mt-2">
+    <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
         <span class="text-muted" id="dash-filter-label" style="font-size:12px;"></span>
+        <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
     </div>
 </div>
 
@@ -117,7 +162,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-preset="closed" style="cursor:pointer;">
+        <div class="atem-card atem-dash-stat h-100" data-statuses="Completed,Completed with Excellence" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Complete + Excellence</div>
             <div class="atem-stat-value atem-stat-value--green" id="dash-closed">---</div>
             <div class="atem-stat-label">eligible for completion count</div>
@@ -131,14 +176,14 @@ window.ATEM_DASH = <?php echo json_encode(array(
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-overdue="1" style="cursor:pointer;">
+        <div class="atem-card atem-dash-stat h-100" data-overdue="1" data-statuses="Active,Extended" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Overdue Cards</div>
             <div class="atem-stat-value atem-stat-value--red" id="dash-overdue">---</div>
             <div class="atem-stat-label">active/extended past end date</div>
         </div>
     </div>
     <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-incentive="1" style="cursor:pointer;">
+        <div class="atem-card atem-dash-stat h-100" data-incentive="1" data-statuses="Active,Extended,Completed,Completed with Excellence" style="cursor:pointer;">
             <div class="atem-card-title mb-1">Est. Incentive Forecast</div>
             <div class="atem-stat-value atem-stat-value--orange" id="dash-incentive">---</div>
             <div class="atem-stat-label">Level 2-4 payout</div>
@@ -146,8 +191,56 @@ window.ATEM_DASH = <?php echo json_encode(array(
     </div>
 </div>
 
-<!-- Level table + Bar chart -->
+<!-- My Role Breakdown -->
 <div class="row g-3">
+    <div class="col-12">
+        <div class="atem-card">
+            <h6 class="atem-card-title mb-0" id="dash-myroles-title">My Involvement</h6>
+            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;" id="dash-myroles-subtitle">Cards where you are the Issuer or an ARCI member, by role</div>
+            <div class="row g-2" id="dash-myroles-row">
+                <div class="col-6 col-md-2">
+                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-issuer="me">
+                        <div class="atem-card-title mb-1" style="font-size:11px;">Issuer</div>
+                        <div class="atem-stat-value atem-stat-value--blue" id="dash-myrole-issuer" style="font-size:22px;">---</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-myrole="A">
+                        <div class="atem-card-title mb-1" style="font-size:11px;">Accountable (A)</div>
+                        <div class="atem-stat-value" id="dash-myrole-a" style="font-size:22px;color:#6610f2;">---</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-myrole="R">
+                        <div class="atem-card-title mb-1" style="font-size:11px;">Responsible (R)</div>
+                        <div class="atem-stat-value" id="dash-myrole-r" style="font-size:22px;color:#0d6efd;">---</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-myrole="C">
+                        <div class="atem-card-title mb-1" style="font-size:11px;">Consulted (C)</div>
+                        <div class="atem-stat-value" id="dash-myrole-c" style="font-size:22px;color:#fd7e14;">---</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-myrole="I">
+                        <div class="atem-card-title mb-1" style="font-size:11px;">Informed (I)</div>
+                        <div class="atem-stat-value" id="dash-myrole-i" style="font-size:22px;color:#6c757d;">---</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-mine="1">
+                        <div class="atem-card-title mb-1" style="font-size:11px;">Total Involved</div>
+                        <div class="atem-stat-value atem-stat-value--green" id="dash-myrole-involved" style="font-size:22px;">---</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Level table + Bar chart -->
+<div class="row g-3 mt-0">
     <div class="col-lg-6">
         <div class="atem-card h-100">
             <h6 class="atem-card-title mb-0">ATEM Complexity Reward</h6>
