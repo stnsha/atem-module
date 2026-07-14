@@ -1642,11 +1642,18 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     // Grades 4–6 (superadmin resolves to 6): no role-based filtering
 
-                    $filterYear    = isset($jsonData['filter_year'])    ? (int)$jsonData['filter_year']    : 0;
-                    $filterMonth   = isset($jsonData['filter_month'])   ? (int)$jsonData['filter_month']   : 0;
-                    $filterQuarter = isset($jsonData['filter_quarter']) ? (int)$jsonData['filter_quarter'] : 0;
-                    $filterDeptId  = isset($jsonData['filter_dept_id']) ? (int)$jsonData['filter_dept_id'] : 0;
-                    $filterStaffId = isset($jsonData['filter_staff_id']) ? (int)$jsonData['filter_staff_id'] : 0;
+                    $filterYear      = isset($jsonData['filter_year'])       ? (int)$jsonData['filter_year']       : 0;
+                    $filterMonth     = isset($jsonData['filter_month'])      ? (int)$jsonData['filter_month']      : 0;
+                    $filterQuarter   = isset($jsonData['filter_quarter'])    ? (int)$jsonData['filter_quarter']    : 0;
+                    $filterDeptId    = isset($jsonData['filter_dept_id'])    ? (int)$jsonData['filter_dept_id']    : 0;
+                    $filterStaffId   = isset($jsonData['filter_staff_id'])   ? (int)$jsonData['filter_staff_id']   : 0;
+                    // 0 = unfiltered, 1 = HQ, 2 = Outlet. Both dashboard tabs now send
+                    // an explicit value so HQ/Outlet cards never mix in one response.
+                    $filterAtemType  = isset($jsonData['filter_atem_type'])  ? (int)$jsonData['filter_atem_type']  : 0;
+                    $filterOutletId  = isset($jsonData['filter_outlet_id'])  ? (int)$jsonData['filter_outlet_id']  : 0;
+                    // Pillar is matched by name (not id), matching the vfo-pillar plain
+                    // <select> convention already used on view.php/js/view.js.
+                    $filterPillarName = isset($jsonData['filter_pillar_name']) ? trim((string)$jsonData['filter_pillar_name']) : '';
                     $quarterMonths = array(
                         1 => array(1, 2, 3),
                         2 => array(4, 5, 6),
@@ -1660,6 +1667,9 @@ if (!defined('API_JWT_INCLUDED')) {
                         3 => array('label' => 'L3 Cross/Strategic',  'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
                         4 => array('label' => 'L4 Company-Level',    'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
                     );
+                    // Pillars (Outlet-type equivalent of levels) come from a DB table,
+                    // not fixed ids, so this is built up as pillars are encountered.
+                    $pillarMap = array();
 
                     $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'extended_status' => 0, 'failed' => 0, 'draft' => 0);
                     $total = 0;
@@ -1728,6 +1738,26 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                             if ($itemIssuerId !== $filterStaffId && !$itemIsArci) { continue; }
                         }
+                        if ($filterAtemType > 0) {
+                            $itemAtemType = isset($item['atem_type']) ? (int)$item['atem_type'] : 1;
+                            if ($itemAtemType !== $filterAtemType) { continue; }
+                        }
+                        if ($filterOutletId > 0) {
+                            $itemHasOutlet = false;
+                            if (isset($item['outlets']) && is_array($item['outlets'])) {
+                                foreach ($item['outlets'] as $_o) {
+                                    if (!empty($_o['outlet_id']) && (int)$_o['outlet_id'] === $filterOutletId) {
+                                        $itemHasOutlet = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!$itemHasOutlet) { continue; }
+                        }
+                        if ($filterPillarName !== '') {
+                            $itemPillarName = isset($item['pillar']['name']) ? $item['pillar']['name'] : '';
+                            if ($itemPillarName !== $filterPillarName) { continue; }
+                        }
 
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
                         if ($statusVal === 'Deleted' || $statusVal === 'Suspended' || !empty($item['deleted_at'])) { continue; }
@@ -1783,6 +1813,9 @@ if (!defined('API_JWT_INCLUDED')) {
                         preg_match('/\d+/', $levelStr, $lvlMatch);
                         $levelNum  = $lvlMatch ? (int)$lvlMatch[0] : 0;
 
+                        $pillarId   = isset($item['pillar']['id'])   ? (int)$item['pillar']['id']   : 0;
+                        $pillarName = isset($item['pillar']['name']) ? $item['pillar']['name']      : '';
+
                         $isExtended = !empty($item['is_extended']);
                         if ($statusVal === 'Extended') {
                             $byStatus['extended_status']++;
@@ -1812,18 +1845,41 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
 
-                        // Include all non-Draft, non-Failed cards in the incentive
-                        // forecast — Active/Extended cards carry a projected payout
-                        // that should appear in the estimate until they close or are
-                        // suspended (suspended cards are soft-deleted and excluded
+                        if ($pillarId > 0) {
+                            if (!isset($pillarMap[$pillarId])) {
+                                $pillarMap[$pillarId] = array('label' => $pillarName, 'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0);
+                            }
+                            $pillarMap[$pillarId]['cards']++;
+                            if ($statusVal === 'Completed') {
+                                $pillarMap[$pillarId]['complete']++;
+                            } elseif ($statusVal === 'Completed with Excellence') {
+                                $pillarMap[$pillarId]['excellence']++;
+                            } elseif ($statusVal === 'Failed') {
+                                $pillarMap[$pillarId]['fail']++;
+                            }
+                        }
+
+                        // Include all non-Draft, non-Failed cards in the incentive/
+                        // reward forecast — Active/Extended cards carry a projected
+                        // payout that should appear in the estimate until they close or
+                        // are suspended (suspended cards are soft-deleted and excluded
                         // from getAtemList entirely, so their reset 0 amounts never
-                        // reach this loop).
+                        // reach this loop). HQ cards forecast off total_incentive_amount;
+                        // Outlet cards have no incentive-rule amount, so they forecast
+                        // off reward_amount (the potential reward before closure -
+                        // final_amount only gets set once the card actually closes).
                         $forecastStatuses = array('Active', 'Extended', 'Completed', 'Completed with Excellence');
-                        if (in_array($statusVal, $forecastStatuses) && isset($item['total_incentive_amount'])) {
-                            $amt = (float)$item['total_incentive_amount'];
-                            $incentiveTotal += $amt;
+                        $itemAtemTypeVal  = isset($item['atem_type']) ? (int)$item['atem_type'] : 1;
+                        $forecastAmount   = ($itemAtemTypeVal === 2)
+                            ? (float)($item['reward_amount'] ?? 0)
+                            : (float)($item['total_incentive_amount'] ?? 0);
+                        if (in_array($statusVal, $forecastStatuses)) {
+                            $incentiveTotal += $forecastAmount;
                             if ($levelNum >= 1 && $levelNum <= 4) {
-                                $levelMap[$levelNum]['forecast'] += $amt;
+                                $levelMap[$levelNum]['forecast'] += $forecastAmount;
+                            }
+                            if ($pillarId > 0) {
+                                $pillarMap[$pillarId]['forecast'] += $forecastAmount;
                             }
                         }
 
@@ -1848,8 +1904,8 @@ if (!defined('API_JWT_INCLUDED')) {
                         } elseif ($statusVal === 'Failed') {
                             $byDept[$deptId]['fail']++;
                         }
-                        if (in_array($statusVal, $forecastStatuses) && isset($item['total_incentive_amount'])) {
-                            $byDept[$deptId]['forecast'] += (float)$item['total_incentive_amount'];
+                        if (in_array($statusVal, $forecastStatuses)) {
+                            $byDept[$deptId]['forecast'] += $forecastAmount;
                         }
                     }
 
@@ -1865,6 +1921,20 @@ if (!defined('API_JWT_INCLUDED')) {
                             'forecast'   => $lvlData['forecast'],
                         );
                     }
+
+                    $byPillar = array();
+                    foreach ($pillarMap as $pId => $pData) {
+                        $byPillar[] = array(
+                            'pillar_id'  => $pId,
+                            'label'      => $pData['label'],
+                            'cards'      => $pData['cards'],
+                            'complete'   => $pData['complete'],
+                            'excellence' => $pData['excellence'],
+                            'fail'       => $pData['fail'],
+                            'forecast'   => $pData['forecast'],
+                        );
+                    }
+                    usort($byPillar, function($a, $b) { return strcmp($a['label'], $b['label']); });
 
                     $deptNames = array();
                     $deptRes = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
@@ -1893,6 +1963,7 @@ if (!defined('API_JWT_INCLUDED')) {
                             'total'           => $total,
                             'by_status'       => $byStatus,
                             'by_level'        => $byLevel,
+                            'by_pillar'       => $byPillar,
                             'incentive_total' => $incentiveTotal,
                             'overdue_count'   => $overdueCount,
                             'by_department'   => $byDepartment,
