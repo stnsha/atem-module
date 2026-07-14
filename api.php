@@ -1668,8 +1668,18 @@ if (!defined('API_JWT_INCLUDED')) {
                         4 => array('label' => 'L4 Company-Level',    'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
                     );
                     // Pillars (Outlet-type equivalent of levels) come from a DB table,
-                    // not fixed ids, so this is built up as pillars are encountered.
+                    // not fixed ids - pre-seed every known pillar (even ones with 0
+                    // matching cards) so the table always lists all of them, mirroring
+                    // how $levelMap above always shows all 4 levels.
                     $pillarMap = array();
+                    $_pillarLookup = getAtemLookups($staff_id);
+                    if (!empty($_pillarLookup['success']) && isset($_pillarLookup['data']['pillars'])) {
+                        foreach ($_pillarLookup['data']['pillars'] as $_p) {
+                            if (isset($_p['id'])) {
+                                $pillarMap[(int)$_p['id']] = array('label' => $_p['name'], 'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0);
+                            }
+                        }
+                    }
 
                     $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'extended_status' => 0, 'failed' => 0, 'draft' => 0);
                     $total = 0;

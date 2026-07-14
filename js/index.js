@@ -177,15 +177,13 @@
     // Mirrors js/view.js's buildS2Dropdown - used for the Outlet dashboard's
     // Staff and Outlet pickers (static item lists, no cross-field filtering
     // like the HQ Staff-by-Department dropdown above).
-    function buildSearchDropdown(baseId, items, allLabel, sizeRefId, onSelect) {
-        var listEl   = document.getElementById(baseId + '-list');
-        var searchEl = document.getElementById(baseId + '-search');
-        var btnEl    = document.getElementById(baseId + '-btn');
-        var dropEl   = document.getElementById(baseId + '-dropdown');
-        var valEl    = document.getElementById(baseId + '-value');
-        var wrapEl   = document.getElementById(baseId + '-wrap');
-        if (!listEl || !btnEl || !dropEl) { return; }
-
+    // Copies height/border/font-size from a plain form-select-sm in the same
+    // filter bar so the custom dropdown button lines up with it exactly. Only
+    // works while the reference element is actually visible (offsetHeight reads
+    // 0 on a hidden Bootstrap tab-pane) - re-run this once the Outlet dashboard
+    // tab is actually shown, see the 'shown.bs.tab' listener in DOMContentLoaded.
+    function syncSearchDropdownSize(baseId, sizeRefId) {
+        var btnEl = document.getElementById(baseId + '-btn');
         var refEl = document.getElementById(sizeRefId);
         if (refEl && btnEl) {
             var refStyle = window.getComputedStyle(refEl);
@@ -195,6 +193,18 @@
             btnEl.style.fontSize     = refStyle.fontSize;
             btnEl.style.color        = refStyle.color;
         }
+    }
+
+    function buildSearchDropdown(baseId, items, allLabel, sizeRefId, onSelect) {
+        var listEl   = document.getElementById(baseId + '-list');
+        var searchEl = document.getElementById(baseId + '-search');
+        var btnEl    = document.getElementById(baseId + '-btn');
+        var dropEl   = document.getElementById(baseId + '-dropdown');
+        var valEl    = document.getElementById(baseId + '-value');
+        var wrapEl   = document.getElementById(baseId + '-wrap');
+        if (!listEl || !btnEl || !dropEl) { return; }
+
+        syncSearchDropdownSize(baseId, sizeRefId);
 
         var html = '<li class="vf-s2-list-item" data-id="0">' + escapeHtml(allLabel) + '</li>';
         for (var i = 0; i < items.length; i++) {
@@ -918,6 +928,17 @@
         buildSearchDropdown('dasho-staff', (CFG.staff || []).map(function (s) { return { id: s.id, name: s.name }; }), 'All staff', 'dasho-filter-year', function () {
             loadDashboardOutlet(buildPayloadOutlet());
         });
+
+        // The Outlet dashboard pane is hidden (display:none) until its tab is
+        // shown, so the dropdown-button size sync above read 0 - redo it now
+        // that the pane is actually visible.
+        var dashOutletTabBtn = document.getElementById('dash-tab-outlet-btn');
+        if (dashOutletTabBtn) {
+            dashOutletTabBtn.addEventListener('shown.bs.tab', function () {
+                syncSearchDropdownSize('dasho-outlet', 'dasho-filter-year');
+                syncSearchDropdownSize('dasho-staff', 'dasho-filter-year');
+            });
+        }
 
         var resetBtnO  = document.getElementById('dasho-reset-filter');
         var yearElO    = document.getElementById('dasho-filter-year');
