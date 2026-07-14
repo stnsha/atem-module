@@ -69,17 +69,17 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
 
 // Outlet filter (display only for now; not yet wired to ATEM rows) + code
 // lookup used to resolve atem_outlets.outlet_id to a display code below.
-$outlet_list  = array();
-$outlet_names = array();
+$outlet_list  = [];
+$outlet_names = [];
 $outlet_res = mysqli_query($conn, "SELECT id, code FROM outlet ORDER BY code ASC");
 if ($outlet_res) {
     while ($orow = mysqli_fetch_assoc($outlet_res)) {
-        $outlet_list[] = array('id' => (int) $orow['id'], 'code' => $orow['code']);
+        $outlet_list[] = ['id' => (int) $orow['id'], 'code' => $orow['code']];
         $outlet_names[(int) $orow['id']] = $orow['code'];
     }
 }
 
-$lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array(), 'pillars' => array());
+$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => []];
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
@@ -107,7 +107,7 @@ foreach ($rows as $a) {
     $pillar    = isset($a['pillar']) && $a['pillar'] ? $a['pillar'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 
-    $outlet_codes = array();
+    $outlet_codes = [];
     if (isset($a['outlets']) && is_array($a['outlets'])) {
         foreach ($a['outlets'] as $o) {
             $o_id = isset($o['outlet_id']) ? (int) $o['outlet_id'] : 0;

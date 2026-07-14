@@ -73,7 +73,7 @@ function isInStructWindow() {
 
 function attachOutletCodes($conn, $staff_list)
 {
-    $ids = array();
+    $ids = [];
     foreach ($staff_list as $s) {
         foreach (explode(',', $s['outlet_raw']) as $oid) {
             $oid = (int)trim($oid);
@@ -83,7 +83,7 @@ function attachOutletCodes($conn, $staff_list)
         }
     }
 
-    $code_map = array();
+    $code_map = [];
     if (!empty($ids)) {
         $ids_sql = implode(',', array_keys($ids));
         $r = mysqli_query($conn, "SELECT id, code FROM outlet WHERE id IN ($ids_sql)");
@@ -95,7 +95,7 @@ function attachOutletCodes($conn, $staff_list)
     }
 
     foreach ($staff_list as &$s) {
-        $codes = array();
+        $codes = [];
         foreach (explode(',', $s['outlet_raw']) as $oid) {
             $oid = (int)trim($oid);
             if ($oid > 0 && isset($code_map[$oid])) {
@@ -472,7 +472,7 @@ if ($action === 'updateLibrary' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER
     $table = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
     $col   = ($type === 'grade') ? 'grade_name'  : 'struct_name';
 
-    $set_parts = array();
+    $set_parts = [];
     if ($has_label) {
         $label_escaped = mysqli_real_escape_string($conn, $label);
         $set_parts[]   = "`$col` = '$label_escaped'";

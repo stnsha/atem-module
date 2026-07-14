@@ -50,17 +50,17 @@ foreach ($departments as $d_id => $d_name) {
 }
 
 // Outlets for the derived outlet-scope display (outlet staff flow only).
-$outlets_list = array();
+$outlets_list = [];
 $outlet_res = mysqli_query($conn, "SELECT id, code FROM outlet ORDER BY code ASC");
 if ($outlet_res) {
     while ($orow = mysqli_fetch_assoc($outlet_res)) {
-        $outlets_list[] = array('id' => (int) $orow['id'], 'code' => $orow['code']);
+        $outlets_list[] = ['id' => (int) $orow['id'], 'code' => $orow['code']];
     }
 }
 
 // Area Managers for the Area Manager(s) picker (outlet staff flow only).
 // status_rym = 134 identifies the "Area Manager" position in position_rymnet.
-$area_managers_list = array();
+$area_managers_list = [];
 $am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
            FROM staff s
            JOIN position_rymnet p ON p.id = s.status_rym
@@ -69,26 +69,26 @@ $am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
 $am_res = mysqli_query($conn, $am_sql);
 if ($am_res) {
     while ($arow = mysqli_fetch_assoc($am_res)) {
-        $am_outlet_ids = array();
+        $am_outlet_ids = [];
         foreach (explode(',', (string) $arow['outlet']) as $oid) {
             $oid = (int) trim($oid);
             if ($oid > 0) {
                 $am_outlet_ids[] = $oid;
             }
         }
-        $area_managers_list[] = array(
+        $area_managers_list[] = [
             'id'         => (int) $arow['id'],
             'name'       => $arow['nama_staff'],
             'position'   => $arow['position_name'],
             'outlet_ids' => $am_outlet_ids,
-        );
+        ];
     }
 }
 
 // Staff grouped by outlet (for the ARCI picker on Outlet-type ATEMs). A staff
 // member can belong to several outlets (comma-separated staff.outlet), so they
 // are bucketed under every outlet id they belong to, not just one.
-$staff_by_outlet = array();
+$staff_by_outlet = [];
 $all_staff_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
                   FROM staff s
                   LEFT JOIN position_rymnet p ON p.id = s.status_rym
@@ -105,13 +105,13 @@ if ($all_staff_res) {
                 continue;
             }
             if (!isset($staff_by_outlet[$oid])) {
-                $staff_by_outlet[$oid] = array();
+                $staff_by_outlet[$oid] = [];
             }
-            $staff_by_outlet[$oid][] = array(
+            $staff_by_outlet[$oid][] = [
                 'id'       => (int) $orow2['id'],
                 'name'     => $orow2['nama_staff'],
                 'position' => $orow2['position_name'],
-            );
+            ];
         }
     }
 }
@@ -121,7 +121,7 @@ if ($all_staff_res) {
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
 
-$lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array(), 'pillars' => array());
+$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => []];
 $lookup_result = getAtemLookups($staff_id);
 if (!empty($lookup_result['success']) && isset($lookup_result['data'])) {
     $lookups = $lookup_result['data'];
