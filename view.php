@@ -138,10 +138,15 @@ foreach ($rows as $a) {
                     $user_roles[] = $m['role'];
                 }
                 if (isset($m['role']) && $m['role'] === 'A') {
-                    $a_dept_id = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
+                    $a_dept_id   = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
+                    $a_outlet_id = isset($m['outlet_id']) ? (int) $m['outlet_id'] : 0;
                     $accountable[] = array(
                         'name' => isset($staff_names[$m_id]) ? $staff_names[$m_id] : ('Staff #' . $m_id),
-                        'dept' => ($a_dept_id && isset($dept_names[$a_dept_id])) ? $dept_names[$a_dept_id] : '-',
+                        // Outlet-scoped member (outlet_id set) shows the outlet code;
+                        // HQ/department-scoped member (no outlet_id) shows the department.
+                        'dept' => $a_outlet_id
+                            ? (isset($outlet_names[$a_outlet_id]) ? $outlet_names[$a_outlet_id] : ('Outlet #' . $a_outlet_id))
+                            : (($a_dept_id && isset($dept_names[$a_dept_id])) ? $dept_names[$a_dept_id] : '-'),
                     );
                 }
             }
