@@ -1384,7 +1384,8 @@
             });
         }
         initEditor();
-        setStaffType('hq');
+        var _urlParams = new URLSearchParams(window.location.search);
+        setStaffType(_urlParams.get('type') === 'outlet' ? 'outlet' : 'hq');
         hydrate(CFG.draft);
         bind();
         recalcIncentive();

@@ -1,6 +1,6 @@
 <?php
 $page_title = 'ATEM';
-$page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="atem/create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
+$page_title_actions = '<a id="atem-create-btn" class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="atem/create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
 $extra_css = '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">';
 include('header.php');
 
