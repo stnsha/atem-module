@@ -74,6 +74,24 @@ window.ATEM_DASH = <?php echo json_encode(array(
 )); ?>;
 </script>
 
+<!-- ATEM Type Tabs -->
+<ul class="nav nav-tabs atem-view-tabs mb-3" id="dash-view-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active atem-tab-color-hq" id="dash-tab-hq-btn" data-bs-toggle="tab" data-bs-target="#dash-tab-hq"
+            type="button" role="tab" aria-controls="dash-tab-hq" aria-selected="true">
+            <i class="bi bi-building"></i> HQ ATEM
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link atem-tab-color-outlet" id="dash-tab-outlet-btn" data-bs-toggle="tab" data-bs-target="#dash-tab-outlet"
+            type="button" role="tab" aria-controls="dash-tab-outlet" aria-selected="false">
+            <i class="bi bi-shop"></i> Outlet ATEM
+        </button>
+    </li>
+</ul>
+<div class="tab-content">
+<div class="tab-pane fade show active" id="dash-tab-hq" role="tabpanel" aria-labelledby="dash-tab-hq-btn">
+
 <!-- Filter card -->
 <div class="atem-card atem-filter mb-3">
     <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
@@ -337,6 +355,14 @@ window.ATEM_DASH = <?php echo json_encode(array(
             </div>
         </div>
     </div>
+</div>
+
+</div>
+<div class="tab-pane fade" id="dash-tab-outlet" role="tabpanel" aria-labelledby="dash-tab-outlet-btn">
+    <div class="atem-card">
+        <p class="text-muted mb-0" style="font-size:13px;">Outlet ATEM dashboard coming soon.</p>
+    </div>
+</div>
 </div>
 
 <?php
