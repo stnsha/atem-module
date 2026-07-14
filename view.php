@@ -7,13 +7,18 @@ include('header.php');
 // header.php bootstrapped the odb connection ($conn) and current staff.
 // Build id -> name maps from odb so we can show issuer and department names
 // for the FK ids returned by the atem-api.
-$staff_names = array();
-$dept_names  = array();
+$staff_names     = array();
+$staff_positions = array();
+$dept_names      = array();
 
-$staff_res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1");
+$staff_res = mysqli_query($conn, "SELECT s.id, s.nama_staff, p.position_name
+                                   FROM staff s
+                                   LEFT JOIN position_rymnet p ON p.id = s.status_rym
+                                   WHERE s.recycle != 1");
 if ($staff_res) {
     while ($srow = mysqli_fetch_assoc($staff_res)) {
-        $staff_names[(int) $srow['id']] = $srow['nama_staff'];
+        $staff_names[(int) $srow['id']]     = $srow['nama_staff'];
+        $staff_positions[(int) $srow['id']] = $srow['position_name'];
     }
 }
 $dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
@@ -142,10 +147,12 @@ foreach ($rows as $a) {
                     $a_outlet_id = isset($m['outlet_id']) ? (int) $m['outlet_id'] : 0;
                     $accountable[] = array(
                         'name' => isset($staff_names[$m_id]) ? $staff_names[$m_id] : ('Staff #' . $m_id),
-                        // Outlet-scoped member (outlet_id set) shows the outlet code;
+                        // Outlet-scoped member (outlet_id set) shows their position -
+                        // a staff member can belong to several outlets, so a single
+                        // outlet code wouldn't be a meaningful label here.
                         // HQ/department-scoped member (no outlet_id) shows the department.
                         'dept' => $a_outlet_id
-                            ? (isset($outlet_names[$a_outlet_id]) ? $outlet_names[$a_outlet_id] : ('Outlet #' . $a_outlet_id))
+                            ? (!empty($staff_positions[$m_id]) ? $staff_positions[$m_id] : '-')
                             : (($a_dept_id && isset($dept_names[$a_dept_id])) ? $dept_names[$a_dept_id] : '-'),
                     );
                 }
