@@ -142,7 +142,7 @@ if ($session_files !== null) {
 
 $atem_config = array(
     'atemId'        => 0,
-    'apiUrl'        => 'atem/api.php',
+    'apiUrl'        => ATEM_BASE . 'api.php',
     'mode'          => 'create',
     'levels'        => isset($lookups['levels'])   ? $lookups['levels']   : array(),
     'rules'         => isset($lookups['rules'])    ? $lookups['rules']    : array(),
@@ -559,6 +559,6 @@ var ATEM_CONFIG = <?php echo json_encode($atem_config); ?>;
 <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
 <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
 <?php
-$page_js = 'atem/js/create.js';
+$page_js = ATEM_BASE . 'js/create.js';
 include('footer.php');
 ?>

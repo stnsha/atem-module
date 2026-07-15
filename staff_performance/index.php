@@ -6,7 +6,7 @@ include('../header.php');
 
 if ($atem_permission < 4 && !$_is_superadmin) {
     ob_end_clean();
-    header('Location: /odb/atem/index.php');
+    header('Location: ' . ATEM_BASE . 'index.php');
     exit;
 }
 
@@ -299,7 +299,7 @@ if ($_pso_res) {
 
 <script>
 var PERF_CFG = <?php echo json_encode(array(
-    'apiUrl'          => '/odb/atem/api.php',
+    'apiUrl'          => ATEM_BASE . 'api.php',
     'permission'      => $atem_permission,
     'initMonth'       => $init_month,
     'initYear'        => $init_year,
@@ -569,7 +569,7 @@ function updateActionUrls(payload) {
     var exportBtn = document.getElementById('perf-export-all-btn');
     if (exportBtn) {
         var statuses = (payload.statuses || []).join(',');
-        exportBtn.href = '/odb/atem/staff_performance/export.php?type=performance' +
+        exportBtn.href = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance' +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
             '&staff_filter_id=' + staffId +
@@ -678,9 +678,9 @@ function renderTable(data, payload) {
     for (var i = 0; i < pageData.length; i++) {
         var rec = pageData[i];
 
-        var editUrl = '/odb/atem/staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
+        var editUrl = window.ATEM_MODULE_BASE + 'staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
             '&month=' + month + '&year=' + year + '&statuses=' + statusesQs;
-        var exportUrl = '/odb/atem/staff_performance/export.php?type=performance&ids=' + rec.id +
+        var exportUrl = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance&ids=' + rec.id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
             '&statuses=' + statusesQs;
@@ -916,7 +916,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 '&month=' + month + '&year=' + year + '&quarter=' + quarter +
                 '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
                 '&statuses=' + encodeURIComponent(statuses.join(','));
-            triggerExport('/odb/atem/staff_performance/export.php?' + qs);
+            triggerExport(window.ATEM_MODULE_BASE + 'staff_performance/export.php?' + qs);
         });
     }
 

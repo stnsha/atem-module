@@ -19,7 +19,7 @@
     // Leave/save bookkeeping.
     var dirty = false;
     var leaving = false;
-    var pendingNavUrl = 'atem/view.php';
+    var pendingNavUrl = (window.ATEM_MODULE_BASE || 'atem/') + 'view.php';
     var _syncTimer = null;
 
     // ----------------------------------------------------------------- helpers
@@ -1166,7 +1166,7 @@
             if (res && res.success && res.data && res.data.id) {
                 apiCall('draft-clear').then(function () {
                     leaving = true;
-                    window.location.href = navUrl || 'atem/view.php';
+                    window.location.href = navUrl || (window.ATEM_MODULE_BASE || 'atem/') + 'view.php';
                 });
             } else {
                 setError('atem-save-error', res && res.message ? res.message : 'Failed to save ATEM.');
@@ -1183,7 +1183,7 @@
     function cancelAtem(navUrl) {
         apiCall('draft-clear').then(function () {
             leaving = true;
-            window.location.href = navUrl || 'atem/view.php';
+            window.location.href = navUrl || (window.ATEM_MODULE_BASE || 'atem/') + 'view.php';
         });
     }
 
@@ -1197,7 +1197,7 @@
     }
 
     function showLeaveModal(navUrl) {
-        pendingNavUrl = navUrl || 'atem/view.php';
+        pendingNavUrl = navUrl || (window.ATEM_MODULE_BASE || 'atem/') + 'view.php';
         var m = getLeaveModal();
         if (m) { m.show(); }
     }
@@ -1205,7 +1205,7 @@
     function bindLeaveGuard() {
         var cancelBtn = $('atem-cancel-btn');
         if (cancelBtn) {
-            cancelBtn.addEventListener('click', function () { showLeaveModal('atem/view.php'); });
+            cancelBtn.addEventListener('click', function () { showLeaveModal((window.ATEM_MODULE_BASE || 'atem/') + 'view.php'); });
         }
         var leaveCancel = $('atem-leave-cancel');
         if (leaveCancel) {
@@ -1368,7 +1368,7 @@
         bindAttachmentZone();
 
         var saveBtn = $('atem-save-btn');
-        if (saveBtn) { saveBtn.addEventListener('click', function () { saveAtem('final', 'atem/view.php'); }); }
+        if (saveBtn) { saveBtn.addEventListener('click', function () { saveAtem('final', (window.ATEM_MODULE_BASE || 'atem/') + 'view.php'); }); }
 
         bindLeaveGuard();
     }

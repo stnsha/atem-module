@@ -1,6 +1,10 @@
 <?php
 $page_title = 'ATEM';
-$page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="atem/create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
+// header.php (and its ATEM_BASE constant) hasn't been included yet at this point,
+// since header.php itself echoes $page_title_actions during its own run — so the
+// module base is computed locally here the same way ATEM_BASE will be.
+$_view_atem_base = '/odb/' . basename(__DIR__) . '/';
+$page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="' . $_view_atem_base . 'create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
 $extra_css = '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">';
 include('header.php');
 
@@ -577,6 +581,6 @@ $view_config = array(
 window.ATEM_VIEW = <?php echo json_encode($view_config); ?>;
 </script>
 <?php
-$page_js = 'atem/js/view.js';
+$page_js = ATEM_BASE . 'js/view.js';
 include('footer.php');
 ?>

@@ -6,7 +6,7 @@ include('../header.php');
 
 if ($atem_permission < 4 && !$_is_superadmin) {
     ob_end_clean();
-    header('Location: /odb/atem/index.php');
+    header('Location: ' . ATEM_BASE . 'index.php');
     exit;
 }
 
@@ -164,7 +164,7 @@ ob_end_flush();
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
-var BACKEND_URL = 'atem/access_control/backend.php';
+var BACKEND_URL = <?php echo json_encode(ATEM_BASE . 'access_control/backend.php'); ?>;
 var IS_SUPERADMIN = <?php echo json_encode((bool) $_is_superadmin); ?>;
 
 function buildRow(type, item) {

@@ -1379,7 +1379,7 @@
         var btn = $('atem-save-btn');
         if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
         apiCall('update-atem', { id: CFG.atemId, data: data }).then(function (res) {
-            if (res && res.success) { window.location.href = 'atem/view.php'; }
+            if (res && res.success) { window.location.href = (window.ATEM_MODULE_BASE || 'atem/') + 'view.php'; }
             else { setError('atem-save-error', res && res.message ? res.message : 'Failed to save ATEM.'); scrollToFirstError(); if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; } }
         }).catch(function () { setError('atem-save-error', 'Network error while saving.'); scrollToFirstError(); if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; } });
     }
@@ -2095,7 +2095,7 @@
         }).then(function (res) {
             if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
             if (res && res.success) {
-                window.location.href = 'atem/view.php';
+                window.location.href = (window.ATEM_MODULE_BASE || 'atem/') + 'view.php';
             } else {
                 setError('atem-save-error', res && res.message ? res.message : 'Failed to save.');
             }
@@ -2114,7 +2114,7 @@
                 if (okBtn) { okBtn.textContent = 'Remove'; }
                 apiCall('delete-atem', { id: CFG.atemId }).then(function (res) {
                     if (res && res.success) {
-                        window.location.href = 'atem/view.php';
+                        window.location.href = (window.ATEM_MODULE_BASE || 'atem/') + 'view.php';
                     } else {
                         setError('atem-save-error', res && res.message ? res.message : 'Failed to delete ATEM.');
                     }

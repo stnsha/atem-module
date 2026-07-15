@@ -6,7 +6,7 @@ include('../header.php');
 
 if ($atem_permission < 4 && !$_is_superadmin) {
     ob_end_clean();
-    header('Location: /odb/atem/index.php');
+    header('Location: ' . ATEM_BASE . 'index.php');
     exit;
 }
 
@@ -34,7 +34,7 @@ for ($y = 2026; $y <= $_edit_cur_year; $y++) {
 }
 
 if ($rec_id <= 0 || $target_sid <= 0) {
-    header('Location: /odb/atem/staff_performance/index.php');
+    header('Location: ' . ATEM_BASE . 'staff_performance/index.php');
     exit;
 }
 
@@ -107,12 +107,12 @@ $month_names = array(
     9=>'September', 10=>'October', 11=>'November', 12=>'December'
 );
 
-$back_url = 'atem/staff_performance/index.php';
+$back_url = ATEM_BASE . 'staff_performance/index.php';
 if ($filter_month > 0 || $filter_year > 0) {
     $back_url .= '?' . http_build_query(array('month'=>$filter_month,'year'=>$filter_year));
 }
 
-$export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array('type'=>'staff-atem','staff_id'=>$target_sid));
+$export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_query(array('type'=>'staff-atem','staff_id'=>$target_sid));
 ?>
 
 <div class="mb-3">
@@ -364,7 +364,7 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
 </div><!-- /.atem-container -->
 
 <script>
-var PERF_API_URL  = '/odb/atem/api.php';
+var PERF_API_URL  = <?php echo json_encode(ATEM_BASE . 'api.php'); ?>;
 var editTargetSid = <?php echo $target_sid; ?>;
 <?php if (!$atem_unavailable): ?>
 window.EDIT_ATEM_ROWS = <?php echo json_encode($edit_atem_js_rows); ?>;
@@ -668,7 +668,7 @@ function renderEditAtemTable() {
             + '<td style="white-space:nowrap;">' + endHtml + '</td>'
             + '<td><span class="atem-pill" style="background-color:' + editEsc(a.status_color) + '">' + editEsc(a.status || '-') + '</span></td>'
             + '<td class="text-end">' + rewardHtml + '</td>'
-            + '<td><a class="btn btn-sm btn-outline-primary" href="atem/edit.php?id=' + a.id + '&mode=read" title="View"><i class="bi bi-eye"></i></a></td>'
+            + '<td><a class="btn btn-sm btn-outline-primary" href="' + window.ATEM_MODULE_BASE + 'edit.php?id=' + a.id + '&mode=read" title="View"><i class="bi bi-eye"></i></a></td>'
             + '</tr>';
     }
     tbody.innerHTML = html;

@@ -6,7 +6,7 @@ include('header.php');
 
 if ($atem_permission < 4 && !$_is_superadmin) {
     ob_end_clean();
-    header('Location: /odb/atem/index.php');
+    header('Location: ' . ATEM_BASE . 'index.php');
     exit;
 }
 

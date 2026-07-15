@@ -231,7 +231,7 @@ if ($record) {
 
     if (!$can_view) {
         $_SESSION['atem_warning'] = 'You do not have permission to view this ATEM card.';
-        echo '<script>window.location.replace("atem/view.php");</script>';
+        echo '<script>window.location.replace(' . json_encode(ATEM_BASE . 'view.php') . ');</script>';
         include('footer.php');
         exit;
     }
@@ -251,7 +251,7 @@ if ($record_is_deleted) {
             $_SESSION['atem_warning'] = $record_is_suspended
                 ? 'This ATEM card has been suspended and is no longer accessible.'
                 : 'This ATEM card has been deleted and is no longer accessible.';
-            echo '<script>window.location.replace("atem/view.php");</script>';
+            echo '<script>window.location.replace(' . json_encode(ATEM_BASE . 'view.php') . ');</script>';
             include('footer.php');
             exit;
         }
@@ -341,7 +341,7 @@ if (!$is_read && !$can_edit) {
 
 $atem_config = array(
     'atemId'       => $atem_id,
-    'apiUrl'       => 'atem/api.php',
+    'apiUrl'       => ATEM_BASE . 'api.php',
     'mode'         => $mode,
     'staffId'      => (int) $staff_id,
     'userGrade'    => (int) $atem_permission,
@@ -838,7 +838,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <div class="atem-form-error" id="atem-save-error"></div>
 </div>
 <div class="atem-save-bar">
-    <a href="atem/view.php" class="btn btn-outline-secondary">Back to list</a>
+    <a href="<?php echo ATEM_BASE; ?>view.php" class="btn btn-outline-secondary">Back to list</a>
     <?php if (!$is_read && $is_draft && $is_issuer_now): ?>
     <button type="button" class="btn btn-outline-danger" id="atem-delete-btn"
         <?php echo $api_unavailable ? 'disabled' : ''; ?>>Delete</button>
@@ -861,7 +861,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <div class="atem-card-title-row">
         <h6 class="atem-card-title"><i class="bi bi-cash-stack"></i> Payout Details</h6>
         <a class="btn btn-outline-secondary btn-sm" id="atem-payout-pdf-btn"
-           href="atem/payout_pdf.php?id=<?php echo (int) $atem_id; ?>" target="_blank" rel="noopener">
+           href="<?php echo ATEM_BASE; ?>payout_pdf.php?id=<?php echo (int) $atem_id; ?>" target="_blank" rel="noopener">
             <i class="bi bi-file-earmark-pdf"></i> Download as PDF
         </a>
     </div>
@@ -1077,6 +1077,6 @@ var ATEM_CONFIG = <?php echo json_encode($atem_config); ?>;
 <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
 <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
 <?php
-$page_js = 'atem/js/edit.js';
+$page_js = ATEM_BASE . 'js/edit.js';
 include('footer.php');
 ?>

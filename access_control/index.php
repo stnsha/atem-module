@@ -8,7 +8,7 @@ include('../header.php');
 
 if ($atem_permission < 1) {
     ob_end_clean();
-    header('Location: /odb/atem/index.php');
+    header('Location: ' . ATEM_BASE . 'index.php');
     exit;
 }
 
@@ -301,13 +301,13 @@ var REQUESTER_DEPT_IDS = <?php echo json_encode(array_values($requester_dept_ids
 var IS_SUPERADMIN = <?php echo $_is_superadmin ? 'true' : 'false'; ?>;
 var SHOW_EDIT = <?php echo $show_edit ? 'true' : 'false'; ?>;
 var TABLE_COLS = <?php echo $table_cols; ?>;
-var BACKEND_URL = 'atem/access_control/backend.php';
+var BACKEND_URL = <?php echo json_encode(ATEM_BASE . 'access_control/backend.php'); ?>;
 var HAS_DEPT_FILTER = <?php echo !empty($dept_filter_options) ? 'true' : 'false'; ?>;
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<script src="/odb/atem/js/admin_access.js?v=<?php echo time(); ?>"></script>
+<script src="<?php echo ATEM_BASE; ?>js/admin_access.js?v=<?php echo time(); ?>"></script>
 </body>
 
 </html>

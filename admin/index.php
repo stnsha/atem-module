@@ -3,7 +3,7 @@ $page_title = 'Admin Settings';
 include('../header.php');
 
 if (!$_is_superadmin) {
-    header('Location: /odb/atem/index.php');
+    header('Location: ' . ATEM_BASE . 'index.php');
     exit;
 }
 
@@ -67,11 +67,11 @@ $backdate_enabled   = ($cfg_values['backdate_enabled'] === '1');
 <script>
 var STRUCT_WINDOW_OPEN = <?php echo $struct_window_open ? 'true' : 'false'; ?>;
 var BACKDATE_ENABLED   = <?php echo $backdate_enabled ? 'true' : 'false'; ?>;
-var ADMIN_BACKEND_URL  = 'atem/admin/backend.php';
+var ADMIN_BACKEND_URL  = <?php echo json_encode(ATEM_BASE . 'admin/backend.php'); ?>;
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="/odb/atem/js/admin_settings.js?v=<?php echo time(); ?>"></script>
+<script src="<?php echo ATEM_BASE; ?>js/admin_settings.js?v=<?php echo time(); ?>"></script>
 </body>
 
 </html>

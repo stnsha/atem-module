@@ -48,13 +48,18 @@ if ($role_input === 'clear') {
 unset($_SESSION['jwt_token']);
 unset($_SESSION['jwt_expires']);
 
+// This file doesn't include header.php, so compute the module base locally
+// the same way header.php's ATEM_BASE constant does, keeping the fallback
+// redirect on the same folder (atem or atem-staging) that served this request.
+$_dev_atem_base = '/odb/' . basename(dirname(__FILE__)) . '/';
+
 $redirect = isset($_POST['redirect']) && $_POST['redirect'] !== ''
     ? $_POST['redirect']
-    : '/odb/atem/index.php';
+    : $_dev_atem_base . 'index.php';
 
 // Only allow relative redirects to prevent open redirect
 if (strpos($redirect, '://') !== false) {
-    $redirect = '/odb/atem/index.php';
+    $redirect = $_dev_atem_base . 'index.php';
 }
 
 header('Location: ' . $redirect);

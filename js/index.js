@@ -302,7 +302,7 @@
         if (deptName) { params.push('dept=' + encodeURIComponent(deptName)); }
         params.push('no_deleted=1');
 
-        return 'atem/view.php' + (params.length ? '?' + params.join('&') : '');
+        return (window.ATEM_MODULE_BASE || 'atem/') + 'view.php' + (params.length ? '?' + params.join('&') : '');
     }
 
     // Outlet dashboard's equivalent of buildViewUrl - always lands on view.php's
@@ -334,7 +334,7 @@
         }
         params.push('no_deleted=1');
 
-        return 'atem/view.php?' + params.join('&');
+        return (window.ATEM_MODULE_BASE || 'atem/') + 'view.php?' + params.join('&');
     }
 
     // Scope-aware heading + click-through for the My Involvement card. Deep

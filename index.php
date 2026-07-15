@@ -85,7 +85,7 @@ if ($_outlet_res) {
 
 <script>
 window.ATEM_DASH = <?php echo json_encode(array(
-    'apiUrl'      => 'atem/api.php',
+    'apiUrl'      => ATEM_BASE . 'api.php',
     'departments' => $dash_dept_options,
     'staff'       => $dash_staff_options,
     'pillars'     => $dash_pillar_options,
@@ -628,6 +628,6 @@ window.ATEM_DASH = <?php echo json_encode(array(
 </div>
 
 <?php
-$page_js = 'atem/js/index.js';
+$page_js = ATEM_BASE . 'js/index.js';
 include('footer.php');
 ?>

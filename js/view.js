@@ -556,14 +556,15 @@
     function buildActionCell(r) {
         var _canViewDeleted = CFG.isSuperAdmin || CFG.userGrade >= 4
             || (r.status === 'Suspended' && r.issuer_staff_id == CFG.staffId);
+        var _base = window.ATEM_MODULE_BASE || 'atem/';
         return r.is_deleted
             ? (_canViewDeleted
-                ? '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Suspended)"><i class="bi bi-eye"></i></a>'
+                ? '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Suspended)"><i class="bi bi-eye"></i></a>'
                 : '')
             + (canDeleteSuspended(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '')
-            : '<a href="atem/edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
-            + (canEdit(r) ? '<a href="atem/edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
-            + (canUpdateProgress(r) ? ' <a href="atem/edit.php?id=' + r.id + '&mode=read#atem-progress-section" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
+            : '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
+            + (canEdit(r) ? '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
+            + (canUpdateProgress(r) ? ' <a href="' + _base + 'edit.php?id=' + r.id + '&mode=read#atem-progress-section" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
             + (canDelete(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '');
     }
 
@@ -806,7 +807,7 @@
                 var atemId = pendingDeleteId;
                 var m = getDeleteModal();
                 if (m) { m.hide(); }
-                fetch('atem/api.php', {
+                fetch((window.ATEM_MODULE_BASE || 'atem/') + 'api.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'delete-atem', id: atemId, remarks: remark })

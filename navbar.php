@@ -36,14 +36,14 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
     $_navbar_activeRoleLabel = ($_navbar_activeRole !== null && isset($_navbar_gradeLabels[$_navbar_activeRole]))
         ? $_navbar_gradeLabels[$_navbar_activeRole]
         : 'DB Default';
-    $_navbar_currentUri      = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/odb/atem/index.php';
+    $_navbar_currentUri      = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : ATEM_BASE . 'index.php';
 ?>
 <div
     style="background:#12122a;color:#d0d0f0;padding:5px 14px;font-size:11px;font-family:monospace;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid #333;">
     <span style="color:#888;letter-spacing:.05em;">DEV GRADE</span>
     <strong style="color:#f0c040;">[<?php echo htmlspecialchars($_navbar_activeRoleLabel); ?>]</strong>
     <?php foreach ($_navbar_gradeLabels as $_r => $_label): ?>
-    <form method="POST" action="/odb/atem/dev-switch-role.php" style="display:inline;margin:0;">
+    <form method="POST" action="<?php echo ATEM_BASE; ?>dev-switch-role.php" style="display:inline;margin:0;">
         <input type="hidden" name="role" value="<?php echo $_r; ?>">
         <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_navbar_currentUri); ?>">
         <button type="submit"
@@ -52,7 +52,7 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
     </form>
     <?php endforeach; ?>
     <?php if ($_navbar_activeRole !== null): ?>
-    <form method="POST" action="/odb/atem/dev-switch-role.php" style="display:inline;margin:0;">
+    <form method="POST" action="<?php echo ATEM_BASE; ?>dev-switch-role.php" style="display:inline;margin:0;">
         <input type="hidden" name="role" value="clear">
         <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_navbar_currentUri); ?>">
         <button type="submit"
@@ -65,12 +65,13 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
 
 <?php
 // Get current page to highlight active nav item
-$current_page = basename(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '');
-$current_dir  = basename(dirname(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : ''));
+$current_page   = basename(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '');
+$current_dir    = basename(dirname(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : ''));
+$_atem_module_dir = basename(dirname(__FILE__)); // 'atem' or 'atem-staging'
 
 // Determine active class for each nav item
-$dashboard_active = ($current_page == 'index.php' && $current_dir == 'atem')  ? 'active' : '';
-$view_active      = ($current_dir == 'atem' && ($current_page == 'view.php' || $current_page == 'edit.php' || $current_page == 'create.php')) ? 'active' : '';
+$dashboard_active = ($current_page == 'index.php' && $current_dir == $_atem_module_dir)  ? 'active' : '';
+$view_active      = ($current_dir == $_atem_module_dir && ($current_page == 'view.php' || $current_page == 'edit.php' || $current_page == 'create.php')) ? 'active' : '';
 $admin_active          = ($current_dir == 'access_control' && $current_page == 'index.php')   ? 'active' : '';
 $masterlist_active     = ($current_dir == 'access_control' && $current_page == 'masterlist.php') ? 'active' : '';
 $admin_settings_active = ($current_dir == 'admin' && $current_page == 'index.php') ? 'active' : '';
@@ -86,30 +87,30 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav align-items-lg-center">
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $dashboard_active; ?>" href="atem/index.php">Dashboard</a>
+                    <a class="nav-link <?php echo $dashboard_active; ?>" href="<?php echo ATEM_BASE; ?>index.php">Dashboard</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $view_active; ?>" href="atem/view.php">ATEM</a>
+                    <a class="nav-link <?php echo $view_active; ?>" href="<?php echo ATEM_BASE; ?>view.php">ATEM</a>
                 </li>
                 <?php if ($atem_role >= 4 || $_is_superadmin): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $performance_active; ?>"
-                        href="atem/staff_performance/index.php">Performance</a>
+                        href="<?php echo ATEM_BASE; ?>staff_performance/index.php">Performance</a>
                 </li>
                 <?php endif; ?>
                 <?php if ($atem_role >= 1): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $admin_active; ?>" href="atem/access_control/index.php">Access Control</a>
+                    <a class="nav-link <?php echo $admin_active; ?>" href="<?php echo ATEM_BASE; ?>access_control/index.php">Access Control</a>
                 </li>
                 <?php endif; ?>
                 <?php if ($_is_superadmin || $atem_permission >= 4): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $masterlist_active; ?>" href="atem/access_control/masterlist.php">Masterlist</a>
+                    <a class="nav-link <?php echo $masterlist_active; ?>" href="<?php echo ATEM_BASE; ?>access_control/masterlist.php">Masterlist</a>
                 </li>
                 <?php endif; ?>
                 <?php if ($_is_superadmin): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $admin_settings_active; ?>" href="atem/admin/index.php">Admin</a>
+                    <a class="nav-link <?php echo $admin_settings_active; ?>" href="<?php echo ATEM_BASE; ?>admin/index.php">Admin</a>
                 </li>
                 <?php endif; ?>
             </ul>
