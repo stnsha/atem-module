@@ -92,7 +92,16 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                 <li class="nav-item">
                     <a class="nav-link <?php echo $view_active; ?>" href="<?php echo ATEM_BASE; ?>view.php">ATEM</a>
                 </li>
-                <?php if ($atem_role >= 4 || $_is_superadmin): ?>
+                <?php
+                $_navbar_dept_ids = array();
+                if (isset($department) && $department !== '') {
+                    foreach (explode(',', (string)$department) as $_navbar_d) {
+                        $_navbar_d = (int)trim($_navbar_d);
+                        if ($_navbar_d > 0) { $_navbar_dept_ids[] = $_navbar_d; }
+                    }
+                }
+                ?>
+                <?php if ($atem_role >= 2 || $_is_superadmin || in_array(17, $_navbar_dept_ids, true)): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $performance_active; ?>"
                         href="<?php echo ATEM_BASE; ?>staff_performance/index.php">Performance</a>

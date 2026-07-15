@@ -34,7 +34,7 @@ A user with `atem = 1` is treated as grade 6 (SuperAdmin) throughout the ATEM mo
 
 **Where the override is applied:**
 - `header.php` — sets `$_is_superadmin`; available to all pages and to `navbar.php`
-- `navbar.php` — uses `$_is_superadmin` for Performance nav link; uses `$atem === 1` for Masterlist nav link and dev toolbar
+- `navbar.php` — uses grade 2+/dept-17/`$_is_superadmin` for the Performance nav link; uses `$atem === 1` for Masterlist nav link and dev toolbar
 - `access_control/backend.php` — sets `$requester_grade = 6` and `$requester_is_superadmin = true` after reading `staff.atem` directly from DB
 
 All SuperAdmin feature gates check `$_is_superadmin` (set by `header.php`) or `$atem === 1` directly. `$atem_permission` is never set to 6 and never checked for SuperAdmin identity.
@@ -54,9 +54,9 @@ All SuperAdmin feature gates check `$_is_superadmin` (set by `header.php`) or `$
 |---|---|---|---|---|
 | 0 | Non-Graded | None | — | Redirected to dashboard; no ATEM access |
 | 1 | Frontline / Operational Staff | Basic | Own cards only | View ATEM cards where issuer or ARCI member |
-| 2 | Middle Management | Basic | Own department | View department cards; edit staff limited to overlapping departments |
-| 3 | Senior Management | Admin | Own department (cards) | Access Control page; view and edit all staff grades and structs |
-| 4 | C Suite Executive | Admin | All departments | + Staff Performance page; Masterlist page accessible (page-guard only) |
+| 2 | Middle Management | Basic | Own department | View department cards; edit staff limited to overlapping departments; Staff Performance page (view/export/lock/unlock) |
+| 3 | Senior Management | Admin | Own department (cards) | Access Control page; view and edit all staff grades and structs; Staff Performance page |
+| 4 | C Suite Executive | Admin | All departments | Staff Performance page; Masterlist page accessible (page-guard only) |
 | 5 | CEO/Board | Admin | All departments | Same as grade 4 |
 
 `staff.grade` only holds values 0–5. Grade 6 does not exist in the database. SuperAdmin is a separate flag (`staff.atem = 1`) — see the SuperAdmin Flag section for capabilities.
@@ -86,11 +86,13 @@ So grades 2–5 can open and read any card even though their list/dashboard only
 |---|---|---|
 | All pages | `$atem_permission === 0` | `/odb/index.php` (login) |
 | `access_control/index.php` | `$atem_permission < 1` | `/odb/atem/index.php` |
-| `staff_performance/index.php` | `$atem_permission < 4` | `/odb/atem/index.php` |
+| `staff_performance/index.php` | `$atem_permission < 2` AND not dept 17 | `/odb/atem/index.php` |
 | `staff_performance/edit.php` | `$atem_permission < 4` | `/odb/atem/index.php` |
 | `access_control/masterlist.php` | `$atem_permission < 4` | `/odb/atem/index.php` |
 
 SuperAdmin (`$atem === 1`) passes all grade-based page guards above via `$_is_superadmin` (set by `header.php`). SuperAdmin-only features (Masterlist nav, struct window toggle, library writes) are gated on `$_is_superadmin` or `$atem === 1` directly.
+
+**`staff_performance/index.php` access tier** (grade 2+, People Management dept 17, or SuperAdmin — checked via `$department`'s comma-separated dept ids, same convention as `access_control/backend.php`): this single tier gates the page itself, the `get-performance-list`/`get-staff-atem-list` data endpoints, the plain Export/Export Selected buttons, and the Lock Payout/Unlock/Export & Lock family of buttons on the HQ and Outlet tabs alike — there is no narrower export-only or stricter lock-only carve-out. `staff_performance/edit.php` (the per-staff/per-ATEM detail page reached via each row's "View" link) keeps its own separate `$atem_permission < 4` guard, unchanged. Payout lock/unlock server-side logic lives in `api.php`'s `resolvePayoutTargetStaffIds()`/`resolvePayoutAtemIds()` (odb) and `AtemController::bulkLockPayout()`/`bulkUnlockPayout()` (atem-api) — the atem-api endpoints trust odb's authorization decision and do not re-check grade themselves.
 
 **Navbar visibility** (navbar resolves `$atem_role` from `$atem_permission`):
 
@@ -98,7 +100,7 @@ SuperAdmin (`$atem === 1`) passes all grade-based page guards above via `$_is_su
 |---|---|---|
 | Dashboard | Always | All graded users |
 | ATEM | Always | All graded users |
-| Performance | `$atem_role >= 4` | Grades 4, 5, SuperAdmin |
+| Performance | `$atem_role >= 2 \|\| $_is_superadmin \|\| dept 17` | Grades 2+, People Management, SuperAdmin |
 | Access Control | `$atem_role >= 1` | All graded users |
 | Masterlist | `isset($atem) && (int)$atem === 1` | SuperAdmin flag check — not a grade 6 check |
 

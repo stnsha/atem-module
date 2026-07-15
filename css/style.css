@@ -1711,6 +1711,10 @@ button {
     color: #0A5AA8;
     border-color: #0A5AA8;
 }
+.atem-view-tabs .nav-link.atem-tab-color-payout.active {
+    color: #6f42c1;
+    border-color: #6f42c1;
+}
 .atem-view-tabs .nav-link i {
     font-size: 15px;
 }
@@ -1733,4 +1737,8 @@ button {
 .atem-view-tabs .nav-link.atem-tab-color-outlet.active .atem-tab-count {
     background: #e6eef7;
     color: #0A5AA8;
+}
+.atem-view-tabs .nav-link.atem-tab-color-payout.active .atem-tab-count {
+    background: #f0e9fa;
+    color: #6f42c1;
 }

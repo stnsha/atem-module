@@ -7,23 +7,35 @@ include(dirname(__FILE__) . '/../../common/index_adv.php');
 if (!isset($conn)) { http_response_code(500); exit('Database connection error'); }
 
 // Auth check — mirror api.php session pattern
-$staff_id     = null;
-$caller_grade = 0;
-$caller_atem  = 0;
+$staff_id       = null;
+$caller_grade   = 0;
+$caller_atem    = 0;
+$caller_dept    = '';
 if (isset($_SESSION['myusername'])) {
     $un     = $_SESSION['myusername'];
     $un_esc = mysqli_real_escape_string($conn, $un);
-    $res    = mysqli_query($conn, "SELECT id, grade, atem FROM staff WHERE username = '$un_esc' AND recycle != 1");
+    $res    = mysqli_query($conn, "SELECT id, grade, atem, department FROM staff WHERE username = '$un_esc' AND recycle != 1");
     if ($res && mysqli_num_rows($res) > 0) {
         $row          = mysqli_fetch_assoc($res);
         $staff_id     = (int)$row['id'];
         $caller_grade = (int)$row['grade'];
         $caller_atem  = (int)$row['atem'];
+        $caller_dept  = (string)$row['department'];
     }
 }
 if (!$staff_id) { http_response_code(403); exit('Unauthorized'); }
 $effective_grade = ($caller_atem === 1) ? 6 : $caller_grade;
-if ($effective_grade < 4) { http_response_code(403); exit('Forbidden'); }
+$caller_dept_ids = array();
+if ($caller_dept !== '') {
+    foreach (explode(',', $caller_dept) as $_cd) {
+        $_cd = (int)trim($_cd);
+        if ($_cd > 0) { $caller_dept_ids[] = $_cd; }
+    }
+}
+// Access: grade 2+, People Management (dept 17), or SuperAdmin (folded into
+// $effective_grade = 6 above) — mirrors staff_performance/index.php's page
+// guard and api.php's list/lock/unlock permission checks.
+if ($effective_grade < 2 && !in_array(17, $caller_dept_ids, true)) { http_response_code(403); exit('Forbidden'); }
 
 // Include API functions
 define('API_JWT_INCLUDED', true);
@@ -37,6 +49,8 @@ $filter_quarter = isset($_GET['quarter'])  ? (int)$_GET['quarter']    : 0;
 $filter_dept    = isset($_GET['dept'])     ? (int)$_GET['dept']       : 0;
 $filter_grade   = isset($_GET['grade'])    ? (int)$_GET['grade']      : 0;
 $filter_struct  = isset($_GET['struct'])   ? (int)$_GET['struct']     : 0;
+$filter_atem_type = isset($_GET['atem_type']) ? (int)$_GET['atem_type'] : 0;
+$filter_outlet_id = isset($_GET['outlet_id']) ? (int)$_GET['outlet_id'] : 0;
 $ids_raw        = isset($_GET['ids'])      ? trim($_GET['ids'])        : '';
 $target_staff   = isset($_GET['staff_id']) ? (int)$_GET['staff_id']   : 0;
 $statuses_raw   = isset($_GET['statuses']) ? trim($_GET['statuses'])   : '';
@@ -244,7 +258,7 @@ if ($type === 'staff-atem') {
 // Export: performance records (bulk)
 // ----------------------------------------
 if ($type === 'performance') {
-    $live = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id);
+    $live = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, $filter_atem_type, $filter_outlet_id);
     if (empty($live['success'])) {
         http_response_code(502);
         exit('Unable to reach the ATEM API. Please try again later.');
@@ -280,8 +294,17 @@ if ($type === 'performance') {
         $total = $rec['complete'] + $rec['active'] + $rec['extend'] + $rec['failed'];
         if ($total <= 0) { continue; }
 
-        $out_records[] = array('staff_id' => $sid, 'dept_id' => $dept_id, 'grade_id' => $grade_id, 'struct_id' => $struct_id);
+        $out_records[] = array(
+            'staff_id' => $sid, 'dept_id' => $dept_id, 'grade_id' => $grade_id, 'struct_id' => $struct_id,
+            'total_incentive' => isset($rec['total_incentive']) ? (float)$rec['total_incentive'] : 0.0,
+        );
     }
+
+    // Default sort: highest Est. Reward first — matches the on-screen table,
+    // so each staff's block of ATEM rows appears in the same order exported.
+    usort($out_records, function ($a, $b) {
+        return $b['total_incentive'] <=> $a['total_incentive'];
+    });
 
     // Fetch all ATEMs once
     $all_atems = array();

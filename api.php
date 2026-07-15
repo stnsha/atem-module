@@ -778,6 +778,38 @@ function updatePayoutStatus($id, $status, $remarks, $staff_id)
 }
 
 /**
+ * Bulk lock/unlock payout status for a set of ATEM ids.
+ * @param array $ids ATEM ids to act on
+ * @param string $remarks Required remark for the batch
+ * @param int $staff_id Current user's staff ID (JWT auth + actor_id)
+ * @param bool $unlock false = bulk-lock (Close), true = bulk-unlock (reopen)
+ * @param bool $is_superadmin Required true for unlock; forwarded for the atem-api's own check
+ * @return array {success, locked|unlocked, skipped} or {success:false, message}
+ */
+function bulkUpdatePayoutStatus($ids, $remarks, $staff_id, $unlock = false, $is_superadmin = false)
+{
+    $endpoint = $unlock ? 'atem/payout-status/bulk-unlock' : 'atem/payout-status/bulk-lock';
+    $payload  = array(
+        'ids'       => array_values(array_map('intval', $ids)),
+        'remarks'   => $remarks,
+        'actor_id'  => (int)$staff_id,
+    );
+    if ($unlock) {
+        $payload['is_superadmin'] = $is_superadmin ? 1 : 0;
+    }
+    $result   = getApiDataWithJWT($endpoint, $payload, 'PATCH', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return $unlock
+            ? array('success' => true, 'unlocked' => (int)$decoded['unlocked'], 'skipped' => (int)$decoded['skipped'])
+            : array('success' => true, 'locked'   => (int)$decoded['locked'],   'skipped' => (int)$decoded['skipped']);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to update payout status.';
+    return array('success' => false, 'message' => $msg);
+}
+
+/**
  * Add an ARCI member to an ATEM card
  * @param int $id ATEM ID
  * @param array $data Member data (staff_id, staff_name, staff_dept_id, department_name, role, assigned_by)
@@ -1366,7 +1398,7 @@ function atem_status_period_field($status)
 // directly from current ATEM records, counting ONLY the caller-selected exact
 // statuses — any status not in $selectedStatuses contributes nothing anywhere,
 // so its bucket reads 0 rather than a stale/mismatched snapshot value.
-function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $staff_id)
+function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $staff_id, $filterAtemType = 0, $filterOutletId = 0)
 {
     $listResult = getAtemList($staff_id);
     if (!$listResult['success']) {
@@ -1377,6 +1409,23 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
     $aggregates = array();
 
     foreach ($listResult['data'] as $item) {
+        if ($filterAtemType > 0) {
+            $itemAtemType = isset($item['atem_type']) ? (int)$item['atem_type'] : 1;
+            if ($itemAtemType !== $filterAtemType) { continue; }
+        }
+        if ($filterOutletId > 0) {
+            $itemHasOutlet = false;
+            if (isset($item['outlets']) && is_array($item['outlets'])) {
+                foreach ($item['outlets'] as $o) {
+                    if (!empty($o['outlet_id']) && (int)$o['outlet_id'] === $filterOutletId) {
+                        $itemHasOutlet = true;
+                        break;
+                    }
+                }
+            }
+            if (!$itemHasOutlet) { continue; }
+        }
+
         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
         if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
 
@@ -1387,12 +1436,29 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
         $dateStr   = isset($item[$dateField]) ? $item[$dateField] : '';
         if (!atem_date_in_period($dateStr, $months, $year)) { continue; }
 
-        // Involved staff: issuer + every ARCI member, each keyed by their
-        // dept_id for this specific card (mirrors CalculateBonusEligibility).
+        // Payout lock state — only terminal statuses are ever payout-eligible
+        // (mirrors edit.php's $payout_terminal_statuses); 'complete' also
+        // covers Completed with Extension, which isn't itself terminal for the
+        // performance bucket but is for payout, so this is checked against the
+        // exact status value, not the bucket.
+        $itemIsPayoutTerminal = in_array($statusVal, array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed'), true);
+        $itemIsLocked = $itemIsPayoutTerminal && isset($item['payout_status']) && $item['payout_status'] === 'Closed';
+
+        // Involved staff: issuer, then Outlet-type area managers (no dept of
+        // their own), then every ARCI member last so a person who's also an
+        // ARCI member keeps their real per-card dept_id (mirrors
+        // CalculateBonusEligibility.php's three-source ordering).
         $involved = array();
         $issuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
         if ($issuerId) {
             $involved[$issuerId] = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
+        }
+        if (isset($item['area_managers']) && is_array($item['area_managers'])) {
+            foreach ($item['area_managers'] as $am) {
+                if (!empty($am['staff_id'])) {
+                    $involved[(int)$am['staff_id']] = 0;
+                }
+            }
         }
         if (isset($item['arci']) && is_array($item['arci'])) {
             foreach ($item['arci'] as $m) {
@@ -1436,6 +1502,7 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
                     'dept_id' => $deptId,
                     'complete' => 0, 'active' => 0, 'extend' => 0, 'failed' => 0,
                     'total_incentive' => 0.0,
+                    'has_locked' => false, 'has_unlocked' => false,
                 );
             }
             $aggregates[$sid][$bucket]++;
@@ -1443,10 +1510,162 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
             if (isset($incentivePerStaff[$sid])) {
                 $aggregates[$sid]['total_incentive'] += $incentivePerStaff[$sid];
             }
+            if ($itemIsPayoutTerminal) {
+                if ($itemIsLocked) {
+                    $aggregates[$sid]['has_locked'] = true;
+                } else {
+                    $aggregates[$sid]['has_unlocked'] = true;
+                }
+            }
         }
     }
 
     return array('success' => true, 'data' => $aggregates);
+}
+
+/**
+ * Resolves the ATEM ids eligible for a bulk payout lock/unlock action.
+ *
+ * Applies the exact same period/status/type/outlet matching as
+ * getStaffPerformanceLive() (so "lock the cards behind this filtered view"
+ * means precisely that), further narrowed to only terminal, payout-eligible
+ * statuses (Active/Extended never qualify, regardless of the tab's Status
+ * filter), and to cards where at least one involved staff member (issuer,
+ * ARCI member, or Outlet area manager) is in $targetStaffIds.
+ *
+ * $targetStaffIds is either the explicit set of checked rows ("Selected"
+ * buttons), or every staff id the caller already resolved to match the tab's
+ * current dept/grade/struct/staff filter (bar-level "all filtered" buttons) —
+ * resolved fresh server-side either way, never trusting a client-captured,
+ * possibly stale/paginated id list.
+ */
+function resolvePayoutAtemIds($month, $year, $quarter, $selectedStatuses, $staff_id, $filterAtemType, $filterOutletId, $targetStaffIds)
+{
+    $listResult = getAtemList($staff_id);
+    if (!$listResult['success']) {
+        return array('success' => false, 'message' => 'Failed to load ATEM data', 'ids' => array());
+    }
+
+    $months = atem_period_months($month, $quarter);
+    $payoutTerminalStatuses = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed');
+    $targetSet = array_flip(array_map('intval', $targetStaffIds));
+
+    $ids = array();
+    foreach ($listResult['data'] as $item) {
+        if ($filterAtemType > 0) {
+            $itemAtemType = isset($item['atem_type']) ? (int)$item['atem_type'] : 1;
+            if ($itemAtemType !== $filterAtemType) { continue; }
+        }
+        if ($filterOutletId > 0) {
+            $itemHasOutlet = false;
+            if (isset($item['outlets']) && is_array($item['outlets'])) {
+                foreach ($item['outlets'] as $o) {
+                    if (!empty($o['outlet_id']) && (int)$o['outlet_id'] === $filterOutletId) { $itemHasOutlet = true; break; }
+                }
+            }
+            if (!$itemHasOutlet) { continue; }
+        }
+
+        $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
+        if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
+        if (!in_array($statusVal, $payoutTerminalStatuses, true)) { continue; }
+
+        $dateStr = isset($item['closure_date']) ? $item['closure_date'] : '';
+        if (!atem_date_in_period($dateStr, $months, $year)) { continue; }
+
+        $involved = array();
+        $issuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
+        if ($issuerId) { $involved[$issuerId] = true; }
+        if (isset($item['area_managers']) && is_array($item['area_managers'])) {
+            foreach ($item['area_managers'] as $am) {
+                if (!empty($am['staff_id'])) { $involved[(int)$am['staff_id']] = true; }
+            }
+        }
+        if (isset($item['arci']) && is_array($item['arci'])) {
+            foreach ($item['arci'] as $m) {
+                if (!empty($m['staff_id'])) { $involved[(int)$m['staff_id']] = true; }
+            }
+        }
+
+        $matches = false;
+        foreach ($involved as $sid => $_unused) {
+            if (isset($targetSet[$sid])) { $matches = true; break; }
+        }
+        if (!$matches) { continue; }
+
+        if (!empty($item['id'])) { $ids[] = (int)$item['id']; }
+    }
+
+    return array('success' => true, 'ids' => array_values(array_unique($ids)));
+}
+
+/**
+ * Resolves which staff a bulk payout lock/unlock action targets.
+ *
+ * If the request carries an explicit staff_ids array (row-level "Selected"
+ * buttons — the row checkboxes' values, which on this page are staff ids, not
+ * ATEM ids), that list is used directly. Otherwise (bar-level "all filtered"
+ * buttons) the target staff are re-derived server-side from the same
+ * dept/grade/struct/staff_id filtering get-performance-list applies to
+ * getStaffPerformanceLive()'s aggregates, so "lock payout for everyone
+ * currently shown" means exactly that.
+ */
+function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
+{
+    $staffIds = array();
+    if (isset($jsonData['staff_ids']) && is_array($jsonData['staff_ids'])) {
+        foreach ($jsonData['staff_ids'] as $sid) {
+            $sid = (int)$sid;
+            if ($sid > 0) { $staffIds[] = $sid; }
+        }
+        return $staffIds;
+    }
+
+    $month    = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
+    $year     = isset($jsonData['year'])    ? (int)$jsonData['year']    : (int)date('Y');
+    $quarter  = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
+    $atemType = isset($jsonData['filter_atem_type']) ? (int)$jsonData['filter_atem_type'] : 0;
+    $outletId = isset($jsonData['filter_outlet_id']) ? (int)$jsonData['filter_outlet_id'] : 0;
+    $dept     = isset($jsonData['dept'])     ? (int)$jsonData['dept']     : 0;
+    $gradeF   = isset($jsonData['grade'])    ? (int)$jsonData['grade']    : 0;
+    $structF  = isset($jsonData['struct'])   ? (int)$jsonData['struct']   : 0;
+    $staffF   = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
+    $allowedStatuses = atem_performance_status_options();
+    $statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
+        ? array_values(array_intersect($jsonData['statuses'], $allowedStatuses))
+        : array('Completed', 'Completed with Excellence');
+
+    $live = getStaffPerformanceLive($month, $year, $quarter, $statuses, $staff_id, $atemType, $outletId);
+    if (empty($live['success'])) {
+        return array();
+    }
+
+    $staffGrade  = array();
+    $staffStruct = array();
+    $sgr = mysqli_query($conn, "SELECT id, grade, struct FROM staff WHERE recycle != 1");
+    if ($sgr) {
+        while ($r = mysqli_fetch_assoc($sgr)) {
+            $id_ = (int)$r['id'];
+            $staffGrade[$id_]  = ($r['grade']  !== null) ? (int)$r['grade']  : null;
+            $staffStruct[$id_] = ($r['struct'] !== null) ? (int)$r['struct'] : null;
+        }
+    }
+
+    foreach ($live['data'] as $sid => $rec) {
+        $sid = (int)$sid;
+        $deptId   = isset($rec['dept_id']) ? (int)$rec['dept_id'] : 0;
+        $gradeId  = isset($staffGrade[$sid])  ? $staffGrade[$sid]  : null;
+        $structId = isset($staffStruct[$sid]) ? $staffStruct[$sid] : null;
+
+        if ($dept    > 0 && $deptId   !== $dept)    { continue; }
+        if ($gradeF  > 0 && $gradeId  !== $gradeF)  { continue; }
+        if ($structF > 0 && $structId !== $structF) { continue; }
+        if ($staffF  > 0 && $sid      !== $staffF)  { continue; }
+
+        $staffIds[] = $sid;
+    }
+
+    return $staffIds;
 }
 
 function getBonusEligibilityList($month, $year, $staff_id_param, $staff_id)
@@ -2286,30 +2505,45 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'get-performance-list':
+                    // Access: grade 2+, People Management (dept 17), or SuperAdmin —
+                    // mirrors staff_performance/index.php's page guard so every
+                    // page-admitted user can also load the table.
                     $pl_perm  = 0;
                     $pl_is_sa = false;
+                    $pl_dept_str = '';
                     if (isset($atem_permission)) {
                         $pl_perm  = (int)$atem_permission;
                         $pl_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
+                        $pl_dept_str = isset($department) ? (string)$department : '';
                     } elseif ($staff_id) {
-                        $_pp_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_pp_res = mysqli_query($conn, "SELECT grade, atem, department FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_pp_res && ($_pp_row = mysqli_fetch_assoc($_pp_res))) {
                             $pl_perm  = (int)$_pp_row['grade'];
                             $pl_is_sa = ((int)$_pp_row['atem'] === 1);
+                            $pl_dept_str = (string)$_pp_row['department'];
                         }
                     }
-                    if ($pl_perm < 4 && !$pl_is_sa) {
+                    $pl_dept_ids = array();
+                    if ($pl_dept_str !== '') {
+                        foreach (explode(',', $pl_dept_str) as $_pld) {
+                            $_pld = (int)trim($_pld);
+                            if ($_pld > 0) { $pl_dept_ids[] = $_pld; }
+                        }
+                    }
+                    if ($pl_perm < 2 && !$pl_is_sa && !in_array(17, $pl_dept_ids, true)) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
 
-                    $pl_month   = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
-                    $pl_year    = isset($jsonData['year'])    ? (int)$jsonData['year']    : (int)date('Y');
-                    $pl_quarter = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
-                    $pl_dept    = isset($jsonData['dept'])    ? (int)$jsonData['dept']    : 0;
-                    $pl_grade   = isset($jsonData['grade'])   ? (int)$jsonData['grade']   : 0;
-                    $pl_struct  = isset($jsonData['struct'])  ? (int)$jsonData['struct']  : 0;
-                    $pl_staff   = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
+                    $pl_month      = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
+                    $pl_year       = isset($jsonData['year'])    ? (int)$jsonData['year']    : (int)date('Y');
+                    $pl_quarter    = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
+                    $pl_dept       = isset($jsonData['dept'])    ? (int)$jsonData['dept']    : 0;
+                    $pl_grade      = isset($jsonData['grade'])   ? (int)$jsonData['grade']   : 0;
+                    $pl_struct     = isset($jsonData['struct'])  ? (int)$jsonData['struct']  : 0;
+                    $pl_staff      = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
+                    $pl_atem_type  = isset($jsonData['filter_atem_type'])  ? (int)$jsonData['filter_atem_type']  : 0;
+                    $pl_outlet_id  = isset($jsonData['filter_outlet_id'])  ? (int)$jsonData['filter_outlet_id']  : 0;
 
                     if ($pl_quarter < 1 || $pl_quarter > 4) { $pl_quarter = 0; }
                     if ($pl_quarter > 0) { $pl_month = 0; }
@@ -2323,28 +2557,39 @@ if (!defined('API_JWT_INCLUDED')) {
                         ? array_values(array_intersect($jsonData['statuses'], $pl_allowed_statuses))
                         : array('Completed', 'Completed with Excellence');
 
-                    $pl_live = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id);
+                    $pl_live = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, $pl_atem_type, $pl_outlet_id);
                     if (empty($pl_live['success'])) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;
                     }
 
                     // Resolve current staff details from ODB directly (live, not a
-                    // point-in-time snapshot) — name, department, grade, struct.
-                    $pl_staff_names   = array();
-                    $pl_staff_grade   = array();
-                    $pl_staff_struct  = array();
-                    $pl_dept_names    = array();
-                    $pl_grade_labels  = array();
-                    $pl_struct_labels = array();
+                    // point-in-time snapshot) — name, department, grade, struct,
+                    // and (for the Outlet tab's sub-label) position — mirrors
+                    // view.php's $staff_positions/$staff_has_outlet convention:
+                    // a staff member "is from outlet" based on their own
+                    // staff.outlet assignment, not a specific card's dept_id.
+                    $pl_staff_names    = array();
+                    $pl_staff_grade    = array();
+                    $pl_staff_struct   = array();
+                    $pl_staff_position = array();
+                    $pl_dept_names     = array();
+                    $pl_grade_labels   = array();
+                    $pl_struct_labels  = array();
 
-                    $pl_sr = mysqli_query($conn, "SELECT id, nama_staff, grade, struct FROM staff WHERE recycle != 1");
+                    $pl_sr = mysqli_query($conn, "SELECT s.id, s.nama_staff, s.grade, s.struct, s.outlet, p.position_name
+                                                   FROM staff s
+                                                   LEFT JOIN position_rymnet p ON p.id = s.status_rym
+                                                   WHERE s.recycle != 1");
                     if ($pl_sr) {
                         while ($pl_r = mysqli_fetch_assoc($pl_sr)) {
                             $pl_id_ = (int)$pl_r['id'];
                             $pl_staff_names[$pl_id_]  = $pl_r['nama_staff'];
                             $pl_staff_grade[$pl_id_]  = ($pl_r['grade']  !== null) ? (int)$pl_r['grade']  : null;
                             $pl_staff_struct[$pl_id_] = ($pl_r['struct'] !== null) ? (int)$pl_r['struct'] : null;
+                            $pl_staff_position[$pl_id_] = !empty($pl_r['outlet'])
+                                ? (!empty($pl_r['position_name']) ? $pl_r['position_name'] : '-')
+                                : null;
                         }
                     }
                     $pl_dr = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
@@ -2376,6 +2621,7 @@ if (!defined('API_JWT_INCLUDED')) {
                             'staff_name'   => isset($pl_staff_names[$pl_sid]) ? $pl_staff_names[$pl_sid] : ('Staff #' . $pl_sid),
                             'dept_id'      => $pl_rec_dept,
                             'dept_name'    => ($pl_rec_dept && isset($pl_dept_names[$pl_rec_dept])) ? $pl_dept_names[$pl_rec_dept] : '-',
+                            'position_label' => isset($pl_staff_position[$pl_sid]) && $pl_staff_position[$pl_sid] !== null ? $pl_staff_position[$pl_sid] : '-',
                             'grade_id'     => $pl_grade_id,
                             'grade_label'  => ($pl_grade_id !== null && isset($pl_grade_labels[$pl_grade_id])) ? $pl_grade_labels[$pl_grade_id] : '-',
                             'struct_id'    => $pl_struct_id,
@@ -2386,26 +2632,168 @@ if (!defined('API_JWT_INCLUDED')) {
                             'extend_count'    => $pl_rec['extend'],
                             'failed_count'    => $pl_rec['failed'],
                             'total_incentive' => round($pl_rec['total_incentive'], 2),
+                            'has_locked'      => !empty($pl_rec['has_locked']),
+                            'has_unlocked'    => !empty($pl_rec['has_unlocked']),
                         );
                     }
+
+                    // Default sort: highest Est. Reward first.
+                    usort($pl_out, function ($a, $b) {
+                        return $b['total_incentive'] <=> $a['total_incentive'];
+                    });
+
                     $response = array('success' => true, 'data' => $pl_out);
                     break;
 
+                case 'bulk-lock-payout':
+                    // Access: grade 2+, People Management (dept 17), or SuperAdmin.
+                    // Resolved fresh from DB — same fallback the single-record
+                    // update-payout-status case already uses when api.php is hit directly (no $atem_permission).
+                    $pyk_perm  = 0;
+                    $pyk_is_sa = false;
+                    if (isset($atem_permission)) {
+                        $pyk_perm  = (int)$atem_permission;
+                        $pyk_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
+                    } elseif ($staff_id) {
+                        $_pyk_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        if ($_pyk_res && ($_pyk_row = mysqli_fetch_assoc($_pyk_res))) {
+                            $pyk_perm  = (int)$_pyk_row['grade'];
+                            $pyk_is_sa = ((int)$_pyk_row['atem'] === 1);
+                        }
+                    }
+                    $pyk_dept_ids = array();
+                    if (isset($department) && $department !== '') {
+                        foreach (explode(',', (string)$department) as $_pykd) {
+                            $_pykd = (int)trim($_pykd);
+                            if ($_pykd > 0) { $pyk_dept_ids[] = $_pykd; }
+                        }
+                    }
+                    if (!$pyk_is_sa && $pyk_perm < 2 && !in_array(17, $pyk_dept_ids, true)) {
+                        $response = array('success' => false, 'message' => 'Insufficient permission to lock payout.');
+                        break;
+                    }
+
+                    $pyk_remarks = isset($jsonData['remarks']) ? trim((string)$jsonData['remarks']) : '';
+                    if ($pyk_remarks === '') {
+                        $response = array('success' => false, 'message' => 'A remark is required to lock payout.');
+                        break;
+                    }
+
+                    $pyk_staff_ids = resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn);
+                    if (empty($pyk_staff_ids)) {
+                        $response = array('success' => false, 'message' => 'No staff matched the current filter.');
+                        break;
+                    }
+
+                    $pyk_month       = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
+                    $pyk_year        = isset($jsonData['year'])    ? (int)$jsonData['year']    : (int)date('Y');
+                    $pyk_quarter     = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
+                    $pyk_atem_type   = isset($jsonData['filter_atem_type'])  ? (int)$jsonData['filter_atem_type']  : 0;
+                    $pyk_outlet_id   = isset($jsonData['filter_outlet_id'])  ? (int)$jsonData['filter_outlet_id']  : 0;
+                    $pyk_allowed_statuses = atem_performance_status_options();
+                    $pyk_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
+                        ? array_values(array_intersect($jsonData['statuses'], $pyk_allowed_statuses))
+                        : array('Completed', 'Completed with Excellence');
+
+                    $pyk_resolved = resolvePayoutAtemIds($pyk_month, $pyk_year, $pyk_quarter, $pyk_statuses, $staff_id, $pyk_atem_type, $pyk_outlet_id, $pyk_staff_ids);
+                    if (empty($pyk_resolved['success']) || empty($pyk_resolved['ids'])) {
+                        $response = array('success' => false, 'message' => 'No eligible ATEM records matched.');
+                        break;
+                    }
+
+                    $response = bulkUpdatePayoutStatus($pyk_resolved['ids'], $pyk_remarks, $staff_id, false, $pyk_is_sa);
+                    break;
+
+                case 'bulk-unlock-payout':
+                    // Access: grade 2+, People Management (dept 17), or SuperAdmin — same
+                    // tier as lock/export. Resolved fresh from DB (not the dev-override-
+                    // suppressed session flag) when hit without page context.
+                    $pyu_perm  = 0;
+                    $pyu_is_sa = false;
+                    $pyu_dept_str = '';
+                    if (isset($atem_permission)) {
+                        $pyu_perm  = (int)$atem_permission;
+                        $pyu_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
+                        $pyu_dept_str = isset($department) ? (string)$department : '';
+                    } elseif ($staff_id) {
+                        $_pyu_res = mysqli_query($conn, "SELECT grade, atem, department FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        if ($_pyu_res && ($_pyu_row = mysqli_fetch_assoc($_pyu_res))) {
+                            $pyu_perm  = (int)$_pyu_row['grade'];
+                            $pyu_is_sa = ((int)$_pyu_row['atem'] === 1);
+                            $pyu_dept_str = (string)$_pyu_row['department'];
+                        }
+                    }
+                    $pyu_dept_ids = array();
+                    if ($pyu_dept_str !== '') {
+                        foreach (explode(',', $pyu_dept_str) as $_pyud) {
+                            $_pyud = (int)trim($_pyud);
+                            if ($_pyud > 0) { $pyu_dept_ids[] = $_pyud; }
+                        }
+                    }
+                    if (!$pyu_is_sa && $pyu_perm < 2 && !in_array(17, $pyu_dept_ids, true)) {
+                        $response = array('success' => false, 'message' => 'Insufficient permission to unlock payout.');
+                        break;
+                    }
+
+                    $pyu_remarks = isset($jsonData['remarks']) ? trim((string)$jsonData['remarks']) : '';
+                    if ($pyu_remarks === '') {
+                        $response = array('success' => false, 'message' => 'A remark is required to unlock payout.');
+                        break;
+                    }
+
+                    $pyu_staff_ids = resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn);
+                    if (empty($pyu_staff_ids)) {
+                        $response = array('success' => false, 'message' => 'No staff matched the current filter.');
+                        break;
+                    }
+
+                    $pyu_month     = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
+                    $pyu_year      = isset($jsonData['year'])    ? (int)$jsonData['year']    : (int)date('Y');
+                    $pyu_quarter   = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
+                    $pyu_atem_type = isset($jsonData['filter_atem_type'])  ? (int)$jsonData['filter_atem_type']  : 0;
+                    $pyu_outlet_id = isset($jsonData['filter_outlet_id'])  ? (int)$jsonData['filter_outlet_id']  : 0;
+                    $pyu_allowed_statuses = atem_performance_status_options();
+                    $pyu_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
+                        ? array_values(array_intersect($jsonData['statuses'], $pyu_allowed_statuses))
+                        : array('Completed', 'Completed with Excellence');
+
+                    $pyu_resolved = resolvePayoutAtemIds($pyu_month, $pyu_year, $pyu_quarter, $pyu_statuses, $staff_id, $pyu_atem_type, $pyu_outlet_id, $pyu_staff_ids);
+                    if (empty($pyu_resolved['success']) || empty($pyu_resolved['ids'])) {
+                        $response = array('success' => false, 'message' => 'No locked ATEM records matched.');
+                        break;
+                    }
+
+                    $response = bulkUpdatePayoutStatus($pyu_resolved['ids'], $pyu_remarks, $staff_id, true, $pyu_is_sa);
+                    break;
+
                 case 'get-staff-atem-list':
-                    // Resolve caller permission — $atem_permission is set when included from a page, not in direct-access mode.
+                    // Access: grade 2+, People Management (dept 17), or SuperAdmin — same
+                    // tier as get-performance-list, since this only ever backs that page's
+                    // drill-down modal. $atem_permission is set when included from a page,
+                    // not in direct-access mode.
                     $caller_perm  = 0;
                     $caller_is_sa = false;
+                    $caller_dept_str = '';
                     if (isset($atem_permission)) {
                         $caller_perm  = (int)$atem_permission;
                         $caller_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
+                        $caller_dept_str = isset($department) ? (string)$department : '';
                     } elseif ($staff_id) {
-                        $_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_perm_res = mysqli_query($conn, "SELECT grade, atem, department FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_perm_res && ($_perm_row = mysqli_fetch_assoc($_perm_res))) {
                             $caller_perm  = (int)$_perm_row['grade'];
                             $caller_is_sa = ((int)$_perm_row['atem'] === 1);
+                            $caller_dept_str = (string)$_perm_row['department'];
                         }
                     }
-                    if ($caller_perm < 3 && !$caller_is_sa) {
+                    $caller_dept_ids = array();
+                    if ($caller_dept_str !== '') {
+                        foreach (explode(',', $caller_dept_str) as $_cdid) {
+                            $_cdid = (int)trim($_cdid);
+                            if ($_cdid > 0) { $caller_dept_ids[] = $_cdid; }
+                        }
+                    }
+                    if ($caller_perm < 2 && !$caller_is_sa && !in_array(17, $caller_dept_ids, true)) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
@@ -2425,6 +2813,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     $gsl_month      = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
                     $gsl_year       = isset($jsonData['year'])    ? (int)$jsonData['year']    : 0;
                     $gsl_quarter    = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
+                    $gsl_atem_type  = isset($jsonData['filter_atem_type']) ? (int)$jsonData['filter_atem_type'] : 0;
                     if ($gsl_quarter < 1 || $gsl_quarter > 4) { $gsl_quarter = 0; }
 
                     // Optional exact-status restriction — lets the Staff Performance
@@ -2443,11 +2832,27 @@ if (!defined('API_JWT_INCLUDED')) {
                     $_d_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
                     if ($_d_res) { while ($_r = mysqli_fetch_assoc($_d_res)) { $_d_names[(int)$_r['id']] = $_r['depart_name']; } }
 
-                    // Filter to ATEMs where the target staff is issuer or ARCI member, then enrich.
+                    // Filter to ATEMs where the target staff is issuer, an Outlet-type
+                    // area manager, or an ARCI member, then enrich.
                     $_enriched = array();
                     foreach ($list_result['data'] as $_a) {
+                        if ($gsl_atem_type > 0) {
+                            $_a_type = isset($_a['atem_type']) ? (int)$_a['atem_type'] : 1;
+                            if ($_a_type !== $gsl_atem_type) { continue; }
+                        }
+
                         $issuer_id = isset($_a['issuer_staff_id']) ? (int)$_a['issuer_staff_id'] : 0;
                         $involved  = ($issuer_id === $target_sid);
+                        $_is_area_manager = false;
+                        if (isset($_a['area_managers']) && is_array($_a['area_managers'])) {
+                            foreach ($_a['area_managers'] as $_am) {
+                                if (!empty($_am['staff_id']) && (int)$_am['staff_id'] === $target_sid) {
+                                    $_is_area_manager = true;
+                                    break;
+                                }
+                            }
+                        }
+                        $involved = $involved || $_is_area_manager;
                         if (!$involved && isset($_a['arci']) && is_array($_a['arci'])) {
                             foreach ($_a['arci'] as $_m) {
                                 if (!empty($_m['staff_id']) && (int)$_m['staff_id'] === $target_sid) {
@@ -2464,6 +2869,9 @@ if (!defined('API_JWT_INCLUDED')) {
                         $_role_parts = array();
                         if ($issuer_id === $target_sid) {
                             $_role_parts[] = 'Issuer';
+                        }
+                        if ($_is_area_manager) {
+                            $_role_parts[] = 'Area Manager';
                         }
                         if (isset($_a['arci']) && is_array($_a['arci'])) {
                             foreach ($_a['arci'] as $_m) {
