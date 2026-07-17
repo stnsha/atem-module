@@ -68,14 +68,16 @@ if ((int)$atem_permission === 0 && !$_is_superadmin) {
     <?php include(dirname(__FILE__) . '/navbar.php'); ?>
     <div class="header" style="position: relative;">
         <b class="rtop"><b class="r1"></b><b class="r2"></b><b class="r3"></b><b class="r4"></b></b>
-        <h1 class="headerH1">ATEM</h1>
+        <h1 class="headerH1"><img src='/odb/atem/css/logo.svg' width='20px'>ATEM</h1>
         <b class="rbottom"><b class="r4"></b><b class="r3"></b><b class="r2"></b><b class="r1"></b></b>
     </div>
     <div class="atem-container mb-3">
 
         <div class="row mb-4">
             <div class="col-12 d-flex align-items-start justify-content-between flex-wrap gap-2">
-                <h1 class="atem-page-title mb-0"><?php echo htmlspecialchars($page_title); ?><?php echo isset($page_title_badge) ? ' ' . $page_title_badge : ''; ?></h1>
+                <h1 class="atem-page-title mb-0">
+                    <?php echo htmlspecialchars($page_title); ?><?php echo isset($page_title_badge) ? ' ' . $page_title_badge : ''; ?>
+                </h1>
                 <?php if (!empty($page_title_actions)): ?>
                 <div><?php echo $page_title_actions; ?></div>
                 <?php endif; ?>
