@@ -28,7 +28,7 @@ $_be_isLocal    = in_array($_be_serverName, array('localhost', '127.0.0.1'))
 
 // Always query DB to get requester identity and department
 $username    = mysqli_real_escape_string($conn, $_SESSION['myusername']);
-$auth_result = mysqli_query($conn, "SELECT id, grade, atem, department FROM staff WHERE username = '$username' AND recycle != 1");
+$auth_result = mysqli_query($conn, "SELECT id, grade, atem, okr, department FROM staff WHERE username = '$username' AND recycle != 1");
 if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
     echo json_encode(array('error' => 'Unauthorized'));
     exit;
@@ -43,9 +43,10 @@ foreach (explode(',', (string)$auth_row['department']) as $_d) {
     }
 }
 
-// Always reflects the real DB atem flag — used for administrative actions
-// (library management, window toggle) that dev override should not suppress.
-$db_is_superadmin = ((int)$auth_row['atem'] === 1);
+// Always reflects the real DB SuperAdmin flags — used for administrative
+// actions (library management, window toggle) that dev override should not
+// suppress. SuperAdmin is the union of staff.atem and staff.okr.
+$db_is_superadmin = ((int)$auth_row['atem'] === 1 || (int)$auth_row['okr'] === 1);
 
 // Dev grade override applies to grade only; department always from DB.
 // $requester_is_superadmin is suppressed when dev override is active so devs

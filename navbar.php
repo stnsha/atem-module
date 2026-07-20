@@ -92,6 +92,9 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                 <li class="nav-item">
                     <a class="nav-link <?php echo $view_active; ?>" href="<?php echo ATEM_BASE; ?>view.php">ATEM</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="okr/list.php">OKR</a>
+                </li>
                 <?php
                 $_navbar_dept_ids = array();
                 if (isset($department) && $department !== '') {
@@ -107,7 +110,7 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                         href="<?php echo ATEM_BASE; ?>staff_performance/index.php">Performance</a>
                 </li>
                 <?php endif; ?>
-                <?php if ($atem_role >= 1): ?>
+                <?php if ($atem_role >= 1 || $_is_superadmin): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $admin_active; ?>" href="<?php echo ATEM_BASE; ?>access_control/index.php">Access Control</a>
                 </li>

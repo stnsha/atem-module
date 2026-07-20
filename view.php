@@ -295,14 +295,15 @@ $view_config = array(
 <div class="atem-card">
     <ul class="nav nav-tabs atem-view-tabs" id="atem-view-tabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active atem-tab-color-hq" id="atem-tab-hq-btn" data-bs-toggle="tab" data-bs-target="#atem-tab-hq"
-                type="button" role="tab" aria-controls="atem-tab-hq" aria-selected="true">
+            <button class="nav-link active atem-tab-color-hq" id="atem-tab-hq-btn" data-bs-toggle="tab"
+                data-bs-target="#atem-tab-hq" type="button" role="tab" aria-controls="atem-tab-hq" aria-selected="true">
                 <i class="bi bi-building"></i> HQ ATEM <span class="atem-tab-count" id="atem-tab-hq-count">0</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link atem-tab-color-outlet" id="atem-tab-outlet-btn" data-bs-toggle="tab" data-bs-target="#atem-tab-outlet"
-                type="button" role="tab" aria-controls="atem-tab-outlet" aria-selected="false">
+            <button class="nav-link atem-tab-color-outlet" id="atem-tab-outlet-btn" data-bs-toggle="tab"
+                data-bs-target="#atem-tab-outlet" type="button" role="tab" aria-controls="atem-tab-outlet"
+                aria-selected="false">
                 <i class="bi bi-shop"></i> Outlet ATEM <span class="atem-tab-count" id="atem-tab-outlet-count">0</span>
             </button>
         </li>
@@ -370,7 +371,8 @@ $view_config = array(
                             <div class="vf-s2-selection" id="vf-issuer-btn" tabindex="0">All issuers</div>
                             <div class="vf-s2-dropdown" id="vf-issuer-dropdown">
                                 <div class="vf-s2-search-wrap">
-                                    <input class="vf-s2-search" id="vf-issuer-search" type="search" placeholder="Search name...">
+                                    <input class="vf-s2-search" id="vf-issuer-search" type="search"
+                                        placeholder="Search name...">
                                 </div>
                                 <ul class="vf-s2-list" id="vf-issuer-list"></ul>
                             </div>
@@ -397,7 +399,8 @@ $view_config = array(
                     </div>
                     <div class="col">
                         <label class="form-label">Search title or ID</label>
-                        <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type title or ATEM ID...">
+                        <input type="text" class="form-control form-control-sm" id="vf-search"
+                            placeholder="Type title or ATEM ID...">
                     </div>
                 </div>
 
@@ -489,7 +492,8 @@ $view_config = array(
                             <div class="vf-s2-selection" id="vfo-issuer-btn" tabindex="0">All issuers</div>
                             <div class="vf-s2-dropdown" id="vfo-issuer-dropdown">
                                 <div class="vf-s2-search-wrap">
-                                    <input class="vf-s2-search" id="vfo-issuer-search" type="search" placeholder="Search name...">
+                                    <input class="vf-s2-search" id="vfo-issuer-search" type="search"
+                                        placeholder="Search name...">
                                 </div>
                                 <ul class="vf-s2-list" id="vfo-issuer-list"></ul>
                             </div>
@@ -502,7 +506,8 @@ $view_config = array(
                             <div class="vf-s2-selection" id="vfo-outlet-btn" tabindex="0">All outlets</div>
                             <div class="vf-s2-dropdown" id="vfo-outlet-dropdown">
                                 <div class="vf-s2-search-wrap">
-                                    <input class="vf-s2-search" id="vfo-outlet-search" type="search" placeholder="Search outlet...">
+                                    <input class="vf-s2-search" id="vfo-outlet-search" type="search"
+                                        placeholder="Search outlet...">
                                 </div>
                                 <ul class="vf-s2-list" id="vfo-outlet-list"></ul>
                             </div>
@@ -523,7 +528,8 @@ $view_config = array(
                     </div>
                     <div class="col">
                         <label class="form-label">Search title or ID</label>
-                        <input type="text" class="form-control form-control-sm" id="vfo-search" placeholder="Type title or ATEM ID...">
+                        <input type="text" class="form-control form-control-sm" id="vfo-search"
+                            placeholder="Type title or ATEM ID...">
                     </div>
                 </div>
 
@@ -560,17 +566,22 @@ $view_config = array(
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete ATEM Card</h5>
+                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete ATEM Card
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body pt-2">
                 <p id="atem-delete-modal-msg" style="font-size:13px;"></p>
-                <label class="form-label fw-semibold" style="font-size:13px;">Remark <span class="text-danger">*</span></label>
-                <textarea id="atem-delete-remark" class="form-control form-control-sm" rows="3" placeholder="State the reason for deletion..."></textarea>
-                <div id="atem-delete-remark-err" class="text-danger" style="font-size:12px;min-height:16px;margin-top:4px;"></div>
+                <label class="form-label fw-semibold" style="font-size:13px;">Remark <span
+                        class="text-danger">*</span></label>
+                <textarea id="atem-delete-remark" class="form-control form-control-sm" rows="3"
+                    placeholder="State the reason for deletion..."></textarea>
+                <div id="atem-delete-remark-err" class="text-danger"
+                    style="font-size:12px;min-height:16px;margin-top:4px;"></div>
             </div>
             <div class="modal-footer pt-0">
-                <button type="button" id="atem-delete-cancel" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="atem-delete-cancel" class="btn btn-secondary btn-sm"
+                    data-bs-dismiss="modal">Cancel</button>
                 <button type="button" id="atem-delete-confirm" class="btn btn-danger btn-sm">Confirm Delete</button>
             </div>
         </div>

@@ -19,8 +19,18 @@
         }
     }
 
+    function renderOkrBackdateStatus(enabled) {
+        var el = $('#okr-backdate-status');
+        if (enabled) {
+            el.text('Enabled').css('color', '#198754');
+        } else {
+            el.text('Disabled').css('color', '#6c757d');
+        }
+    }
+
     renderStructWindowStatus(STRUCT_WINDOW_OPEN);
     renderBackdateStatus(BACKDATE_ENABLED);
+    renderOkrBackdateStatus(OKR_BACKDATE_ENABLED);
 
     $('#struct-window-toggle').on('change', function () {
         var newVal = $(this).prop('checked') ? 1 : 0;
@@ -57,6 +67,29 @@
             success: function (res) {
                 if (res.success) {
                     renderBackdateStatus(res.value === 1);
+                } else {
+                    toggle.prop('checked', !toggle.prop('checked'));
+                }
+            },
+            error: function () {
+                toggle.prop('checked', !toggle.prop('checked'));
+            },
+            complete: function () { toggle.prop('disabled', false); }
+        });
+    });
+
+    $('#okr-backdate-toggle').on('change', function () {
+        var newVal = $(this).prop('checked') ? 1 : 0;
+        var toggle = $(this);
+        toggle.prop('disabled', true);
+        $.ajax({
+            url: ADMIN_BACKEND_URL + '?action=toggleOkrBackdate',
+            type: 'POST',
+            dataType: 'json',
+            data: { value: newVal },
+            success: function (res) {
+                if (res.success) {
+                    renderOkrBackdateStatus(res.value === 1);
                 } else {
                     toggle.prop('checked', !toggle.prop('checked'));
                 }

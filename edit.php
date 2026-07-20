@@ -282,15 +282,19 @@ $can_manage_payout   = $show_payout_card && !$payout_is_closed && !$api_unavaila
     && ($_is_superadmin || (int)$atem_permission >= 4 || in_array(17, $requester_dept_ids, true));
 
 // SuperAdmin may edit Completed or Failed cards — but only Level, Rule, and Status (-> Draft).
+// Not available once payout has been marked Closed/Paid.
 $superadmin_terminal_statuses = array('Completed', 'Failed', 'Completed with Extension');
 $superadmin_terminal_edit = $_is_superadmin
     && !$record_is_deleted
+    && !$payout_is_closed
     && in_array($current_status_value, $superadmin_terminal_statuses);
 
 // Issuer may revert Completed or Completed with Excellence to any earlier status.
+// Not available once payout has been marked Closed/Paid.
 $issuer_completed_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
 $issuer_completed_edit = $is_issuer_now
     && !$record_is_deleted
+    && !$payout_is_closed
     && in_array($current_status_value, $issuer_completed_statuses);
 
 if (!$is_read && in_array($current_status_value, $terminal_statuses)) {
@@ -304,7 +308,7 @@ if ($is_progress && in_array($current_status_value, $terminal_statuses)) {
     $is_progress = false;
 }
 
-$can_suspend = ($record && !$record_is_deleted && !$api_unavailable)
+$can_suspend = ($record && !$record_is_deleted && !$api_unavailable && !$payout_is_closed)
     && ($_is_superadmin || (int)$atem_permission >= 4);
 
 $can_unsuspend = $record_is_suspended

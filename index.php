@@ -1,5 +1,6 @@
 <?php
 $page_title = 'Dashboard Overview';
+$page_title_actions = '<a href="okr/index.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Switch to OKR Dashboard</a>';
 include('header.php');
 
 $_dash_cur_year = max(2026, (int)date('Y'));

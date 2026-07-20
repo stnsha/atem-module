@@ -51,7 +51,19 @@ if (isset($_SESSION['atem_dev_role_override'])) {
     $atem_permission = (int)$_SESSION['atem_dev_role_override'];
 }
 
-$_is_superadmin = (!isset($_SESSION['atem_dev_role_override']) && isset($atem) && (int)$atem === 1);
+// SuperAdmin recognition is the union of both module flags: staff.atem is
+// already available via lock_adv.php ($atem); staff.okr is not, so it is
+// queried directly here. Either flag being set to 1 grants full SuperAdmin
+// access to ATEM (and, symmetrically, to OKR - see okr/header.php).
+$_atem_okr_flag = 0;
+if (isset($id_user)) {
+    $_atem_okr_check = mysqli_query($conn, 'SELECT okr FROM staff WHERE id = ' . (int)$id_user);
+    if ($_atem_okr_check && ($_atem_okr_row = mysqli_fetch_assoc($_atem_okr_check))) {
+        $_atem_okr_flag = (int)$_atem_okr_row['okr'];
+    }
+}
+
+$_is_superadmin = (!isset($_SESSION['atem_dev_role_override']) && ((isset($atem) && (int)$atem === 1) || $_atem_okr_flag === 1));
 
 if ((int)$atem_permission === 0 && !$_is_superadmin) {
     if (isset($_SESSION['atem_dev_role_override'])) {
@@ -68,7 +80,7 @@ if ((int)$atem_permission === 0 && !$_is_superadmin) {
     <?php include(dirname(__FILE__) . '/navbar.php'); ?>
     <div class="header" style="position: relative;">
         <b class="rtop"><b class="r1"></b><b class="r2"></b><b class="r3"></b><b class="r4"></b></b>
-        <h1 class="headerH1"><img src='/odb/atem/css/logo.svg' width='20px'>ATEM</h1>
+        <h1 class="headerH1"><img src='/odb/atem/css/logo.svg' width='20px'>ATEM &amp; OKR</h1>
         <b class="rbottom"><b class="r4"></b><b class="r3"></b><b class="r2"></b><b class="r1"></b></b>
     </div>
     <div class="atem-container mb-3">

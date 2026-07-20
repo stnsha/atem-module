@@ -6,7 +6,7 @@ $extra_css  = '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/
 
 include('../header.php');
 
-if ($atem_permission < 1) {
+if ($atem_permission < 1 && !$_is_superadmin) {
     ob_end_clean();
     header('Location: ' . ATEM_BASE . 'index.php');
     exit;

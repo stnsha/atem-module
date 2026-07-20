@@ -20,13 +20,14 @@ if (!isset($conn)) {
 }
 
 $username    = mysqli_real_escape_string($conn, $_SESSION['myusername']);
-$auth_result = mysqli_query($conn, "SELECT atem FROM staff WHERE username = '$username' AND recycle != 1");
+$auth_result = mysqli_query($conn, "SELECT atem, okr FROM staff WHERE username = '$username' AND recycle != 1");
 if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
     echo json_encode(array('error' => 'Unauthorized'));
     exit;
 }
 $auth_row         = mysqli_fetch_assoc($auth_result);
-$db_is_superadmin = ((int)$auth_row['atem'] === 1);
+// SuperAdmin is the union of staff.atem and staff.okr.
+$db_is_superadmin = ((int)$auth_row['atem'] === 1 || (int)$auth_row['okr'] === 1);
 
 if (!$db_is_superadmin) {
     echo json_encode(array('error' => 'Unauthorized'));
@@ -49,6 +50,19 @@ if ($action === 'toggleBackdate' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
     $new_value = (isset($_POST['value']) && (int)$_POST['value'] === 1) ? '1' : '0';
     mysqli_query($conn,
         "INSERT INTO atem_config (setting_key, setting_value) VALUES ('backdate_enabled', '$new_value')
+         ON DUPLICATE KEY UPDATE setting_value = '$new_value'"
+    );
+    echo json_encode(array('success' => true, 'value' => (int)$new_value));
+    exit;
+}
+
+// Writes okr_config.backdate_enabled - OKR has no admin page of its own, so
+// its backdate toggle lives here alongside ATEM's, gated by the same
+// combined SuperAdmin check above.
+if ($action === 'toggleOkrBackdate' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $new_value = (isset($_POST['value']) && (int)$_POST['value'] === 1) ? '1' : '0';
+    mysqli_query($conn,
+        "INSERT INTO okr_config (setting_key, setting_value) VALUES ('backdate_enabled', '$new_value')
          ON DUPLICATE KEY UPDATE setting_value = '$new_value'"
     );
     echo json_encode(array('success' => true, 'value' => (int)$new_value));
