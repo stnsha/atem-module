@@ -1,5 +1,5 @@
 <?php
-$page_title = 'Dashboard Overview';
+$page_title = 'ATEM Dashboard';
 $page_title_actions = '<a href="okr/index.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Switch to OKR Dashboard</a>';
 include('header.php');
 
@@ -97,535 +97,584 @@ window.ATEM_DASH = <?php echo json_encode(array(
 <!-- ATEM Type Tabs -->
 <ul class="nav nav-tabs atem-view-tabs mb-3" id="dash-view-tabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active atem-tab-color-hq" id="dash-tab-hq-btn" data-bs-toggle="tab" data-bs-target="#dash-tab-hq"
-            type="button" role="tab" aria-controls="dash-tab-hq" aria-selected="true">
+        <button class="nav-link active atem-tab-color-hq" id="dash-tab-hq-btn" data-bs-toggle="tab"
+            data-bs-target="#dash-tab-hq" type="button" role="tab" aria-controls="dash-tab-hq" aria-selected="true">
             <i class="bi bi-building"></i> HQ ATEM
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link atem-tab-color-outlet" id="dash-tab-outlet-btn" data-bs-toggle="tab" data-bs-target="#dash-tab-outlet"
-            type="button" role="tab" aria-controls="dash-tab-outlet" aria-selected="false">
+        <button class="nav-link atem-tab-color-outlet" id="dash-tab-outlet-btn" data-bs-toggle="tab"
+            data-bs-target="#dash-tab-outlet" type="button" role="tab" aria-controls="dash-tab-outlet"
+            aria-selected="false">
             <i class="bi bi-shop"></i> Outlet ATEM
         </button>
     </li>
 </ul>
 <div class="tab-content">
-<div class="tab-pane fade show active" id="dash-tab-hq" role="tabpanel" aria-labelledby="dash-tab-hq-btn">
+    <div class="tab-pane fade show active" id="dash-tab-hq" role="tabpanel" aria-labelledby="dash-tab-hq-btn">
 
-<!-- Filter card -->
-<div class="atem-card atem-filter mb-3">
-    <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
-    <div class="row g-2 mt-1 align-items-end">
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Year</label>
-            <select id="dash-filter-year" class="form-select form-select-sm">
-                <option value="">All Years</option>
-                <?php foreach ($dash_year_options as $y): ?>
-                <option value="<?php echo $y; ?>" <?php echo ($y === 2026) ? ' selected' : ''; ?>><?php echo $y; ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Month</label>
-            <select id="dash-filter-month" class="form-select form-select-sm">
-                <option value="">All Months</option>
-                <option value="1">January</option>
-                <option value="2">February</option>
-                <option value="3">March</option>
-                <option value="4">April</option>
-                <option value="5">May</option>
-                <option value="6">June</option>
-                <option value="7">July</option>
-                <option value="8">August</option>
-                <option value="9">September</option>
-                <option value="10">October</option>
-                <option value="11">November</option>
-                <option value="12">December</option>
-            </select>
-        </div>
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Quarter</label>
-            <select id="dash-filter-quarter" class="form-select form-select-sm">
-                <option value="">All Quarters</option>
-                <option value="1">Q1 (Jan &ndash; Mar)</option>
-                <option value="2">Q2 (Apr &ndash; Jun)</option>
-                <option value="3">Q3 (Jul &ndash; Sep)</option>
-                <option value="4">Q4 (Oct &ndash; Dec)</option>
-            </select>
-        </div>
-        <div class="col-md-3 col-sm-6" id="dash-dept-col"
-            <?php if (empty($dash_dept_options)) { echo ' style="display:none;"'; } ?>>
-            <label class="form-label">Department</label>
-            <select id="dash-filter-dept" class="form-select form-select-sm">
-                <option value="">All Departments</option>
-            </select>
-        </div>
-        <div class="col-md-3 col-sm-6">
-            <label class="form-label">Staff</label>
-            <div class="vf-issuer-wrap" id="dash-staff-wrap">
-                <div class="vf-s2-selection" id="dash-staff-btn" tabindex="0">All staff</div>
-                <div class="vf-s2-dropdown" id="dash-staff-dropdown">
-                    <div class="vf-s2-search-wrap">
-                        <input class="vf-s2-search" id="dash-staff-search" type="search" placeholder="Search name...">
-                    </div>
-                    <ul class="vf-s2-list" id="dash-staff-list"></ul>
+        <!-- Filter card -->
+        <div class="atem-card atem-filter mb-3">
+            <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
+            <div class="row g-2 mt-1 align-items-end">
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Year</label>
+                    <select id="dash-filter-year" class="form-select form-select-sm">
+                        <option value="">All Years</option>
+                        <?php foreach ($dash_year_options as $y): ?>
+                        <option value="<?php echo $y; ?>" <?php echo ($y === 2026) ? ' selected' : ''; ?>>
+                            <?php echo $y; ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-                <input type="hidden" id="dash-staff-value" value="0">
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Month</label>
+                    <select id="dash-filter-month" class="form-select form-select-sm">
+                        <option value="">All Months</option>
+                        <option value="1">January</option>
+                        <option value="2">February</option>
+                        <option value="3">March</option>
+                        <option value="4">April</option>
+                        <option value="5">May</option>
+                        <option value="6">June</option>
+                        <option value="7">July</option>
+                        <option value="8">August</option>
+                        <option value="9">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Quarter</label>
+                    <select id="dash-filter-quarter" class="form-select form-select-sm">
+                        <option value="">All Quarters</option>
+                        <option value="1">Q1 (Jan &ndash; Mar)</option>
+                        <option value="2">Q2 (Apr &ndash; Jun)</option>
+                        <option value="3">Q3 (Jul &ndash; Sep)</option>
+                        <option value="4">Q4 (Oct &ndash; Dec)</option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-sm-6" id="dash-dept-col"
+                    <?php if (empty($dash_dept_options)) { echo ' style="display:none;"'; } ?>>
+                    <label class="form-label">Department</label>
+                    <select id="dash-filter-dept" class="form-select form-select-sm">
+                        <option value="">All Departments</option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <label class="form-label">Staff</label>
+                    <div class="vf-issuer-wrap" id="dash-staff-wrap">
+                        <div class="vf-s2-selection" id="dash-staff-btn" tabindex="0">All staff</div>
+                        <div class="vf-s2-dropdown" id="dash-staff-dropdown">
+                            <div class="vf-s2-search-wrap">
+                                <input class="vf-s2-search" id="dash-staff-search" type="search"
+                                    placeholder="Search name...">
+                            </div>
+                            <ul class="vf-s2-list" id="dash-staff-list"></ul>
+                        </div>
+                        <input type="hidden" id="dash-staff-value" value="0">
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
+                <span class="text-muted" id="dash-filter-label" style="font-size:12px;"></span>
+                <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
             </div>
         </div>
-    </div>
-    <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
-        <span class="text-muted" id="dash-filter-label" style="font-size:12px;"></span>
-        <button class="btn btn-sm btn-outline-secondary" id="dash-reset-filter">Reset</button>
-    </div>
-</div>
 
-<!-- Stat Cards -->
-<div class="row g-3 mb-4">
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Total ATEM Cards</div>
-            <div class="atem-stat-value atem-stat-value--blue" id="dash-total">---</div>
-            <div class="atem-stat-label">created YTD</div>
-        </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-status="Active" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Active / On Hand</div>
-            <div class="atem-stat-value atem-stat-value--blue" id="dash-active">---</div>
-            <div class="atem-stat-label">not yet closed</div>
-            <div class="atem-stat-label" id="dash-extended-label" style="display:none;color:#fd7e14;margin-top:2px;">
+        <!-- Stat Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Total ATEM Cards</div>
+                    <div class="atem-stat-value atem-stat-value--blue" id="dash-total">---</div>
+                    <div class="atem-stat-label">created YTD</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat h-100" data-status="Active" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Active / On Hand</div>
+                    <div class="atem-stat-value atem-stat-value--blue" id="dash-active">---</div>
+                    <div class="atem-stat-label">not yet closed</div>
+                    <div class="atem-stat-label" id="dash-extended-label"
+                        style="display:none;color:#fd7e14;margin-top:2px;">
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat h-100" data-statuses="Completed,Completed with Excellence"
+                    style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Complete + Excellence</div>
+                    <div class="atem-stat-value atem-stat-value--green" id="dash-closed">---</div>
+                    <div class="atem-stat-label">eligible for completion count</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat h-100" data-status="Failed" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Failed ATEM</div>
+                    <div class="atem-stat-value atem-stat-value--red" id="dash-failed">---</div>
+                    <div class="atem-stat-label" id="dash-fail-rate">failure rate</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat h-100" data-overdue="1" data-statuses="Active,Extended"
+                    style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Overdue Cards</div>
+                    <div class="atem-stat-value atem-stat-value--red" id="dash-overdue">---</div>
+                    <div class="atem-stat-label">active/extended past end date</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat h-100" data-incentive="1"
+                    data-statuses="Active,Extended,Completed,Completed with Excellence" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Est. Incentive Forecast</div>
+                    <div class="atem-stat-value atem-stat-value--orange" id="dash-incentive">---</div>
+                    <div class="atem-stat-label">Level 2-4 payout</div>
+                </div>
             </div>
         </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-statuses="Completed,Completed with Excellence" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Complete + Excellence</div>
-            <div class="atem-stat-value atem-stat-value--green" id="dash-closed">---</div>
-            <div class="atem-stat-label">eligible for completion count</div>
-        </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-status="Failed" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Failed ATEM</div>
-            <div class="atem-stat-value atem-stat-value--red" id="dash-failed">---</div>
-            <div class="atem-stat-label" id="dash-fail-rate">failure rate</div>
-        </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-overdue="1" data-statuses="Active,Extended" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Overdue Cards</div>
-            <div class="atem-stat-value atem-stat-value--red" id="dash-overdue">---</div>
-            <div class="atem-stat-label">active/extended past end date</div>
-        </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat h-100" data-incentive="1" data-statuses="Active,Extended,Completed,Completed with Excellence" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Est. Incentive Forecast</div>
-            <div class="atem-stat-value atem-stat-value--orange" id="dash-incentive">---</div>
-            <div class="atem-stat-label">Level 2-4 payout</div>
-        </div>
-    </div>
-</div>
 
-<!-- My Role Breakdown -->
-<div class="row g-3">
-    <div class="col-12">
-        <div class="atem-card">
-            <h6 class="atem-card-title mb-0" id="dash-myroles-title">My Involvement</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;" id="dash-myroles-subtitle">Cards where you are the Issuer or an ARCI member, by role</div>
-            <div class="row g-2" id="dash-myroles-row">
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-issuer="me">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Issuer</div>
-                        <div class="atem-stat-value atem-stat-value--blue" id="dash-myrole-issuer" style="font-size:22px;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-myrole="A">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Accountable (A)</div>
-                        <div class="atem-stat-value" id="dash-myrole-a" style="font-size:22px;color:#6610f2;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-myrole="R">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Responsible (R)</div>
-                        <div class="atem-stat-value" id="dash-myrole-r" style="font-size:22px;color:#0d6efd;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-myrole="C">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Consulted (C)</div>
-                        <div class="atem-stat-value" id="dash-myrole-c" style="font-size:22px;color:#fd7e14;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-myrole="I">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Informed (I)</div>
-                        <div class="atem-stat-value" id="dash-myrole-i" style="font-size:22px;color:#6c757d;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;" data-mine="1">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Total Involved</div>
-                        <div class="atem-stat-value atem-stat-value--green" id="dash-myrole-involved" style="font-size:22px;">---</div>
+        <!-- My Role Breakdown -->
+        <div class="row g-3">
+            <div class="col-12">
+                <div class="atem-card">
+                    <h6 class="atem-card-title mb-0" id="dash-myroles-title">My Involvement</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;" id="dash-myroles-subtitle">
+                        Cards where you are the Issuer or an ARCI member, by role</div>
+                    <div class="row g-2" id="dash-myroles-row">
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
+                                data-issuer="me">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Issuer</div>
+                                <div class="atem-stat-value atem-stat-value--blue" id="dash-myrole-issuer"
+                                    style="font-size:22px;">---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
+                                data-myrole="A">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Accountable (A)</div>
+                                <div class="atem-stat-value" id="dash-myrole-a" style="font-size:22px;color:#6610f2;">
+                                    ---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
+                                data-myrole="R">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Responsible (R)</div>
+                                <div class="atem-stat-value" id="dash-myrole-r" style="font-size:22px;color:#0d6efd;">
+                                    ---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
+                                data-myrole="C">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Consulted (C)</div>
+                                <div class="atem-stat-value" id="dash-myrole-c" style="font-size:22px;color:#fd7e14;">
+                                    ---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
+                                data-myrole="I">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Informed (I)</div>
+                                <div class="atem-stat-value" id="dash-myrole-i" style="font-size:22px;color:#6c757d;">
+                                    ---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
+                                data-mine="1">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Total Involved</div>
+                                <div class="atem-stat-value atem-stat-value--green" id="dash-myrole-involved"
+                                    style="font-size:22px;">---</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Level table + Bar chart -->
-<div class="row g-3 mt-0">
-    <div class="col-lg-6">
-        <div class="atem-card h-100">
-            <h6 class="atem-card-title mb-0">ATEM Complexity Reward</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Level 1 RM0; Level 2-4 follow incentive
-                value</div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th style="font-size:12px;text-align:left;">Level</th>
-                            <th style="font-size:12px;text-align:left;">Cards</th>
-                            <th style="font-size:12px;text-align:left;">Complete</th>
-                            <th style="font-size:12px;text-align:left;">Excellence</th>
-                            <th style="font-size:12px;text-align:left;">Fail</th>
-                            <th style="font-size:12px;text-align:left;">Forecast</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dash-level-body">
-                        <tr>
-                            <td colspan="6" class="text-muted" style="font-size:12px;">Loading...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="atem-card h-100">
-            <h6 class="atem-card-title mb-0">Closure &amp; Failure Analysis</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuer-only closure: Complete,
-                Excellence, Extend, Fail</div>
-            <div id="dash-bars">
-                <div class="atem-bar-row">
-                    <div class="atem-bar-label">Excellence</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-excellence" style="width:0%;background:#198754;"></div>
+        <!-- Level table + Bar chart -->
+        <div class="row g-3 mt-0">
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
+                    <h6 class="atem-card-title mb-0">ATEM Complexity Reward</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Level 1 RM0; Level 2-4 follow
+                        incentive
+                        value</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="font-size:12px;text-align:left;">Level</th>
+                                    <th style="font-size:12px;text-align:left;">Cards</th>
+                                    <th style="font-size:12px;text-align:left;">Complete</th>
+                                    <th style="font-size:12px;text-align:left;">Excellence</th>
+                                    <th style="font-size:12px;text-align:left;">Fail</th>
+                                    <th style="font-size:12px;text-align:left;">Forecast</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dash-level-body">
+                                <tr>
+                                    <td colspan="6" class="text-muted" style="font-size:12px;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="atem-bar-count" id="bar-excellence-n">-</div>
-                </div>
-                <div class="atem-bar-row">
-                    <div class="atem-bar-label">Complete</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-complete" style="width:0%;background:#0d6efd;"></div>
-                    </div>
-                    <div class="atem-bar-count" id="bar-complete-n">-</div>
-                </div>
-                <div class="atem-bar-row">
-                    <div class="atem-bar-label">Extended</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-extended" style="width:0%;background:#fd7e14;"></div>
-                    </div>
-                    <div class="atem-bar-count" id="bar-extended-n">-</div>
-                </div>
-                <div class="atem-bar-row">
-                    <div class="atem-bar-label">Fail</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-failed" style="width:0%;background:#dc3545;"></div>
-                    </div>
-                    <div class="atem-bar-count" id="bar-failed-n">-</div>
                 </div>
             </div>
-            <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by department,
-                issuer, level and month.</div>
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
+                    <h6 class="atem-card-title mb-0">Closure &amp; Failure Analysis</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuer-only closure: Complete,
+                        Excellence, Extend, Fail</div>
+                    <div id="dash-bars">
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Excellence</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-excellence" style="width:0%;background:#198754;">
+                                </div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-excellence-n">-</div>
+                        </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Complete</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-complete" style="width:0%;background:#0d6efd;"></div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-complete-n">-</div>
+                        </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Extended</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-extended" style="width:0%;background:#fd7e14;"></div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-extended-n">-</div>
+                        </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Fail</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-failed" style="width:0%;background:#dc3545;"></div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-failed-n">-</div>
+                        </div>
+                    </div>
+                    <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by
+                        department,
+                        issuer, level and month.</div>
+                </div>
+            </div>
         </div>
-    </div>
-</div>
 
-<!-- Department Breakdown -->
-<div class="row g-3 mt-0">
-    <div class="col-12">
-        <div class="atem-card">
-            <h6 class="atem-card-title mb-0">Department Breakdown</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and incentive forecast
-                by issuer department</div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th style="font-size:12px;text-align:left;">Department</th>
-                            <th style="font-size:12px;text-align:left;">Cards</th>
-                            <th style="font-size:12px;text-align:left;">Complete</th>
-                            <th style="font-size:12px;text-align:left;">Excellence</th>
-                            <th style="font-size:12px;text-align:left;">Fail</th>
-                            <th style="font-size:12px;text-align:left;">Fail Rate</th>
-                            <th style="font-size:12px;text-align:left;">Forecast</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dash-dept-body">
-                        <tr>
-                            <td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td>
-                        </tr>
-                    </tbody>
-                </table>
+        <!-- Department Breakdown -->
+        <div class="row g-3 mt-0">
+            <div class="col-12">
+                <div class="atem-card">
+                    <h6 class="atem-card-title mb-0">Department Breakdown</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and incentive
+                        forecast
+                        by issuer department</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="font-size:12px;text-align:left;">Department</th>
+                                    <th style="font-size:12px;text-align:left;">Cards</th>
+                                    <th style="font-size:12px;text-align:left;">Complete</th>
+                                    <th style="font-size:12px;text-align:left;">Excellence</th>
+                                    <th style="font-size:12px;text-align:left;">Fail</th>
+                                    <th style="font-size:12px;text-align:left;">Fail Rate</th>
+                                    <th style="font-size:12px;text-align:left;">Forecast</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dash-dept-body">
+                                <tr>
+                                    <td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
-</div>
 
-</div>
-<div class="tab-pane fade" id="dash-tab-outlet" role="tabpanel" aria-labelledby="dash-tab-outlet-btn">
+    </div>
+    <div class="tab-pane fade" id="dash-tab-outlet" role="tabpanel" aria-labelledby="dash-tab-outlet-btn">
 
-<!-- Outlet Filter card -->
-<div class="atem-card atem-filter mb-3">
-    <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
-    <div class="row g-2 mt-1 align-items-end">
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Year</label>
-            <select id="dasho-filter-year" class="form-select form-select-sm">
-                <option value="">All Years</option>
-                <?php foreach ($dash_year_options as $y): ?>
-                <option value="<?php echo $y; ?>" <?php echo ($y === 2026) ? ' selected' : ''; ?>><?php echo $y; ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Month</label>
-            <select id="dasho-filter-month" class="form-select form-select-sm">
-                <option value="">All Months</option>
-                <option value="1">January</option>
-                <option value="2">February</option>
-                <option value="3">March</option>
-                <option value="4">April</option>
-                <option value="5">May</option>
-                <option value="6">June</option>
-                <option value="7">July</option>
-                <option value="8">August</option>
-                <option value="9">September</option>
-                <option value="10">October</option>
-                <option value="11">November</option>
-                <option value="12">December</option>
-            </select>
-        </div>
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Quarter</label>
-            <select id="dasho-filter-quarter" class="form-select form-select-sm">
-                <option value="">All Quarters</option>
-                <option value="1">Q1 (Jan &ndash; Mar)</option>
-                <option value="2">Q2 (Apr &ndash; Jun)</option>
-                <option value="3">Q3 (Jul &ndash; Sep)</option>
-                <option value="4">Q4 (Oct &ndash; Dec)</option>
-            </select>
-        </div>
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Outlet</label>
-            <div class="vf-issuer-wrap" id="dasho-outlet-wrap">
-                <div class="vf-s2-selection" id="dasho-outlet-btn" tabindex="0">All outlets</div>
-                <div class="vf-s2-dropdown" id="dasho-outlet-dropdown">
-                    <div class="vf-s2-search-wrap">
-                        <input class="vf-s2-search" id="dasho-outlet-search" type="search" placeholder="Search outlet...">
-                    </div>
-                    <ul class="vf-s2-list" id="dasho-outlet-list"></ul>
+        <!-- Outlet Filter card -->
+        <div class="atem-card atem-filter mb-3">
+            <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
+            <div class="row g-2 mt-1 align-items-end">
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Year</label>
+                    <select id="dasho-filter-year" class="form-select form-select-sm">
+                        <option value="">All Years</option>
+                        <?php foreach ($dash_year_options as $y): ?>
+                        <option value="<?php echo $y; ?>" <?php echo ($y === 2026) ? ' selected' : ''; ?>>
+                            <?php echo $y; ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-                <input type="hidden" id="dasho-outlet-value" value="0">
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Month</label>
+                    <select id="dasho-filter-month" class="form-select form-select-sm">
+                        <option value="">All Months</option>
+                        <option value="1">January</option>
+                        <option value="2">February</option>
+                        <option value="3">March</option>
+                        <option value="4">April</option>
+                        <option value="5">May</option>
+                        <option value="6">June</option>
+                        <option value="7">July</option>
+                        <option value="8">August</option>
+                        <option value="9">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Quarter</label>
+                    <select id="dasho-filter-quarter" class="form-select form-select-sm">
+                        <option value="">All Quarters</option>
+                        <option value="1">Q1 (Jan &ndash; Mar)</option>
+                        <option value="2">Q2 (Apr &ndash; Jun)</option>
+                        <option value="3">Q3 (Jul &ndash; Sep)</option>
+                        <option value="4">Q4 (Oct &ndash; Dec)</option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Outlet</label>
+                    <div class="vf-issuer-wrap" id="dasho-outlet-wrap">
+                        <div class="vf-s2-selection" id="dasho-outlet-btn" tabindex="0">All outlets</div>
+                        <div class="vf-s2-dropdown" id="dasho-outlet-dropdown">
+                            <div class="vf-s2-search-wrap">
+                                <input class="vf-s2-search" id="dasho-outlet-search" type="search"
+                                    placeholder="Search outlet...">
+                            </div>
+                            <ul class="vf-s2-list" id="dasho-outlet-list"></ul>
+                        </div>
+                        <input type="hidden" id="dasho-outlet-value" value="0">
+                    </div>
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Pillar</label>
+                    <select id="dasho-filter-pillar" class="form-select form-select-sm">
+                        <option value="">All Pillars</option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Staff</label>
+                    <div class="vf-issuer-wrap" id="dasho-staff-wrap">
+                        <div class="vf-s2-selection" id="dasho-staff-btn" tabindex="0">All staff</div>
+                        <div class="vf-s2-dropdown" id="dasho-staff-dropdown">
+                            <div class="vf-s2-search-wrap">
+                                <input class="vf-s2-search" id="dasho-staff-search" type="search"
+                                    placeholder="Search name...">
+                            </div>
+                            <ul class="vf-s2-list" id="dasho-staff-list"></ul>
+                        </div>
+                        <input type="hidden" id="dasho-staff-value" value="0">
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
+                <span class="text-muted" id="dasho-filter-label" style="font-size:12px;"></span>
+                <button class="btn btn-sm btn-outline-secondary" id="dasho-reset-filter">Reset</button>
             </div>
         </div>
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Pillar</label>
-            <select id="dasho-filter-pillar" class="form-select form-select-sm">
-                <option value="">All Pillars</option>
-            </select>
-        </div>
-        <div class="col-md-2 col-sm-6">
-            <label class="form-label">Staff</label>
-            <div class="vf-issuer-wrap" id="dasho-staff-wrap">
-                <div class="vf-s2-selection" id="dasho-staff-btn" tabindex="0">All staff</div>
-                <div class="vf-s2-dropdown" id="dasho-staff-dropdown">
-                    <div class="vf-s2-search-wrap">
-                        <input class="vf-s2-search" id="dasho-staff-search" type="search" placeholder="Search name...">
-                    </div>
-                    <ul class="vf-s2-list" id="dasho-staff-list"></ul>
-                </div>
-                <input type="hidden" id="dasho-staff-value" value="0">
-            </div>
-        </div>
-    </div>
-    <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
-        <span class="text-muted" id="dasho-filter-label" style="font-size:12px;"></span>
-        <button class="btn btn-sm btn-outline-secondary" id="dasho-reset-filter">Reset</button>
-    </div>
-</div>
 
-<!-- Outlet Stat Cards -->
-<div class="row g-3 mb-4">
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Total ATEM Cards</div>
-            <div class="atem-stat-value atem-stat-value--blue" id="dasho-total">---</div>
-            <div class="atem-stat-label">created YTD</div>
-        </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat-outlet h-100" data-status="Active" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Active / On Hand</div>
-            <div class="atem-stat-value atem-stat-value--blue" id="dasho-active">---</div>
-            <div class="atem-stat-label">not yet closed</div>
-            <div class="atem-stat-label" id="dasho-extended-label" style="display:none;color:#fd7e14;margin-top:2px;">
+        <!-- Outlet Stat Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Total ATEM Cards</div>
+                    <div class="atem-stat-value atem-stat-value--blue" id="dasho-total">---</div>
+                    <div class="atem-stat-label">created YTD</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat-outlet h-100" data-status="Active" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Active / On Hand</div>
+                    <div class="atem-stat-value atem-stat-value--blue" id="dasho-active">---</div>
+                    <div class="atem-stat-label">not yet closed</div>
+                    <div class="atem-stat-label" id="dasho-extended-label"
+                        style="display:none;color:#fd7e14;margin-top:2px;">
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat-outlet h-100" data-statuses="Completed,Completed with Excellence"
+                    style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Complete + Excellence</div>
+                    <div class="atem-stat-value atem-stat-value--green" id="dasho-closed">---</div>
+                    <div class="atem-stat-label">eligible for completion count</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat-outlet h-100" data-status="Failed" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Failed ATEM</div>
+                    <div class="atem-stat-value atem-stat-value--red" id="dasho-failed">---</div>
+                    <div class="atem-stat-label" id="dasho-fail-rate">failure rate</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat-outlet h-100" data-overdue="1" data-statuses="Active,Extended"
+                    style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Overdue Cards</div>
+                    <div class="atem-stat-value atem-stat-value--red" id="dasho-overdue">---</div>
+                    <div class="atem-stat-label">active/extended past end date</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat-outlet h-100"
+                    data-statuses="Active,Extended,Completed,Completed with Excellence" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Est. Reward Forecast</div>
+                    <div class="atem-stat-value atem-stat-value--orange" id="dasho-incentive">---</div>
+                    <div class="atem-stat-label">potential reward payout</div>
+                </div>
             </div>
         </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat-outlet h-100" data-statuses="Completed,Completed with Excellence" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Complete + Excellence</div>
-            <div class="atem-stat-value atem-stat-value--green" id="dasho-closed">---</div>
-            <div class="atem-stat-label">eligible for completion count</div>
-        </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat-outlet h-100" data-status="Failed" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Failed ATEM</div>
-            <div class="atem-stat-value atem-stat-value--red" id="dasho-failed">---</div>
-            <div class="atem-stat-label" id="dasho-fail-rate">failure rate</div>
-        </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat-outlet h-100" data-overdue="1" data-statuses="Active,Extended" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Overdue Cards</div>
-            <div class="atem-stat-value atem-stat-value--red" id="dasho-overdue">---</div>
-            <div class="atem-stat-label">active/extended past end date</div>
-        </div>
-    </div>
-    <div class="col-12 col-sm-6 col-xl">
-        <div class="atem-card atem-dash-stat-outlet h-100" data-statuses="Active,Extended,Completed,Completed with Excellence" style="cursor:pointer;">
-            <div class="atem-card-title mb-1">Est. Reward Forecast</div>
-            <div class="atem-stat-value atem-stat-value--orange" id="dasho-incentive">---</div>
-            <div class="atem-stat-label">potential reward payout</div>
-        </div>
-    </div>
-</div>
 
-<!-- Outlet My Role Breakdown -->
-<div class="row g-3">
-    <div class="col-12">
-        <div class="atem-card">
-            <h6 class="atem-card-title mb-0" id="dasho-myroles-title">My Involvement</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;" id="dasho-myroles-subtitle">Cards where you are the Issuer or an ARCI member, by role</div>
-            <div class="row g-2" id="dasho-myroles-row">
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;" data-issuer="me">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Issuer</div>
-                        <div class="atem-stat-value atem-stat-value--blue" id="dasho-myrole-issuer" style="font-size:22px;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;" data-myrole="A">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Accountable (A)</div>
-                        <div class="atem-stat-value" id="dasho-myrole-a" style="font-size:22px;color:#6610f2;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;" data-myrole="R">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Responsible (R)</div>
-                        <div class="atem-stat-value" id="dasho-myrole-r" style="font-size:22px;color:#0d6efd;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;" data-myrole="C">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Consulted (C)</div>
-                        <div class="atem-stat-value" id="dasho-myrole-c" style="font-size:22px;color:#fd7e14;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;" data-myrole="I">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Informed (I)</div>
-                        <div class="atem-stat-value" id="dasho-myrole-i" style="font-size:22px;color:#6c757d;">---</div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-2">
-                    <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;" data-mine="1">
-                        <div class="atem-card-title mb-1" style="font-size:11px;">Total Involved</div>
-                        <div class="atem-stat-value atem-stat-value--green" id="dasho-myrole-involved" style="font-size:22px;">---</div>
+        <!-- Outlet My Role Breakdown -->
+        <div class="row g-3">
+            <div class="col-12">
+                <div class="atem-card">
+                    <h6 class="atem-card-title mb-0" id="dasho-myroles-title">My Involvement</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;" id="dasho-myroles-subtitle">
+                        Cards where you are the Issuer or an ARCI member, by role</div>
+                    <div class="row g-2" id="dasho-myroles-row">
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
+                                data-issuer="me">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Issuer</div>
+                                <div class="atem-stat-value atem-stat-value--blue" id="dasho-myrole-issuer"
+                                    style="font-size:22px;">---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
+                                data-myrole="A">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Accountable (A)</div>
+                                <div class="atem-stat-value" id="dasho-myrole-a" style="font-size:22px;color:#6610f2;">
+                                    ---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
+                                data-myrole="R">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Responsible (R)</div>
+                                <div class="atem-stat-value" id="dasho-myrole-r" style="font-size:22px;color:#0d6efd;">
+                                    ---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
+                                data-myrole="C">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Consulted (C)</div>
+                                <div class="atem-stat-value" id="dasho-myrole-c" style="font-size:22px;color:#fd7e14;">
+                                    ---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
+                                data-myrole="I">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Informed (I)</div>
+                                <div class="atem-stat-value" id="dasho-myrole-i" style="font-size:22px;color:#6c757d;">
+                                    ---</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
+                                data-mine="1">
+                                <div class="atem-card-title mb-1" style="font-size:11px;">Total Involved</div>
+                                <div class="atem-stat-value atem-stat-value--green" id="dasho-myrole-involved"
+                                    style="font-size:22px;">---</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Pillar table + Bar chart -->
-<div class="row g-3 mt-0">
-    <div class="col-lg-6">
-        <div class="atem-card h-100">
-            <h6 class="atem-card-title mb-0">ATEM Pillar Reward</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Reward/deduction forecast by pillar</div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th style="font-size:12px;text-align:left;">Pillar</th>
-                            <th style="font-size:12px;text-align:left;">Cards</th>
-                            <th style="font-size:12px;text-align:left;">Complete</th>
-                            <th style="font-size:12px;text-align:left;">Excellence</th>
-                            <th style="font-size:12px;text-align:left;">Fail</th>
-                            <th style="font-size:12px;text-align:left;">Forecast</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dasho-pillar-body">
-                        <tr>
-                            <td colspan="6" class="text-muted" style="font-size:12px;">Loading...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="atem-card h-100">
-            <h6 class="atem-card-title mb-0">Closure &amp; Failure Analysis</h6>
-            <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuer-only closure: Complete,
-                Excellence, Extend, Fail</div>
-            <div id="dasho-bars">
-                <div class="atem-bar-row">
-                    <div class="atem-bar-label">Excellence</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-o-excellence" style="width:0%;background:#198754;"></div>
+        <!-- Pillar table + Bar chart -->
+        <div class="row g-3 mt-0">
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
+                    <h6 class="atem-card-title mb-0">ATEM Pillar Reward</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Reward/deduction forecast by
+                        pillar</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="font-size:12px;text-align:left;">Pillar</th>
+                                    <th style="font-size:12px;text-align:left;">Cards</th>
+                                    <th style="font-size:12px;text-align:left;">Complete</th>
+                                    <th style="font-size:12px;text-align:left;">Excellence</th>
+                                    <th style="font-size:12px;text-align:left;">Fail</th>
+                                    <th style="font-size:12px;text-align:left;">Forecast</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dasho-pillar-body">
+                                <tr>
+                                    <td colspan="6" class="text-muted" style="font-size:12px;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="atem-bar-count" id="bar-o-excellence-n">-</div>
-                </div>
-                <div class="atem-bar-row">
-                    <div class="atem-bar-label">Complete</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-o-complete" style="width:0%;background:#0d6efd;"></div>
-                    </div>
-                    <div class="atem-bar-count" id="bar-o-complete-n">-</div>
-                </div>
-                <div class="atem-bar-row">
-                    <div class="atem-bar-label">Extended</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-o-extended" style="width:0%;background:#fd7e14;"></div>
-                    </div>
-                    <div class="atem-bar-count" id="bar-o-extended-n">-</div>
-                </div>
-                <div class="atem-bar-row">
-                    <div class="atem-bar-label">Fail</div>
-                    <div class="atem-bar-track">
-                        <div class="atem-bar-fill" id="bar-o-failed" style="width:0%;background:#dc3545;"></div>
-                    </div>
-                    <div class="atem-bar-count" id="bar-o-failed-n">-</div>
                 </div>
             </div>
-            <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by outlet,
-                issuer, pillar and month.</div>
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
+                    <h6 class="atem-card-title mb-0">Closure &amp; Failure Analysis</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Issuer-only closure: Complete,
+                        Excellence, Extend, Fail</div>
+                    <div id="dasho-bars">
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Excellence</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-o-excellence" style="width:0%;background:#198754;">
+                                </div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-o-excellence-n">-</div>
+                        </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Complete</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-o-complete" style="width:0%;background:#0d6efd;">
+                                </div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-o-complete-n">-</div>
+                        </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Extended</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-o-extended" style="width:0%;background:#fd7e14;">
+                                </div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-o-extended-n">-</div>
+                        </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Fail</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-o-failed" style="width:0%;background:#dc3545;"></div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-o-failed-n">-</div>
+                        </div>
+                    </div>
+                    <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by
+                        outlet,
+                        issuer, pillar and month.</div>
+                </div>
+            </div>
         </div>
-    </div>
-</div>
 
-</div>
+    </div>
 </div>
 
 <?php
