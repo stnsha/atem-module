@@ -336,6 +336,15 @@
     }
 
     // --------------------------------------------------------------- filtering
+    // Active/Draft cards haven't closed yet, so the Year/Month/From-To filters
+    // go by when they started; every other status (Completed family, Extended,
+    // Failed) is bucketed by when it closed - mirrors api.php's
+    // atem_status_period_field()/dashboard-stats convention, so the counts
+    // shown here and on the dashboard agree for the same filter selection.
+    function periodDateOf(r) {
+        return (r.status === 'Active' || r.status === 'Draft') ? r.start_date : r.closure_date;
+    }
+
     function applyHqFilters(sourceRows) {
         var year  = $('vf-year')  ? parseInt($('vf-year').value,  10) || 0 : 0;
         var month = $('vf-month') ? parseInt($('vf-month').value, 10) || 0 : 0;
@@ -351,8 +360,9 @@
         var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
 
         return sourceRows.filter(function (r) {
-            if (year  && (!r.start_date || parseInt(r.start_date.substring(0, 4), 10) !== year))  { return false; }
-            if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
+            var pDate = periodDateOf(r);
+            if (year  && (!pDate || parseInt(pDate.substring(0, 4), 10) !== year))  { return false; }
+            if (month && (!pDate || parseInt(pDate.substring(5, 7), 10) !== month)) { return false; }
             if (issuer && r.issuer_staff_id !== issuer) { return false; }
             if (level && r.level_label !== level) { return false; }
             if (dept) {
@@ -390,8 +400,8 @@
                 var isMyArci  = r.user_arci_roles && r.user_arci_roles.length > 0;
                 if (!isMyIssue && !isMyArci) { return false; }
             }
-            if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
-            if (to && (!r.start_date || r.start_date.substring(0, 10) > to)) { return false; }
+            if (from && (!pDate || pDate.substring(0, 10) < from)) { return false; }
+            if (to && (!pDate || pDate.substring(0, 10) > to)) { return false; }
             if (term) {
                 var atemIdStr = 'at' + r.id;
                 var matchesTitle = String(r.title).toLowerCase().indexOf(term) >= 0;
@@ -423,8 +433,9 @@
         }
 
         return sourceRows.filter(function (r) {
-            if (year  && (!r.start_date || parseInt(r.start_date.substring(0, 4), 10) !== year))  { return false; }
-            if (month && (!r.start_date || parseInt(r.start_date.substring(5, 7), 10) !== month)) { return false; }
+            var pDate = periodDateOf(r);
+            if (year  && (!pDate || parseInt(pDate.substring(0, 4), 10) !== year))  { return false; }
+            if (month && (!pDate || parseInt(pDate.substring(5, 7), 10) !== month)) { return false; }
             if (issuer && r.issuer_staff_id !== issuer) { return false; }
             if (statuses.length === 0) { return false; }
             if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
@@ -449,8 +460,8 @@
                 if (r.status !== 'Active' && r.status !== 'Extended') { return false; }
                 if (!effectiveDue || effectiveDue >= TODAY) { return false; }
             }
-            if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
-            if (to && (!r.start_date || r.start_date.substring(0, 10) > to)) { return false; }
+            if (from && (!pDate || pDate.substring(0, 10) < from)) { return false; }
+            if (to && (!pDate || pDate.substring(0, 10) > to)) { return false; }
             if (term) {
                 var atemIdStr = 'at' + r.id;
                 var matchesTitle = String(r.title).toLowerCase().indexOf(term) >= 0;

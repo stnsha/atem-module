@@ -460,6 +460,12 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     </select>
                 </div>
                 <div class="col-md-2 col-sm-6">
+                    <label class="form-label">Pillar</label>
+                    <select id="dasho-filter-pillar" class="form-select form-select-sm">
+                        <option value="">All Pillars</option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-sm-6">
                     <label class="form-label">Outlet</label>
                     <div class="vf-issuer-wrap" id="dasho-outlet-wrap">
                         <div class="vf-s2-selection" id="dasho-outlet-btn" tabindex="0">All outlets</div>
@@ -472,12 +478,6 @@ window.ATEM_DASH = <?php echo json_encode(array(
                         </div>
                         <input type="hidden" id="dasho-outlet-value" value="0">
                     </div>
-                </div>
-                <div class="col-md-2 col-sm-6">
-                    <label class="form-label">Pillar</label>
-                    <select id="dasho-filter-pillar" class="form-select form-select-sm">
-                        <option value="">All Pillars</option>
-                    </select>
                 </div>
                 <div class="col-md-2 col-sm-6">
                     <label class="form-label">Staff</label>

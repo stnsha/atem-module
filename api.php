@@ -1873,12 +1873,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     // Pillar is matched by name (not id), matching the vfo-pillar plain
                     // <select> convention already used on view.php/js/view.js.
                     $filterPillarName = isset($jsonData['filter_pillar_name']) ? trim((string)$jsonData['filter_pillar_name']) : '';
-                    $quarterMonths = array(
-                        1 => array(1, 2, 3),
-                        2 => array(4, 5, 6),
-                        3 => array(7, 8, 9),
-                        4 => array(10, 11, 12),
-                    );
+                    $periodMonths = atem_period_months($filterMonth, $filterQuarter);
 
                     $levelMap = array(
                         1 => array('label' => 'L1 Operational',     'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
@@ -1930,18 +1925,19 @@ if (!defined('API_JWT_INCLUDED')) {
                     $myInvolvedTotal = 0;
 
                     foreach ($items as $item) {
+                        $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
+                        if ($statusVal === 'Deleted' || $statusVal === 'Suspended' || !empty($item['deleted_at'])) { continue; }
+
                         if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
-                            $startDate = isset($item['start_date']) ? $item['start_date'] : '';
-                            if ($startDate) {
-                                $ts        = strtotime($startDate);
-                                $itemYear  = (int)date('Y', $ts);
-                                $itemMonth = (int)date('n', $ts);
-                                if ($filterYear > 0 && $itemYear !== $filterYear) { continue; }
-                                if ($filterMonth > 0 && $itemMonth !== $filterMonth) { continue; }
-                                if ($filterQuarter > 0) {
-                                    $qMonths = isset($quarterMonths[$filterQuarter]) ? $quarterMonths[$filterQuarter] : array();
-                                    if (!in_array($itemMonth, $qMonths)) { continue; }
-                                }
+                            // Active/Draft cards haven't closed yet, so the period filter
+                            // goes by when they started; every other status (Completed
+                            // family, Extended, Failed) is bucketed by when it closed —
+                            // mirrors atem_status_period_field()'s convention already used
+                            // by Staff Performance, instead of start_date for everything.
+                            $periodField = ($statusVal === 'Active' || $statusVal === 'Draft') ? 'start_date' : 'closure_date';
+                            $periodDate  = isset($item[$periodField]) ? $item[$periodField] : '';
+                            if ($periodDate && !atem_date_in_period($periodDate, $periodMonths, $filterYear)) {
+                                continue;
                             }
                         }
                         if ($filterDeptId > 0) {
@@ -1988,8 +1984,6 @@ if (!defined('API_JWT_INCLUDED')) {
                             if ($itemPillarName !== $filterPillarName) { continue; }
                         }
 
-                        $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
-                        if ($statusVal === 'Deleted' || $statusVal === 'Suspended' || !empty($item['deleted_at'])) { continue; }
                         $total++;
 
                         if ($myScopeMode === 'dept') {
