@@ -51,6 +51,32 @@ if (isset($_SESSION['atem_dev_role_override'])) {
     $atem_permission = (int)$_SESSION['atem_dev_role_override'];
 }
 
+// Dev department-view override (paired with the grade override above):
+// simulates the dev as Outlet-department (id 1) staff or as non-Outlet
+// ("HQ") staff, since dept-scoped visibility (grades 2-3) otherwise always
+// reflects the real SuperAdmin's own department. No view override set means
+// no change - department stays whatever lock_adv.php read from the DB.
+if (isset($_SESSION['atem_dev_role_override']) && isset($_SESSION['atem_dev_view_override'])) {
+    if ($_SESSION['atem_dev_view_override'] === 'outlet') {
+        $department = '1';
+    } elseif ($_SESSION['atem_dev_view_override'] === 'hq') {
+        $_hq_dept_ids = array();
+        foreach (explode(',', (string)$department) as $_hd) {
+            $_hd = (int)trim($_hd);
+            if ($_hd > 0 && $_hd !== 1) {
+                $_hq_dept_ids[] = $_hd;
+            }
+        }
+        if (empty($_hq_dept_ids)) {
+            $_hq_fallback_r = mysqli_query($conn, "SELECT id FROM staff_department WHERE id != 1 ORDER BY id ASC LIMIT 1");
+            if ($_hq_fallback_r && ($_hq_fallback_row = mysqli_fetch_assoc($_hq_fallback_r))) {
+                $_hq_dept_ids[] = (int)$_hq_fallback_row['id'];
+            }
+        }
+        $department = implode(',', $_hq_dept_ids);
+    }
+}
+
 // SuperAdmin recognition is the union of both module flags: staff.atem is
 // already available via lock_adv.php ($atem); staff.okr is not, so it is
 // queried directly here. Either flag being set to 1 grants full SuperAdmin

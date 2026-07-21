@@ -36,15 +36,18 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
     $_navbar_activeRoleLabel = ($_navbar_activeRole !== null && isset($_navbar_gradeLabels[$_navbar_activeRole]))
         ? $_navbar_gradeLabels[$_navbar_activeRole]
         : 'DB Default';
+    $_navbar_activeView      = isset($_SESSION['atem_dev_view_override']) ? $_SESSION['atem_dev_view_override'] : 'hq';
+    $_navbar_viewLabels      = array('hq' => 'HQ', 'outlet' => 'Outlet');
     $_navbar_currentUri      = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : ATEM_BASE . 'index.php';
 ?>
 <div
     style="background:#12122a;color:#d0d0f0;padding:5px 14px;font-size:11px;font-family:monospace;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid #333;">
     <span style="color:#888;letter-spacing:.05em;">DEV GRADE</span>
-    <strong style="color:#f0c040;">[<?php echo htmlspecialchars($_navbar_activeRoleLabel); ?>]</strong>
+    <strong style="color:#f0c040;">[<?php echo htmlspecialchars($_navbar_activeRoleLabel); ?><?php echo ($_navbar_activeRole !== null) ? ' / ' . htmlspecialchars($_navbar_viewLabels[$_navbar_activeView]) : ''; ?>]</strong>
     <?php foreach ($_navbar_gradeLabels as $_r => $_label): ?>
     <form method="POST" action="<?php echo ATEM_BASE; ?>dev-switch-role.php" style="display:inline;margin:0;">
         <input type="hidden" name="role" value="<?php echo $_r; ?>">
+        <input type="hidden" name="view" value="<?php echo htmlspecialchars($_navbar_activeView); ?>">
         <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_navbar_currentUri); ?>">
         <button type="submit"
             style="background:<?php echo ($_navbar_activeRole === $_r ? '#2e2e6e' : '#1e1e3e'); ?>;color:<?php echo ($_navbar_activeRole === $_r ? '#f0c040' : '#aaa'); ?>;border:1px solid <?php echo ($_navbar_activeRole === $_r ? '#555' : '#333'); ?>;padding:2px 7px;font-size:11px;cursor:pointer;border-radius:3px;font-family:monospace;"><?php echo $_r; ?>:
@@ -52,6 +55,16 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
     </form>
     <?php endforeach; ?>
     <?php if ($_navbar_activeRole !== null): ?>
+    <span style="color:#888;letter-spacing:.05em;">VIEW</span>
+    <?php foreach ($_navbar_viewLabels as $_v => $_vLabel): ?>
+    <form method="POST" action="<?php echo ATEM_BASE; ?>dev-switch-role.php" style="display:inline;margin:0;">
+        <input type="hidden" name="role" value="<?php echo $_navbar_activeRole; ?>">
+        <input type="hidden" name="view" value="<?php echo $_v; ?>">
+        <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_navbar_currentUri); ?>">
+        <button type="submit"
+            style="background:<?php echo ($_navbar_activeView === $_v ? '#2e2e6e' : '#1e1e3e'); ?>;color:<?php echo ($_navbar_activeView === $_v ? '#f0c040' : '#aaa'); ?>;border:1px solid <?php echo ($_navbar_activeView === $_v ? '#555' : '#333'); ?>;padding:2px 7px;font-size:11px;cursor:pointer;border-radius:3px;font-family:monospace;"><?php echo $_vLabel; ?></button>
+    </form>
+    <?php endforeach; ?>
     <form method="POST" action="<?php echo ATEM_BASE; ?>dev-switch-role.php" style="display:inline;margin:0;">
         <input type="hidden" name="role" value="clear">
         <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($_navbar_currentUri); ?>">
@@ -92,9 +105,11 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                 <li class="nav-item">
                     <a class="nav-link <?php echo $view_active; ?>" href="<?php echo ATEM_BASE; ?>view.php">ATEM</a>
                 </li>
+                <?php if ($atem_role >= 3 || $_is_superadmin || in_array((int)(isset($struct) ? $struct : 0), array(4, 5), true)): ?>
                 <li class="nav-item">
                     <a class="nav-link" href="okr/list.php">OKR</a>
                 </li>
+                <?php endif; ?>
                 <?php
                 $_navbar_dept_ids = array();
                 if (isset($department) && $department !== '') {

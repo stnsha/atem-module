@@ -4,10 +4,10 @@ ob_start();
 $page_title = 'Staff Performance';
 include('../header.php');
 
-// Page access: grade 2+, People Management (dept 17), or SuperAdmin. Dept-17
-// staff below grade 2 still need this page to reach the Lock/Unlock buttons
-// even though they can't use the plain Export action (see api.php's
-// resolvePayoutTargetStaffIds callers and export.php's own stricter gate).
+// Page access: grade 2+, People Management (dept 17), or SuperAdmin. Lock/
+// Unlock payout is SuperAdmin-only (see the $_is_superadmin-gated buttons
+// below and api.php's bulk-lock-payout/bulk-unlock-payout) - dept-17 and
+// grade 2-5 staff can still view and export from this page, just not lock.
 $_perf_dept_ids = array();
 if (isset($department) && $department !== '') {
     foreach (explode(',', (string)$department) as $_perf_d) {
@@ -15,6 +15,29 @@ if (isset($department) && $department !== '') {
         if ($_perf_d > 0) { $_perf_dept_ids[] = $_perf_d; }
     }
 }
+
+// staff.outlet is comma-separated too - used to narrow a grade-2 Outlet-
+// department viewer down to their own specific outlet(s) in the Staff
+// dropdown below, mirroring api.php's get-performance-list scoping.
+$_perf_outlet_ids = array();
+if (isset($outlet) && $outlet !== '') {
+    foreach (explode(',', (string)$outlet) as $_perf_o) {
+        $_perf_o = (int)trim($_perf_o);
+        if ($_perf_o > 0) { $_perf_outlet_ids[] = $_perf_o; }
+    }
+}
+
+// Grade 1 and 2 users only ever belong to one side (HQ or Outlet, per their
+// own department), so showing both tabs is misleading noise - collapse to the
+// single matching tab, like the pre-tab single-view page. Grade 3+ and
+// SuperAdmin keep seeing both tabs as today (deferred to a future task).
+// (Only a dept-17 grade-1/2 user ever reaches this page at all - see the
+// access gate just below.)
+$grade1_single_view = null;
+if (((int)$atem_permission === 1 || (int)$atem_permission === 2) && !$_is_superadmin) {
+    $grade1_single_view = in_array(1, $_perf_dept_ids, true) ? 'outlet' : 'hq';
+}
+
 if ($atem_permission < 2 && !$_is_superadmin && !in_array(17, $_perf_dept_ids, true)) {
     ob_end_clean();
     header('Location: ' . ATEM_BASE . 'index.php');
@@ -67,19 +90,37 @@ for ($y = 2026; $y <= $init_year; $y++) {
 $perf_status_options = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
 $perf_default_statuses = array('Completed', 'Completed with Excellence');
 
-// Staff filter dropdown (searchable, like the one on index.php). This page is
-// already gated to grade 4+/SuperAdmin, who see every department anyway, so
-// the list is never narrowed by the caller's own grade/department the way
-// index.php's version is. dept_ids lets the frontend narrow options further
-// when a specific Department filter is also selected.
+// Staff filter dropdown (searchable, like the one on index.php). Grades 2-3
+// (non-SA) are narrowed to their own department overlap here, mirroring
+// api.php's get-performance-list mandatory scoping - a grade-2 Outlet-
+// department viewer is narrowed further to their own specific outlet(s),
+// since department=1 alone is shared by every outlet company-wide. Dept-17
+// grade-1 users and grade 4+/SuperAdmin see every staff member, matching the
+// same "no narrower carve-out" access model as the table itself.
+// dept_ids lets the frontend narrow options further when a specific
+// Department filter is also selected.
+$_perf_is_grade2_outlet = ((int)$atem_permission === 2 && !$_is_superadmin && in_array(1, $_perf_dept_ids, true));
+$_perf_is_scoped_grade  = (((int)$atem_permission === 2 || (int)$atem_permission === 3) && !$_is_superadmin);
 $perf_staff_options = array();
-$_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+$_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
 if ($_pso_res) {
     while ($_pso_row = mysqli_fetch_assoc($_pso_res)) {
         $_deptIds = array();
         foreach (explode(',', (string)$_pso_row['department']) as $_p) {
             $_p = (int)trim($_p);
             if ($_p > 0) { $_deptIds[] = $_p; }
+        }
+        if ($_perf_is_scoped_grade) {
+            if ($_perf_is_grade2_outlet) {
+                $_outletIds = array();
+                foreach (explode(',', (string)$_pso_row['outlet']) as $_po) {
+                    $_po = (int)trim($_po);
+                    if ($_po > 0) { $_outletIds[] = $_po; }
+                }
+                if (!array_intersect($_perf_outlet_ids, $_outletIds)) { continue; }
+            } elseif (!array_intersect($_deptIds, $_perf_dept_ids)) {
+                continue;
+            }
         }
         $perf_staff_options[] = array('id' => (int)$_pso_row['id'], 'name' => $_pso_row['nama_staff'], 'dept_ids' => $_deptIds);
     }
@@ -128,6 +169,7 @@ if ($_pso_res) {
 }
 </style>
 
+<?php if ($grade1_single_view === null): ?>
 <ul class="nav nav-tabs atem-view-tabs" id="perf-view-tabs" role="tablist">
     <li class="nav-item" role="presentation">
         <button class="nav-link active atem-tab-color-hq" id="perf-tab-hq-btn" data-bs-toggle="tab" data-bs-target="#perf-tab-hq"
@@ -142,8 +184,10 @@ if ($_pso_res) {
         </button>
     </li>
 </ul>
+<?php endif; ?>
 <div class="tab-content pt-3">
-<div class="tab-pane fade show active" id="perf-tab-hq" role="tabpanel" aria-labelledby="perf-tab-hq-btn">
+<div class="tab-pane fade<?php echo ($grade1_single_view === null || $grade1_single_view === 'hq') ? ' show active' : ''; ?>"
+    id="perf-tab-hq" role="tabpanel" aria-labelledby="perf-tab-hq-btn">
 
 <!-- Filter Card -->
 <div class="atem-card atem-filter mb-3">
@@ -241,9 +285,11 @@ if ($_pso_res) {
         <div class="col-auto d-flex align-items-end gap-2 ms-auto">
             <button class="btn btn-sm btn-outline-secondary" id="perf-reset-filter">Reset</button>
             <a id="perf-export-all-btn" href="#" class="btn btn-outline-success btn-sm">Export</a>
+            <?php if ($_is_superadmin): ?>
             <button class="btn btn-outline-danger btn-sm" id="perf-export-lock-btn">Export &amp; Lock</button>
             <button class="btn btn-danger btn-sm" id="perf-lock-btn">Lock Payout</button>
             <button class="btn btn-outline-warning btn-sm" id="perf-unlock-btn">Undo Lock Payout</button>
+            <?php endif; ?>
         </div>
     </div>
     <div class="mt-2 text-end">
@@ -254,9 +300,11 @@ if ($_pso_res) {
 <!-- Action Buttons -->
 <div class="d-flex gap-2 mb-3 justify-content-end">
     <button class="btn btn-outline-success btn-sm" id="export-selected-btn" disabled>Export Selected</button>
+    <?php if ($_is_superadmin): ?>
     <button class="btn btn-outline-danger btn-sm" id="perf-export-lock-selected-btn" disabled>Export &amp; Lock Selected</button>
     <button class="btn btn-danger btn-sm" id="perf-lock-selected-btn" disabled>Lock Selected</button>
     <button class="btn btn-outline-warning btn-sm" id="perf-unlock-selected-btn" disabled>Unlock Selected</button>
+    <?php endif; ?>
 </div>
 
 <div id="export-progress-wrap" style="display:none;margin-bottom:12px;max-width:400px;">
@@ -303,7 +351,8 @@ if ($_pso_res) {
 
 </div><!-- /#perf-tab-hq -->
 
-<div class="tab-pane fade" id="perf-tab-outlet" role="tabpanel" aria-labelledby="perf-tab-outlet-btn">
+<div class="tab-pane fade<?php echo ($grade1_single_view === 'outlet') ? ' show active' : ''; ?>"
+    id="perf-tab-outlet" role="tabpanel" aria-labelledby="perf-tab-outlet-btn">
 
 <!-- Filter Card -->
 <div class="atem-card atem-filter mb-3">
@@ -403,9 +452,11 @@ if ($_pso_res) {
         <div class="col-auto d-flex align-items-end gap-2 ms-auto">
             <button class="btn btn-sm btn-outline-secondary" id="perfo-reset-filter">Reset</button>
             <a id="perfo-export-all-btn" href="#" class="btn btn-outline-success btn-sm">Export</a>
+            <?php if ($_is_superadmin): ?>
             <button class="btn btn-outline-danger btn-sm" id="perfo-export-lock-btn">Export &amp; Lock</button>
             <button class="btn btn-danger btn-sm" id="perfo-lock-btn">Lock Payout</button>
             <button class="btn btn-outline-warning btn-sm" id="perfo-unlock-btn">Undo Lock Payout</button>
+            <?php endif; ?>
         </div>
     </div>
     <div class="mt-2 text-end">
@@ -416,9 +467,11 @@ if ($_pso_res) {
 <!-- Action Buttons -->
 <div class="d-flex gap-2 mb-3 justify-content-end">
     <button class="btn btn-outline-success btn-sm" id="perfo-export-selected-btn" disabled>Export Selected</button>
+    <?php if ($_is_superadmin): ?>
     <button class="btn btn-outline-danger btn-sm" id="perfo-export-lock-selected-btn" disabled>Export &amp; Lock Selected</button>
     <button class="btn btn-danger btn-sm" id="perfo-lock-selected-btn" disabled>Lock Selected</button>
     <button class="btn btn-outline-warning btn-sm" id="perfo-unlock-selected-btn" disabled>Unlock Selected</button>
+    <?php endif; ?>
 </div>
 
 <div id="perfo-export-progress-wrap" style="display:none;margin-bottom:12px;max-width:400px;">
@@ -499,7 +552,7 @@ if ($_pso_res) {
     </div>
 </div>
 
-<!-- Lock Payout Modal -->
+<!-- Lock Payout Modal (SuperAdmin only) -->
 <div class="modal fade" id="payoutLockModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -558,6 +611,7 @@ var PERF_CFG = <?php echo json_encode(array(
     'staff'           => $perf_staff_options,
     'outlets'         => $outlet_filter_options,
     'isSuperAdmin'    => $_is_superadmin,
+    'tabSingleView'   => $grade1_single_view,
 )); ?>;
 
 var PERF_API_URL = PERF_CFG.apiUrl;
@@ -1264,8 +1318,8 @@ function renderTable(data, payload) {
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '">View</a>' +
             '<a class="btn btn-sm btn-outline-success me-1 perf-row-export" href="' + escHtml(exportUrl) + '">Export</a>' +
-            (rec.has_unlocked ? '<button type="button" class="btn btn-sm btn-outline-danger me-1 perf-row-lock" data-staff-id="' + rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>' : '') +
-            (rec.has_locked ? '<button type="button" class="btn btn-sm btn-outline-warning perf-row-unlock" data-staff-id="' + rec.staff_id + '" title="Undo Lock Payout"><i class="bi bi-unlock-fill"></i></button>' : '') +
+            (PERF_CFG.isSuperAdmin && rec.has_unlocked ? '<button type="button" class="btn btn-sm btn-outline-danger me-1 perf-row-lock" data-staff-id="' + rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>' : '') +
+            (PERF_CFG.isSuperAdmin && rec.has_locked ? '<button type="button" class="btn btn-sm btn-outline-warning perf-row-unlock" data-staff-id="' + rec.staff_id + '" title="Undo Lock Payout"><i class="bi bi-unlock-fill"></i></button>' : '') +
             '</td>' +
             '</tr>';
     }
@@ -1340,8 +1394,8 @@ function renderTableOutlet(data, payload) {
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '">View</a>' +
             '<a class="btn btn-sm btn-outline-success me-1 perfo-row-export" href="' + escHtml(exportUrl) + '">Export</a>' +
-            (rec.has_unlocked ? '<button type="button" class="btn btn-sm btn-outline-danger me-1 perfo-row-lock" data-staff-id="' + rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>' : '') +
-            (rec.has_locked ? '<button type="button" class="btn btn-sm btn-outline-warning perfo-row-unlock" data-staff-id="' + rec.staff_id + '" title="Undo Lock Payout"><i class="bi bi-unlock-fill"></i></button>' : '') +
+            (PERF_CFG.isSuperAdmin && rec.has_unlocked ? '<button type="button" class="btn btn-sm btn-outline-danger me-1 perfo-row-lock" data-staff-id="' + rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>' : '') +
+            (PERF_CFG.isSuperAdmin && rec.has_locked ? '<button type="button" class="btn btn-sm btn-outline-warning perfo-row-unlock" data-staff-id="' + rec.staff_id + '" title="Undo Lock Payout"><i class="bi bi-unlock-fill"></i></button>' : '') +
             '</td>' +
             '</tr>';
     }
@@ -1532,8 +1586,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Initial load
-    loadPerformance(buildPayload());
-    loadPerformanceOutlet(buildPayloadOutlet());
+    if (PERF_CFG.tabSingleView !== 'outlet') { loadPerformance(buildPayload()); }
+    if (PERF_CFG.tabSingleView !== 'hq') { loadPerformanceOutlet(buildPayloadOutlet()); }
 
     // Reset filter
     document.getElementById('perf-reset-filter').addEventListener('click', function() {

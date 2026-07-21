@@ -982,7 +982,7 @@
         }
 
         // Default load: 2026 data
-        loadDashboard({ filter_year: 2026 });
+        if (CFG.tabSingleView !== 'outlet') { loadDashboard({ filter_year: 2026 }); }
 
         // Stat card click navigation
         var dashStats = document.querySelectorAll('.atem-dash-stat');
@@ -1072,7 +1072,7 @@
         }
 
         // Default load: 2026 data
-        loadDashboardOutlet({ filter_year: 2026, filter_atem_type: 2 });
+        if (CFG.tabSingleView !== 'hq') { loadDashboardOutlet({ filter_year: 2026, filter_atem_type: 2 }); }
 
         // Stat card click navigation (Outlet)
         var dashStatsOutlet = document.querySelectorAll('.atem-dash-stat-outlet');

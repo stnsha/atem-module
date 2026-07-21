@@ -1,8 +1,24 @@
 <?php
 $page_title = 'ATEM Dashboard';
-$page_title_actions = '<a href="okr/index.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Switch to OKR Dashboard</a>';
+// $page_title_actions must be set before including header.php (it echoes this
+// during its own render), but the dev-override-aware $atem_permission/
+// $_is_superadmin/$struct aren't resolved until header.php runs lock_adv.php -
+// so this renders unconditionally with an id, and is hidden by inline JS just
+// after the include below once those are actually available.
+$page_title_actions = '<a href="okr/index.php" id="switch-okr-btn" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Switch to OKR Dashboard</a>';
 include('header.php');
 
+$_okr_menu_visible = ((int)$atem_permission >= 3 || $_is_superadmin || in_array((int)$struct, array(4, 5), true));
+?>
+<?php if (!$_okr_menu_visible): ?>
+<script>
+(function () {
+    var el = document.getElementById('switch-okr-btn');
+    if (el) { el.remove(); }
+})();
+</script>
+<?php endif; ?>
+<?php
 $_dash_cur_year = max(2026, (int)date('Y'));
 $dash_year_options = array();
 for ($y = 2026; $y <= $_dash_cur_year; $y++) {
@@ -17,6 +33,15 @@ if (isset($department) && $department !== '') {
         $_dpart = (int)trim($_dpart);
         if ($_dpart > 0) { $dash_user_dept_ids[] = $_dpart; }
     }
+}
+
+// Grade 1 and 2 users only ever belong to one side (HQ or Outlet, per their
+// own department), so showing both tabs is misleading noise - collapse to the
+// single matching tab, like the pre-tab single-view page. Grade 3+ and
+// SuperAdmin keep seeing both tabs as today (deferred to a future task).
+$grade1_single_view = null;
+if (((int)$atem_permission === 1 || (int)$atem_permission === 2) && !$_is_superadmin) {
+    $grade1_single_view = in_array(1, $dash_user_dept_ids, true) ? 'outlet' : 'hq';
 }
 
 $dash_dept_options = array();
@@ -40,7 +65,7 @@ if ($_dept_res) {
 // department 1 ("Outlet") staff, further filtered by the selected outlet.
 $dash_staff_options = array();
 if ((int)$atem_permission === 1 && !$_is_superadmin) {
-    $_me_id = (int)$staff_id;
+    $_me_id = (int)$id_user;
     $_me_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet FROM staff WHERE recycle != 1 AND id = " . $_me_id);
     if ($_me_res && ($_me_row = mysqli_fetch_assoc($_me_res))) {
         $_deptIds = array();
@@ -98,15 +123,17 @@ if ($_outlet_res) {
 
 <script>
 window.ATEM_DASH = <?php echo json_encode(array(
-    'apiUrl'      => ATEM_BASE . 'api.php',
-    'departments' => $dash_dept_options,
-    'staff'       => $dash_staff_options,
-    'pillars'     => $dash_pillar_options,
-    'outlets'     => $dash_outlet_options,
+    'apiUrl'         => ATEM_BASE . 'api.php',
+    'departments'    => $dash_dept_options,
+    'staff'          => $dash_staff_options,
+    'pillars'        => $dash_pillar_options,
+    'outlets'        => $dash_outlet_options,
+    'tabSingleView'  => $grade1_single_view,
 )); ?>;
 </script>
 
 <!-- ATEM Type Tabs -->
+<?php if ($grade1_single_view === null): ?>
 <ul class="nav nav-tabs atem-view-tabs mb-3" id="dash-view-tabs" role="tablist">
     <li class="nav-item" role="presentation">
         <button class="nav-link active atem-tab-color-hq" id="dash-tab-hq-btn" data-bs-toggle="tab"
@@ -122,8 +149,10 @@ window.ATEM_DASH = <?php echo json_encode(array(
         </button>
     </li>
 </ul>
+<?php endif; ?>
 <div class="tab-content">
-    <div class="tab-pane fade show active" id="dash-tab-hq" role="tabpanel" aria-labelledby="dash-tab-hq-btn">
+    <div class="tab-pane fade<?php echo ($grade1_single_view === null || $grade1_single_view === 'hq') ? ' show active' : ''; ?>"
+        id="dash-tab-hq" role="tabpanel" aria-labelledby="dash-tab-hq-btn">
 
         <!-- Filter card -->
         <div class="atem-card atem-filter mb-3">
@@ -414,7 +443,8 @@ window.ATEM_DASH = <?php echo json_encode(array(
         </div>
 
     </div>
-    <div class="tab-pane fade" id="dash-tab-outlet" role="tabpanel" aria-labelledby="dash-tab-outlet-btn">
+    <div class="tab-pane fade<?php echo ($grade1_single_view === 'outlet') ? ' show active' : ''; ?>"
+        id="dash-tab-outlet" role="tabpanel" aria-labelledby="dash-tab-outlet-btn">
 
         <!-- Outlet Filter card -->
         <div class="atem-card atem-filter mb-3">

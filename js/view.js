@@ -17,7 +17,9 @@
     // independently, but share the one filter bar above them. Only the
     // active tab is (re-)rendered when a filter changes; the other tab
     // catches up with the current filters when it's switched to.
-    var activeTab = 'hq';
+    // Defaults to the single-view tab when a grade-1 user only ever has one
+    // (no tab nav exists to switch it via 'shown.bs.tab' in that case).
+    var activeTab = (CFG.tabSingleView === 'outlet') ? 'outlet' : 'hq';
     var tabState = {
         hq:     { page: 1, sortCol: null, sortDir: 1, perPage: 30 },
         outlet: { page: 1, sortCol: null, sortDir: 1, perPage: 30 }

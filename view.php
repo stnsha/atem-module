@@ -53,6 +53,27 @@ if (isset($department) && $department !== '') {
     }
 }
 
+// staff.outlet is comma-separated too (e.g. an Area Manager covering several
+// outlets). Used to narrow a grade-2 Outlet-department viewer down to their
+// own specific outlet(s), instead of every outlet company-wide. $outlet is
+// set by lock_adv.php and is untouched by api.php's own bootstrap below.
+$user_outlet_ids = array();
+if (isset($outlet) && $outlet !== '') {
+    foreach (explode(',', (string)$outlet) as $_opart) {
+        $_opart = (int)trim($_opart);
+        if ($_opart > 0) { $user_outlet_ids[] = $_opart; }
+    }
+}
+
+// Grade 1 and 2 users only ever belong to one side (HQ or Outlet, per their
+// own department), so showing both tabs is misleading noise - collapse to the
+// single matching tab, like the pre-tab single-view page. Grade 3+ and
+// SuperAdmin keep seeing both tabs as today (deferred to a future task).
+$grade1_single_view = null;
+if (((int)$atem_permission === 1 || (int)$atem_permission === 2) && !$_is_superadmin) {
+    $grade1_single_view = in_array(1, $user_dept_ids, true) ? 'outlet' : 'hq';
+}
+
 // Build grade-scoped issuer list for the filter dropdown.
 $issuer_list = array();
 if ((int)$atem_permission === 1 && !$_is_superadmin) {
@@ -115,6 +136,7 @@ if (isset($_SESSION['atem_warning'])) {
 // Enrich each row with resolved names + flattened display fields.
 $view_rows         = array();
 $row_arci_dept_ids = array(); // parallel array used only for grade 2 server-side filtering
+$row_outlet_ids    = array(); // parallel array used only for grade-2-Outlet server-side filtering
 foreach ($rows as $a) {
     $issuer_id = isset($a['issuer_staff_id']) ? (int) $a['issuer_staff_id'] : 0;
     $dept_id   = isset($a['staff_dept_id']) ? (int) $a['staff_dept_id'] : 0;
@@ -123,11 +145,13 @@ foreach ($rows as $a) {
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 
     $outlet_codes = [];
+    $outlet_ids   = [];
     if (isset($a['outlets']) && is_array($a['outlets'])) {
         foreach ($a['outlets'] as $o) {
             $o_id = isset($o['outlet_id']) ? (int) $o['outlet_id'] : 0;
             if ($o_id) {
                 $outlet_codes[] = isset($outlet_names[$o_id]) ? $outlet_names[$o_id] : ('Outlet #' . $o_id);
+                $outlet_ids[]   = $o_id;
             }
         }
     }
@@ -195,6 +219,7 @@ foreach ($rows as $a) {
         'deleted_at'      => isset($a['deleted_at']) ? $a['deleted_at'] : null,
     );
     $row_arci_dept_ids[] = $arci_dept_ids;
+    $row_outlet_ids[]    = $outlet_ids;
 }
 
 // Apply server-side visibility filtering based on grade.
@@ -211,6 +236,24 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
         }
         if ($r['issuer_staff_id'] === (int)$staff_id
                 || in_array((int)$staff_id, $r['arci_staff_ids'])) {
+            $filtered[] = $r;
+        }
+    }
+    $view_rows = $filtered;
+} elseif ((int)$atem_permission === 2 && !$_is_superadmin && in_array(1, $user_dept_ids, true)) {
+    // Grade 2, Outlet department: narrowed to the viewer's own specific
+    // outlet(s) (staff.outlet overlap with the card's own linked outlets) -
+    // department=1 alone is shared by every outlet company-wide, so the
+    // regular dept-overlap rule below would show every outlet's cards.
+    $filtered = array();
+    foreach ($view_rows as $idx => $r) {
+        if ($r['is_deleted']) {
+            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
+                $filtered[] = $r;
+            }
+            continue;
+        }
+        if (array_intersect($user_outlet_ids, $row_outlet_ids[$idx])) {
             $filtered[] = $r;
         }
     }
@@ -274,6 +317,7 @@ $view_config = array(
     'staffId'     => (int) $staff_id,
     'isSuperAdmin' => $_is_superadmin,
     'userGrade'   => (int)$atem_permission,
+    'tabSingleView' => $grade1_single_view,
 );
 ?>
 
@@ -293,6 +337,7 @@ $view_config = array(
 
 <!-- Table -->
 <div class="atem-card">
+    <?php if ($grade1_single_view === null): ?>
     <ul class="nav nav-tabs atem-view-tabs" id="atem-view-tabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active atem-tab-color-hq" id="atem-tab-hq-btn" data-bs-toggle="tab"
@@ -308,8 +353,10 @@ $view_config = array(
             </button>
         </li>
     </ul>
+    <?php endif; ?>
     <div class="tab-content pt-3">
-        <div class="tab-pane fade show active" id="atem-tab-hq" role="tabpanel" aria-labelledby="atem-tab-hq-btn">
+        <div class="tab-pane fade<?php echo ($grade1_single_view === null || $grade1_single_view === 'hq') ? ' show active' : ''; ?>"
+            id="atem-tab-hq" role="tabpanel" aria-labelledby="atem-tab-hq-btn">
 
             <!-- HQ Filter bar -->
             <div class="atem-card atem-filter mb-3">
@@ -430,7 +477,8 @@ $view_config = array(
             </div>
             <div class="atem-pager" id="atem-pager-hq"></div>
         </div>
-        <div class="tab-pane fade" id="atem-tab-outlet" role="tabpanel" aria-labelledby="atem-tab-outlet-btn">
+        <div class="tab-pane fade<?php echo ($grade1_single_view === 'outlet') ? ' show active' : ''; ?>"
+            id="atem-tab-outlet" role="tabpanel" aria-labelledby="atem-tab-outlet-btn">
 
             <!-- Outlet Filter bar -->
             <div class="atem-card atem-filter mb-3">

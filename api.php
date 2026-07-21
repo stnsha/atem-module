@@ -24,6 +24,7 @@ if (!isset($conn)) {
 // Get staff information from session
 $staff_id = null;
 $department = null;
+$outlet = null;
 $nama_staff = null;
 
 if (isset($_SESSION["myusername"])) {
@@ -35,9 +36,36 @@ if (isset($_SESSION["myusername"])) {
         while ($rows = $result->fetch_assoc()) {
             $staff_id   = stripslashes((string)$rows['id']);
             $department = stripslashes((string)$rows['department']);
+            $outlet     = stripslashes((string)$rows['outlet']);
             $nama_staff = stripslashes((string)$rows['nama_staff']);
             $atem_flag  = isset($rows['atem']) ? (int)$rows['atem'] : 0;
         }
+    }
+}
+
+// Dev department-view override (mirrors header.php): when api.php is hit
+// directly over AJAX (dashboard-stats, get-performance-list, etc.) header.php
+// hasn't run in this request, and even when api.php is included after
+// header.php (view.php), the fresh DB query above would otherwise clobber
+// header.php's own override - so this needs to run again here.
+if (isset($_SESSION['atem_dev_role_override']) && isset($_SESSION['atem_dev_view_override'])) {
+    if ($_SESSION['atem_dev_view_override'] === 'outlet') {
+        $department = '1';
+    } elseif ($_SESSION['atem_dev_view_override'] === 'hq') {
+        $_hq_dept_ids = array();
+        foreach (explode(',', (string)$department) as $_hd) {
+            $_hd = (int)trim($_hd);
+            if ($_hd > 0 && $_hd !== 1) {
+                $_hq_dept_ids[] = $_hd;
+            }
+        }
+        if (empty($_hq_dept_ids)) {
+            $_hq_fallback_r = mysqli_query($conn, "SELECT id FROM staff_department WHERE id != 1 ORDER BY id ASC LIMIT 1");
+            if ($_hq_fallback_r && ($_hq_fallback_row = mysqli_fetch_assoc($_hq_fallback_r))) {
+                $_hq_dept_ids[] = (int)$_hq_fallback_row['id'];
+            }
+        }
+        $department = implode(',', $_hq_dept_ids);
     }
 }
 
@@ -1824,6 +1852,16 @@ if (!defined('API_JWT_INCLUDED')) {
                             if ($_dpart > 0) { $_userDeptIds[] = $_dpart; }
                         }
                     }
+                    // staff.outlet is comma-separated too - used to narrow a grade-2
+                    // Outlet-department viewer down to their own specific outlet(s),
+                    // instead of every outlet company-wide (see the elseif below).
+                    $_userOutletIds = array();
+                    if (isset($outlet) && $outlet !== '') {
+                        foreach (explode(',', (string)$outlet) as $_opart) {
+                            $_opart = (int)trim($_opart);
+                            if ($_opart > 0) { $_userOutletIds[] = $_opart; }
+                        }
+                    }
                     $_userStaff = (int)$staff_id;
 
                     if ($_perm === 1) {
@@ -1837,6 +1875,25 @@ if (!defined('API_JWT_INCLUDED')) {
                                 }
                             }
                             if ($_issuerId === $_userStaff || in_array($_userStaff, $_arciIds)) {
+                                $roleFiltered[] = $_item;
+                            }
+                        }
+                        $items = $roleFiltered;
+                    } elseif ($_perm === 2 && in_array(1, $_userDeptIds, true)) {
+                        // Grade 2, Outlet department: narrowed to the viewer's own
+                        // specific outlet(s) (staff.outlet overlap with the card's own
+                        // linked outlets) - department=1 alone is shared by every
+                        // outlet company-wide, so the dept-overlap rule below would
+                        // show every outlet's cards.
+                        $roleFiltered = array();
+                        foreach ($items as $_item) {
+                            $_itemOutletIds = array();
+                            if (isset($_item['outlets']) && is_array($_item['outlets'])) {
+                                foreach ($_item['outlets'] as $_o) {
+                                    if (!empty($_o['outlet_id'])) { $_itemOutletIds[] = (int)$_o['outlet_id']; }
+                                }
+                            }
+                            if (array_intersect($_userOutletIds, $_itemOutletIds)) {
                                 $roleFiltered[] = $_item;
                             }
                         }
@@ -2504,19 +2561,32 @@ if (!defined('API_JWT_INCLUDED')) {
                     // page-admitted user can also load the table.
                     $pl_perm  = 0;
                     $pl_is_sa = false;
-                    $pl_dept_str = '';
                     if (isset($atem_permission)) {
+                        // Included after header.php ran (e.g. from a page) - already
+                        // dev-override-aware (header.php bakes the override into both
+                        // $atem_permission and $_is_superadmin).
                         $pl_perm  = (int)$atem_permission;
                         $pl_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
-                        $pl_dept_str = isset($department) ? (string)$department : '';
+                    } elseif (isset($_SESSION['atem_dev_role_override'])) {
+                        // Direct-AJAX call (how staff_performance/index.php's JS actually
+                        // calls this action) - header.php never ran in this request, so
+                        // $atem_permission/$_is_superadmin above are simply undefined.
+                        // Mirrors dashboard-stats' identical fallback tier.
+                        $pl_perm  = (int)$_SESSION['atem_dev_role_override'];
+                        $pl_is_sa = false;
                     } elseif ($staff_id) {
-                        $_pp_res = mysqli_query($conn, "SELECT grade, atem, department FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_pp_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_pp_res && ($_pp_row = mysqli_fetch_assoc($_pp_res))) {
                             $pl_perm  = (int)$_pp_row['grade'];
                             $pl_is_sa = ((int)$_pp_row['atem'] === 1);
-                            $pl_dept_str = (string)$_pp_row['department'];
                         }
                     }
+                    // $department/$outlet are always already resolved (and dev-view-
+                    // override aware) by api.php's own bootstrap at the top of this
+                    // file, regardless of which branch above resolved grade/SA - no
+                    // separate re-query needed.
+                    $pl_dept_str   = isset($department) ? (string)$department : '';
+                    $pl_outlet_str = isset($outlet)     ? (string)$outlet     : '';
                     $pl_dept_ids = array();
                     if ($pl_dept_str !== '') {
                         foreach (explode(',', $pl_dept_str) as $_pld) {
@@ -2524,10 +2594,27 @@ if (!defined('API_JWT_INCLUDED')) {
                             if ($_pld > 0) { $pl_dept_ids[] = $_pld; }
                         }
                     }
+                    // staff.outlet is comma-separated too - used to narrow a grade-2
+                    // Outlet-department caller down to their own specific outlet(s),
+                    // instead of every outlet company-wide (see the scoping below).
+                    $pl_outlet_ids = array();
+                    if ($pl_outlet_str !== '') {
+                        foreach (explode(',', $pl_outlet_str) as $_plo) {
+                            $_plo = (int)trim($_plo);
+                            if ($_plo > 0) { $pl_outlet_ids[] = $_plo; }
+                        }
+                    }
                     if ($pl_perm < 2 && !$pl_is_sa && !in_array(17, $pl_dept_ids, true)) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
+                    // Grade-2/3 non-SA callers only see rows scoped to their own
+                    // department(s) - a grade-2 Outlet-department caller is narrowed
+                    // further to their own specific outlet(s). Previously this action
+                    // had no caller-side scoping at all (only the optional dept/grade/
+                    // struct/staff UI filters below), so e.g. a grade-2 user picking
+                    // "All Department" could see every department's performance data.
+                    $pl_is_grade2_outlet = ($pl_perm === 2 && !$pl_is_sa && in_array(1, $pl_dept_ids, true));
 
                     $pl_month      = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
                     $pl_year       = isset($jsonData['year'])    ? (int)$jsonData['year']    : (int)date('Y');
@@ -2563,13 +2650,14 @@ if (!defined('API_JWT_INCLUDED')) {
                     // view.php's $staff_positions/$staff_has_outlet convention:
                     // a staff member "is from outlet" based on their own
                     // staff.outlet assignment, not a specific card's dept_id.
-                    $pl_staff_names    = array();
-                    $pl_staff_grade    = array();
-                    $pl_staff_struct   = array();
-                    $pl_staff_position = array();
-                    $pl_dept_names     = array();
-                    $pl_grade_labels   = array();
-                    $pl_struct_labels  = array();
+                    $pl_staff_names      = array();
+                    $pl_staff_grade      = array();
+                    $pl_staff_struct     = array();
+                    $pl_staff_position   = array();
+                    $pl_staff_outlet_ids = array();
+                    $pl_dept_names       = array();
+                    $pl_grade_labels     = array();
+                    $pl_struct_labels    = array();
 
                     $pl_sr = mysqli_query($conn, "SELECT s.id, s.nama_staff, s.grade, s.struct, s.outlet, p.position_name
                                                    FROM staff s
@@ -2584,6 +2672,12 @@ if (!defined('API_JWT_INCLUDED')) {
                             $pl_staff_position[$pl_id_] = !empty($pl_r['outlet'])
                                 ? (!empty($pl_r['position_name']) ? $pl_r['position_name'] : '-')
                                 : null;
+                            $_pl_sids = array();
+                            foreach (explode(',', (string)$pl_r['outlet']) as $_plso) {
+                                $_plso = (int)trim($_plso);
+                                if ($_plso > 0) { $_pl_sids[] = $_plso; }
+                            }
+                            $pl_staff_outlet_ids[$pl_id_] = $_pl_sids;
                         }
                     }
                     $pl_dr = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
@@ -2593,11 +2687,29 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pl_str = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
                     if ($pl_str) { while ($pl_r = mysqli_fetch_assoc($pl_str)) { $pl_struct_labels[(int)$pl_r['id']] = $pl_r['struct_name']; } }
 
+                    // Grades 2 and 3 (non-SA) are mandatorily scoped to their own
+                    // department overlap - a grade-2 Outlet-department caller is
+                    // narrowed further to their own specific outlet(s). Dept-17
+                    // grade-1/below users (the only other way to reach this gate)
+                    // are intentionally NOT scoped here - People Management needs
+                    // to see/lock payroll company-wide, mirroring the page's own
+                    // "single tier" access model (no narrower carve-out).
+                    $pl_is_scoped_grade = (($pl_perm === 2 || $pl_perm === 3) && !$pl_is_sa);
+
                     $pl_out = array();
                     foreach ($pl_live['data'] as $pl_sid => $pl_rec) {
                         $pl_rec_dept   = isset($pl_rec['dept_id']) ? (int)$pl_rec['dept_id'] : 0;
                         $pl_grade_id   = isset($pl_staff_grade[$pl_sid])  ? $pl_staff_grade[$pl_sid]  : null;
                         $pl_struct_id  = isset($pl_staff_struct[$pl_sid]) ? $pl_staff_struct[$pl_sid] : null;
+
+                        if ($pl_is_scoped_grade) {
+                            if ($pl_is_grade2_outlet) {
+                                $_pl_target_outlet_ids = isset($pl_staff_outlet_ids[$pl_sid]) ? $pl_staff_outlet_ids[$pl_sid] : array();
+                                if (!array_intersect($pl_outlet_ids, $_pl_target_outlet_ids)) { continue; }
+                            } elseif (!in_array($pl_rec_dept, $pl_dept_ids, true)) {
+                                continue;
+                            }
+                        }
 
                         if ($pl_dept   > 0 && $pl_rec_dept  !== $pl_dept)   { continue; }
                         if ($pl_grade  > 0 && $pl_grade_id  !== $pl_grade)  { continue; }
@@ -2640,29 +2752,23 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'bulk-lock-payout':
-                    // Access: grade 2+, People Management (dept 17), or SuperAdmin.
-                    // Resolved fresh from DB — same fallback the single-record
-                    // update-payout-status case already uses when api.php is hit directly (no $atem_permission).
-                    $pyk_perm  = 0;
+                    // Access: SuperAdmin only. Resolved fresh from DB — same fallback
+                    // the single-record update-payout-status case already uses when
+                    // api.php is hit directly (no $atem_permission). Dev-role-override
+                    // suppresses SA (mirrors header.php) so the Dev Grade toolbar can
+                    // simulate a non-SuperAdmin's lack of access.
                     $pyk_is_sa = false;
-                    if (isset($atem_permission)) {
-                        $pyk_perm  = (int)$atem_permission;
-                        $pyk_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
+                    if (isset($_is_superadmin)) {
+                        $pyk_is_sa = (bool)$_is_superadmin;
+                    } elseif (isset($_SESSION['atem_dev_role_override'])) {
+                        $pyk_is_sa = false;
                     } elseif ($staff_id) {
-                        $_pyk_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_pyk_res = mysqli_query($conn, "SELECT atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_pyk_res && ($_pyk_row = mysqli_fetch_assoc($_pyk_res))) {
-                            $pyk_perm  = (int)$_pyk_row['grade'];
                             $pyk_is_sa = ((int)$_pyk_row['atem'] === 1);
                         }
                     }
-                    $pyk_dept_ids = array();
-                    if (isset($department) && $department !== '') {
-                        foreach (explode(',', (string)$department) as $_pykd) {
-                            $_pykd = (int)trim($_pykd);
-                            if ($_pykd > 0) { $pyk_dept_ids[] = $_pykd; }
-                        }
-                    }
-                    if (!$pyk_is_sa && $pyk_perm < 2 && !in_array(17, $pyk_dept_ids, true)) {
+                    if (!$pyk_is_sa) {
                         $response = array('success' => false, 'message' => 'Insufficient permission to lock payout.');
                         break;
                     }
@@ -2699,32 +2805,22 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'bulk-unlock-payout':
-                    // Access: grade 2+, People Management (dept 17), or SuperAdmin — same
-                    // tier as lock/export. Resolved fresh from DB (not the dev-override-
-                    // suppressed session flag) when hit without page context.
-                    $pyu_perm  = 0;
+                    // Access: SuperAdmin only. Resolved fresh from DB (not the dev-
+                    // override-suppressed session flag) when hit without page context.
+                    // Dev-role-override suppresses SA (mirrors header.php) so the Dev
+                    // Grade toolbar can simulate a non-SuperAdmin's lack of access.
                     $pyu_is_sa = false;
-                    $pyu_dept_str = '';
-                    if (isset($atem_permission)) {
-                        $pyu_perm  = (int)$atem_permission;
-                        $pyu_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
-                        $pyu_dept_str = isset($department) ? (string)$department : '';
+                    if (isset($_is_superadmin)) {
+                        $pyu_is_sa = (bool)$_is_superadmin;
+                    } elseif (isset($_SESSION['atem_dev_role_override'])) {
+                        $pyu_is_sa = false;
                     } elseif ($staff_id) {
-                        $_pyu_res = mysqli_query($conn, "SELECT grade, atem, department FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_pyu_res = mysqli_query($conn, "SELECT atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_pyu_res && ($_pyu_row = mysqli_fetch_assoc($_pyu_res))) {
-                            $pyu_perm  = (int)$_pyu_row['grade'];
                             $pyu_is_sa = ((int)$_pyu_row['atem'] === 1);
-                            $pyu_dept_str = (string)$_pyu_row['department'];
                         }
                     }
-                    $pyu_dept_ids = array();
-                    if ($pyu_dept_str !== '') {
-                        foreach (explode(',', $pyu_dept_str) as $_pyud) {
-                            $_pyud = (int)trim($_pyud);
-                            if ($_pyud > 0) { $pyu_dept_ids[] = $_pyud; }
-                        }
-                    }
-                    if (!$pyu_is_sa && $pyu_perm < 2 && !in_array(17, $pyu_dept_ids, true)) {
+                    if (!$pyu_is_sa) {
                         $response = array('success' => false, 'message' => 'Insufficient permission to unlock payout.');
                         break;
                     }
