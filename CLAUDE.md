@@ -87,12 +87,12 @@ So grades 2–5 can open and read any card even though their list/dashboard only
 | All pages | `$atem_permission === 0` | `/odb/index.php` (login) |
 | `access_control/index.php` | `$atem_permission < 1` | `/odb/atem/index.php` |
 | `staff_performance/index.php` | `$atem_permission < 2` AND not dept 17 | `/odb/atem/index.php` |
-| `staff_performance/edit.php` | `$atem_permission < 4` | `/odb/atem/index.php` |
+| `staff_performance/edit.php` | `$atem_permission < 3` | `/odb/atem/index.php` |
 | `access_control/masterlist.php` | `$atem_permission < 4` | `/odb/atem/index.php` |
 
 SuperAdmin (`$atem === 1`) passes all grade-based page guards above via `$_is_superadmin` (set by `header.php`). SuperAdmin-only features (Masterlist nav, struct window toggle, library writes) are gated on `$_is_superadmin` or `$atem === 1` directly.
 
-**`staff_performance/index.php` access tier** (grade 2+, People Management dept 17, or SuperAdmin — checked via `$department`'s comma-separated dept ids, same convention as `access_control/backend.php`): this single tier gates the page itself, the `get-performance-list`/`get-staff-atem-list` data endpoints, the plain Export/Export Selected buttons, and the Lock Payout/Unlock/Export & Lock family of buttons on the HQ and Outlet tabs alike — there is no narrower export-only or stricter lock-only carve-out. `staff_performance/edit.php` (the per-staff/per-ATEM detail page reached via each row's "View" link) keeps its own separate `$atem_permission < 4` guard, unchanged. Payout lock/unlock server-side logic lives in `api.php`'s `resolvePayoutTargetStaffIds()`/`resolvePayoutAtemIds()` (odb) and `AtemController::bulkLockPayout()`/`bulkUnlockPayout()` (atem-api) — the atem-api endpoints trust odb's authorization decision and do not re-check grade themselves.
+**`staff_performance/index.php` access tier** (grade 2+, People Management dept 17, or SuperAdmin — checked via `$department`'s comma-separated dept ids, same convention as `access_control/backend.php`): this single tier gates the page itself, the `get-performance-list`/`get-staff-atem-list` data endpoints, the plain Export/Export Selected buttons, and the Lock Payout/Unlock/Export & Lock family of buttons on the HQ and Outlet tabs alike — there is no narrower export-only or stricter lock-only carve-out. `staff_performance/edit.php` (the per-staff/per-ATEM detail page reached via each row's "View" link) keeps its own separate `$atem_permission < 3` guard (grade 3+ or SuperAdmin) — grades 1-2 still see a "View" button on rows within their reach but are redirected away if clicked. Payout lock/unlock server-side logic lives in `api.php`'s `resolvePayoutTargetStaffIds()`/`resolvePayoutAtemIds()` (odb) and `AtemController::bulkLockPayout()`/`bulkUnlockPayout()` (atem-api) — the atem-api endpoints trust odb's authorization decision and do not re-check grade themselves.
 
 **Navbar visibility** (navbar resolves `$atem_role` from `$atem_permission`):
 

@@ -90,17 +90,19 @@ for ($y = 2026; $y <= $init_year; $y++) {
 $perf_status_options = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
 $perf_default_statuses = array('Completed', 'Completed with Excellence');
 
-// Staff filter dropdown (searchable, like the one on index.php). Grades 2-3
-// (non-SA) are narrowed to their own department overlap here, mirroring
+// Staff filter dropdown (searchable, like the one on index.php). Only grade 2
+// (non-SA) is narrowed to their own department overlap here, mirroring
 // api.php's get-performance-list mandatory scoping - a grade-2 Outlet-
 // department viewer is narrowed further to their own specific outlet(s),
-// since department=1 alone is shared by every outlet company-wide. Dept-17
-// grade-1 users and grade 4+/SuperAdmin see every staff member, matching the
-// same "no narrower carve-out" access model as the table itself.
-// dept_ids lets the frontend narrow options further when a specific
-// Department filter is also selected.
+// since department=1 alone is shared by every outlet company-wide. Grade 3+
+// and SuperAdmin see every staff member company-wide, same as grade 4/5 -
+// matches the Department filter dropdown above, which already shows every
+// department starting at grade 3. Dept-17 grade-1 users see every staff
+// member too, matching the same "no narrower carve-out" access model as the
+// table itself. dept_ids lets the frontend narrow options further when a
+// specific Department filter is also selected.
 $_perf_is_grade2_outlet = ((int)$atem_permission === 2 && !$_is_superadmin && in_array(1, $_perf_dept_ids, true));
-$_perf_is_scoped_grade  = (((int)$atem_permission === 2 || (int)$atem_permission === 3) && !$_is_superadmin);
+$_perf_is_scoped_grade  = ((int)$atem_permission === 2 && !$_is_superadmin);
 $perf_staff_options = array();
 $_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
 if ($_pso_res) {
@@ -147,8 +149,34 @@ if ($_pso_res) {
 
 #atem-detail-tbody td:first-child,
 #atem-detail-tbody td:nth-child(4),
-#atem-detail-tbody td:nth-child(5) {
+#atem-detail-tbody td:nth-child(5),
+#okr-detail-tbody td:first-child,
+#okr-detail-tbody td:nth-child(4),
+#okr-detail-tbody td:nth-child(5) {
     white-space: nowrap;
+}
+
+#atemDetailModal .modal-header,
+#okrDetailModal .modal-header {
+    padding: 14px 20px;
+}
+#atemDetailModal .modal-title,
+#okrDetailModal .modal-title {
+    padding: 0;
+}
+#atem-detail-table-wrap,
+#okr-detail-table-wrap {
+    padding: 14px 20px 18px;
+}
+#atem-detail-table-wrap table th,
+#atem-detail-table-wrap table td,
+#okr-detail-table-wrap table th,
+#okr-detail-table-wrap table td {
+    padding: 10px 14px;
+}
+#atem-detail-loading, #okr-detail-loading,
+#atem-detail-error, #okr-detail-error {
+    padding: 20px;
 }
 
 #recalc-progress-wrap span {
@@ -331,17 +359,16 @@ if ($_pso_res) {
                     <th>Grade</th>
                     <th>Evaluation Structure</th>
                     <th class="text-center" title="Click to view details">ATEM</th>
-                    <th class="text-center" title="Click to view details">Complete</th>
-                    <th class="text-center" title="Click to view details">Active</th>
-                    <th class="text-center" title="Click to view details">Extend</th>
-                    <th class="text-center" title="Click to view details">Failed</th>
+                    <th class="text-center" title="Click to view details">Completed ATEM</th>
+                    <th class="text-center" title="Click to view details">OKR</th>
+                    <th class="text-center" title="Click to view details">Completed OKR</th>
                     <th class="text-end">Est. Reward</th>
                     <th>Action</th>
                 </tr>
             </thead>
             <tbody id="perf-tbody">
                 <tr>
-                    <td colspan="11" class="text-center text-muted py-4">Loading...</td>
+                    <td colspan="10" class="text-center text-muted py-4">Loading...</td>
                 </tr>
             </tbody>
         </table>
@@ -498,17 +525,14 @@ if ($_pso_res) {
                     <th>Grade</th>
                     <th>Evaluation Structure</th>
                     <th class="text-center" title="Click to view details">ATEM</th>
-                    <th class="text-center" title="Click to view details">Complete</th>
-                    <th class="text-center" title="Click to view details">Active</th>
-                    <th class="text-center" title="Click to view details">Extend</th>
-                    <th class="text-center" title="Click to view details">Failed</th>
+                    <th class="text-center" title="Click to view details">Completed ATEM</th>
                     <th class="text-end">Est. Reward</th>
                     <th>Action</th>
                 </tr>
             </thead>
             <tbody id="perfo-tbody">
                 <tr>
-                    <td colspan="11" class="text-center text-muted py-4">Loading...</td>
+                    <td colspan="8" class="text-center text-muted py-4">Loading...</td>
                 </tr>
             </tbody>
         </table>
@@ -523,8 +547,8 @@ if ($_pso_res) {
 <div class="modal fade" id="atemDetailModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
-            <div class="modal-header py-2">
-                <h6 class="modal-title mb-0" id="atem-detail-modal-title">ATEM Details</h6>
+            <div class="modal-header">
+                <h6 class="modal-title mb-0" id="atem-detail-modal-title">Completed ATEM</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-0">
@@ -545,6 +569,39 @@ if ($_pso_res) {
                             </tr>
                         </thead>
                         <tbody id="atem-detail-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- OKR Detail Modal -->
+<div class="modal fade" id="okrDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title mb-0" id="okr-detail-modal-title">Completed OKR</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="okr-detail-loading" class="text-center py-4" style="display:none;">Loading...</div>
+                <div id="okr-detail-error" class="text-danger px-3 py-2" style="display:none;"></div>
+                <div class="table-responsive" id="okr-detail-table-wrap">
+                    <table class="table table-hover align-middle atem-view-tbl mb-0">
+                        <thead>
+                            <tr>
+                                <th>OKR ID</th>
+                                <th>Objective</th>
+                                <th>Level</th>
+                                <th>Start</th>
+                                <th>End</th>
+                                <th>Closure Date</th>
+                                <th>Status</th>
+                                <th>My Role</th>
+                            </tr>
+                        </thead>
+                        <tbody id="okr-detail-tbody"></tbody>
                     </table>
                 </div>
             </div>
@@ -616,13 +673,6 @@ var PERF_CFG = <?php echo json_encode(array(
 
 var PERF_API_URL = PERF_CFG.apiUrl;
 
-var PERF_COL_LABELS = {
-    'atem': 'All ATEM',
-    'complete': 'Completed',
-    'active': 'Active',
-    'extend': 'Extended',
-    'failed': 'Failed'
-};
 var STATUS_COLOR = {
     'Draft': '#6c757d',
     'Active': '#0d6efd',
@@ -1261,7 +1311,7 @@ function renderTable(data, payload) {
 
     if (!data || !data.length) {
         tbody.innerHTML =
-            '<tr><td colspan="11" class="text-center text-muted py-4">No records found for this period.</td></tr>';
+            '<tr><td colspan="10" class="text-center text-muted py-4">No records found for this period.</td></tr>';
         renderPerfPager(0);
         return;
     }
@@ -1295,7 +1345,9 @@ function renderTable(data, payload) {
         var rec = pageData[i];
 
         var editUrl = window.ATEM_MODULE_BASE + 'staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
-            '&month=' + month + '&year=' + year + '&statuses=' + statusesQs;
+            '&month=' + month + '&year=' + year + '&quarter=' + quarter + '&statuses=' + statusesQs;
+        var atemEditUrl = editUrl + '&tab=atem';
+        var okrEditUrl  = editUrl + '&tab=okr';
         var exportUrl = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance&ids=' + rec.id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
@@ -1304,16 +1356,15 @@ function renderTable(data, payload) {
         html += '<tr>' +
             '<td><input type="checkbox" class="perf-row-cb" value="' + rec.id + '"></td>' +
             '<td>' +
-            '<div style="font-weight:500;">' + escHtml(rec.staff_name) + '</div>' +
+            '<div style="font-size:13px;font-weight:500;">' + escHtml(rec.staff_name) + '</div>' +
             '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.dept_name) + '</div>' +
             '</td>' +
             '<td>' + escHtml(rec.grade_label) + '</td>' +
             '<td>' + escHtml(rec.struct_label) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="atem" style="cursor:pointer;">' + countCell(rec.total_atem) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="complete" style="cursor:pointer;">' + countCell(rec.complete_count) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="active" style="cursor:pointer;">' + countCell(rec.active_count) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="extend" style="cursor:pointer;">' + countCell(rec.extend_count) + '</td>' +
-            '<td class="text-center perf-count-cell" data-staff-id="' + rec.staff_id + '" data-col="failed" style="cursor:pointer;">' + countCell(rec.failed_count) + '</td>' +
+            '<td class="text-center">' + (rec.total_atem > 0 ? '<a class="perf-count-link" href="' + escHtml(atemEditUrl) + '">' + rec.total_atem + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
+            '<td class="text-center perf-count-cell" data-module="atem" data-staff-id="' + rec.staff_id + '" data-col="complete" style="cursor:pointer;">' + countCell(rec.complete_count) + '</td>' +
+            '<td class="text-center">' + (rec.total_okr > 0 ? '<a class="perf-count-link" href="' + escHtml(okrEditUrl) + '">' + rec.total_okr + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
+            '<td class="text-center perf-count-cell" data-module="okr" data-staff-id="' + rec.staff_id + '" data-col="complete" style="cursor:pointer;">' + countCell(rec.complete_okr_count) + '</td>' +
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '">View</a>' +
@@ -1337,7 +1388,7 @@ function renderTableOutlet(data, payload) {
 
     if (!data || !data.length) {
         tbody.innerHTML =
-            '<tr><td colspan="11" class="text-center text-muted py-4">No records found for this period.</td></tr>';
+            '<tr><td colspan="8" class="text-center text-muted py-4">No records found for this period.</td></tr>';
         renderPerfPagerOutlet(0);
         return;
     }
@@ -1371,7 +1422,8 @@ function renderTableOutlet(data, payload) {
         var rec = pageData[i];
 
         var editUrl = window.ATEM_MODULE_BASE + 'staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
-            '&month=' + month + '&year=' + year + '&statuses=' + statusesQs;
+            '&month=' + month + '&year=' + year + '&quarter=' + quarter + '&statuses=' + statusesQs;
+        var atemEditUrl = editUrl + '&tab=atem';
         var exportUrl = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance&ids=' + rec.id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&grade=' + grade + '&struct=' + struct +
@@ -1380,16 +1432,13 @@ function renderTableOutlet(data, payload) {
         html += '<tr>' +
             '<td><input type="checkbox" class="perfo-row-cb" value="' + rec.id + '"></td>' +
             '<td>' +
-            '<div style="font-weight:500;">' + escHtml(rec.staff_name) + '</div>' +
+            '<div style="font-size:13px;font-weight:500;">' + escHtml(rec.staff_name) + '</div>' +
             '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.position_label) + '</div>' +
             '</td>' +
             '<td>' + escHtml(rec.grade_label) + '</td>' +
             '<td>' + escHtml(rec.struct_label) + '</td>' +
-            '<td class="text-center perfo-count-cell" data-staff-id="' + rec.staff_id + '" data-col="atem" style="cursor:pointer;">' + countCell(rec.total_atem) + '</td>' +
-            '<td class="text-center perfo-count-cell" data-staff-id="' + rec.staff_id + '" data-col="complete" style="cursor:pointer;">' + countCell(rec.complete_count) + '</td>' +
-            '<td class="text-center perfo-count-cell" data-staff-id="' + rec.staff_id + '" data-col="active" style="cursor:pointer;">' + countCell(rec.active_count) + '</td>' +
-            '<td class="text-center perfo-count-cell" data-staff-id="' + rec.staff_id + '" data-col="extend" style="cursor:pointer;">' + countCell(rec.extend_count) + '</td>' +
-            '<td class="text-center perfo-count-cell" data-staff-id="' + rec.staff_id + '" data-col="failed" style="cursor:pointer;">' + countCell(rec.failed_count) + '</td>' +
+            '<td class="text-center">' + (rec.total_atem > 0 ? '<a class="perf-count-link" href="' + escHtml(atemEditUrl) + '">' + rec.total_atem + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
+            '<td class="text-center perfo-count-cell" data-module="atem" data-staff-id="' + rec.staff_id + '" data-col="complete" style="cursor:pointer;">' + countCell(rec.complete_count) + '</td>' +
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '">View</a>' +
@@ -1754,49 +1803,76 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Count cell click -> ATEM detail modal (shared by both tabs; atemType
-    // scopes the drill-down to the tab that was actually clicked, so an
-    // Outlet-tab row never pulls in a staff member's HQ cards and vice versa).
-    var detailModal = document.getElementById('atemDetailModal');
-    var bsDetailModal = new bootstrap.Modal(detailModal);
+    // Count cell click -> ATEM/OKR detail modal (shared by both tabs; atemType
+    // scopes the ATEM drill-down to the tab that was actually clicked, so an
+    // Outlet-tab row never pulls in a staff member's HQ cards and vice versa -
+    // OKR has no HQ/Outlet split, so atemType is simply ignored for it). Only
+    // the "Completed ATEM"/"Completed OKR" columns open these modals now (the
+    // "ATEM"/"OKR" total columns link straight to edit.php instead), so the
+    // bucket fetched here is always 'complete'.
+    var bsDetailModal = new bootstrap.Modal(document.getElementById('atemDetailModal'));
+    var bsOkrDetailModal = new bootstrap.Modal(document.getElementById('okrDetailModal'));
+    var ROLE_COLOR_ATEM = {
+        'Issuer': '#198754',
+        'Area Manager': '#20c997',
+        'A': '#6610f2',
+        'R': '#0d6efd',
+        'C': '#fd7e14',
+        'I': '#6c757d'
+    };
+    var ROLE_COLOR_OKR = {
+        'Owner': '#6610f2',
+        'Owner 2': '#0d6efd',
+        'Issuer': '#198754',
+        'Incentivised': '#20c997'
+    };
 
-    function openAtemDetailModal(targetSid, col, payload, atemType) {
+    function openPerfDetailModal(module, targetSid, payload, atemType) {
         if (!targetSid) {
             return;
         }
+        var isOkr = (module === 'okr');
+        var prefix = isOkr ? 'okr-detail' : 'atem-detail';
+        var bsModal = isOkr ? bsOkrDetailModal : bsDetailModal;
+        var action = isOkr ? 'get-staff-okr-list' : 'get-staff-atem-list';
+        var idPrefix = isOkr ? '#OK' : '#AT';
+        var roleColors = isOkr ? ROLE_COLOR_OKR : ROLE_COLOR_ATEM;
+
         var targetMonth = payload.month || 0;
         var targetYear = payload.year || PERF_CFG.initYear;
         var targetQuarter = payload.quarter || 0;
         var targetStatuses = payload.statuses || [];
 
-        var modalTitle = document.getElementById('atem-detail-modal-title');
-        var loading = document.getElementById('atem-detail-loading');
-        var errorEl = document.getElementById('atem-detail-error');
-        var tableWrap = document.getElementById('atem-detail-table-wrap');
-        var tbody = document.getElementById('atem-detail-tbody');
+        var loading = document.getElementById(prefix + '-loading');
+        var errorEl = document.getElementById(prefix + '-error');
+        var tableWrap = document.getElementById(prefix + '-table-wrap');
+        var tbody = document.getElementById(prefix + '-tbody');
 
-        modalTitle.textContent = PERF_COL_LABELS[col] || 'ATEM Details';
         loading.style.display = 'block';
         tableWrap.style.display = 'none';
         errorEl.style.display = 'none';
         tbody.innerHTML = '';
-        bsDetailModal.show();
+        bsModal.show();
+
+        var body = {
+            action: action,
+            target_staff_id: targetSid,
+            month: targetMonth,
+            year: targetYear,
+            quarter: targetQuarter,
+            statuses: targetStatuses,
+            col: 'complete'
+        };
+        if (!isOkr) {
+            body.filter_atem_type = atemType;
+        }
 
         fetch(PERF_API_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    action: 'get-staff-atem-list',
-                    target_staff_id: targetSid,
-                    month: targetMonth,
-                    year: targetYear,
-                    quarter: targetQuarter,
-                    statuses: targetStatuses,
-                    filter_atem_type: atemType,
-                    col: col
-                })
+                body: JSON.stringify(body)
             })
             .then(function(r) {
                 return r.json();
@@ -1804,19 +1880,11 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(function(res) {
                 loading.style.display = 'none';
                 if (!res.success) {
-                    errorEl.textContent = res.message || 'Failed to load ATEM data.';
+                    errorEl.textContent = res.message || 'Failed to load data.';
                     errorEl.style.display = 'block';
                     return;
                 }
                 var data = res.data || [];
-                var ROLE_COLOR = {
-                    'Issuer': '#198754',
-                    'Area Manager': '#20c997',
-                    'A': '#6610f2',
-                    'R': '#0d6efd',
-                    'C': '#fd7e14',
-                    'I': '#6c757d'
-                };
                 if (!data.length) {
                     tbody.innerHTML =
                         '<tr><td colspan="8" class="text-center text-muted py-3">No records.</td></tr>';
@@ -1835,14 +1903,14 @@ document.addEventListener('DOMContentLoaded', function() {
                             var badges = [];
                             for (var ri = 0; ri < row.my_role.length; ri++) {
                                 var rname = row.my_role[ri];
-                                var rc = ROLE_COLOR[rname] || '#6c757d';
+                                var rc = roleColors[rname] || '#6c757d';
                                 badges.push('<span class="atem-pill" style="background-color:' + escHtml(rc) + ';">' +
                                     escHtml(rname) + '</span>');
                             }
                             roleCell = '<div class="perf-role-cell">' + badges.join('') + '</div>';
                         }
                         html += '<tr>' +
-                            '<td>#AT' + row.id + '</td>' +
+                            '<td>' + idPrefix + row.id + '</td>' +
                             '<td>' + escHtml(row.title) + '</td>' +
                             '<td>' + escHtml(row.level_label || '-') + '</td>' +
                             '<td>' + formatDate(row.start_date) + '</td>' +
@@ -1866,12 +1934,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('click', function(e) {
         var cell = e.target.closest('.perf-count-cell');
         if (cell) {
-            openAtemDetailModal(parseInt(cell.getAttribute('data-staff-id'), 10), cell.getAttribute('data-col'), _currentPayload, 1);
+            openPerfDetailModal(cell.getAttribute('data-module'), parseInt(cell.getAttribute('data-staff-id'), 10), _currentPayload, 1);
             return;
         }
         var cellO = e.target.closest('.perfo-count-cell');
         if (cellO) {
-            openAtemDetailModal(parseInt(cellO.getAttribute('data-staff-id'), 10), cellO.getAttribute('data-col'), _currentPayloadOutlet, 2);
+            openPerfDetailModal(cellO.getAttribute('data-module'), parseInt(cellO.getAttribute('data-staff-id'), 10), _currentPayloadOutlet, 2);
         }
     });
 
@@ -2043,7 +2111,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     if (bsPayoutLockModal) { bsPayoutLockModal.hide(); }
                     var labelEl = document.getElementById(action.labelElId);
-                    if (labelEl) { labelEl.textContent = 'Locked ' + res.locked + ', skipped ' + res.skipped + '.'; }
+                    if (labelEl) { labelEl.textContent = 'Locked ' + res.atem_locked + ' ATEM / ' + res.okr_locked + ' OKR, skipped ' + (res.atem_skipped + res.okr_skipped) + '.'; }
                     _pendingLockAction = null;
                     if (action.reloadFn) { action.reloadFn(); }
                     if (action.andExport && action.exportUrl) {
@@ -2092,7 +2160,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     if (bsPayoutUnlockModal) { bsPayoutUnlockModal.hide(); }
                     var labelEl = document.getElementById(action.labelElId);
-                    if (labelEl) { labelEl.textContent = 'Unlocked ' + res.unlocked + ', skipped ' + res.skipped + '.'; }
+                    if (labelEl) { labelEl.textContent = 'Unlocked ' + res.atem_unlocked + ' ATEM / ' + res.okr_unlocked + ' OKR, skipped ' + (res.atem_skipped + res.okr_skipped) + '.'; }
                     _pendingUnlockAction = null;
                     if (action.reloadFn) { action.reloadFn(); }
                 })

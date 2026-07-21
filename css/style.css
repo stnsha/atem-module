@@ -1715,6 +1715,14 @@ button {
     color: #6f42c1;
     border-color: #6f42c1;
 }
+.atem-view-tabs .nav-link.atem-tab-color-atem.active {
+    color: #0d6efd;
+    border-color: #0d6efd;
+}
+.atem-view-tabs .nav-link.atem-tab-color-okr.active {
+    color: #20c997;
+    border-color: #20c997;
+}
 .atem-view-tabs .nav-link i {
     font-size: 15px;
 }
