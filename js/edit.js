@@ -64,7 +64,7 @@
 
     function scrollToFirstError() {
         var ids = ['atem-title-error', 'atem-level-error', 'atem-rule-error', 'tl-start-error',
-                   'tl-end-error', 'tl-status-error', 'arci-error', 'reflink-section-error', 'atem-save-error'];
+                   'tl-end-error', 'tl-status-error', 'tl-remarks-error', 'arci-error', 'reflink-section-error', 'atem-save-error'];
         for (var i = 0; i < ids.length; i++) {
             var el = $(ids[i]);
             if (el && el.textContent.trim() !== '') {
@@ -939,6 +939,7 @@
     function validateFinal() {
         setError('atem-title-error', ''); setError('atem-level-error', ''); setError('atem-rule-error', '');
         setError('tl-start-error', ''); setError('tl-end-error', ''); setError('tl-status-error', '');
+        setError('tl-remarks-error', '');
         setError('reflink-section-error', ''); setError('atem-save-error', '');
         if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return false; }
         if (!$('atem-level').value) { setError('atem-level-error', 'ATEM Complexity Levelis required.'); return false; }
@@ -958,6 +959,17 @@
         var MUST_CHANGE = ['Draft'];
         if (IS_ISSUER && MUST_CHANGE.indexOf(originalStatusValue) >= 0 && String($('tl-status').value) === String(REC.atem_status_id)) {
             setError('tl-status-error', 'The current status is "' + originalStatusValue + '". Please change the status before saving.');
+            return false;
+        }
+        // Non-issuer SuperAdmin changing status on a non-terminal card must explain why.
+        // Terminal-original-status cards go through applyTerminalEditRestrictions() instead,
+        // which locks tl-remarks entirely, so they're excluded here.
+        var SA_TERMINAL_STATUSES = ['Completed', 'Failed', 'Completed with Extension'];
+        var isNonIssuerSuperAdminStatusEdit = !!CFG.isSuperAdmin && !IS_ISSUER
+            && SA_TERMINAL_STATUSES.indexOf(originalStatusValue) < 0
+            && String($('tl-status').value) !== String(REC.atem_status_id);
+        if (isNonIssuerSuperAdminStatusEdit && !$('tl-remarks').value.trim()) {
+            setError('tl-remarks-error', 'A remark is required when changing the status of an ATEM you did not issue.');
             return false;
         }
         if ($('tl-extended').checked && !$('tl-ext1').value) {
@@ -1753,8 +1765,13 @@
         if (CFG.issuerCompletedEdit) { applyIssuerCompletedLock(); }
         if (CFG.suspendedIssuerEdit) { applySuspendedIssuerUnlock(); }
         if (!READ && !IS_ISSUER && !CFG.superadminTerminalEdit) {
+            // A real SuperAdmin (dev-override aware via CFG.isSuperAdmin) may still
+            // change Status and add a Remark on a card they didn't issue; everything
+            // else in this list stays locked for them.
+            var SA_STATUS_UNLOCK = !!CFG.isSuperAdmin;
             ['tl-start', 'tl-end', 'tl-status', 'tl-extended', 'tl-ext1', 'tl-remarks',
              'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
+                if (SA_STATUS_UNLOCK && (id === 'tl-status' || id === 'tl-remarks')) { return; }
                 var el = document.getElementById(id);
                 if (el) { el.disabled = true; }
             });

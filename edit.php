@@ -601,6 +601,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     <label for="tl-remarks" class="form-label">Remarks</label>
                     <textarea class="form-control" id="tl-remarks" rows="4"
                         placeholder="Notes, failure reason or excellence remark"></textarea>
+                    <div class="atem-form-error" id="tl-remarks-error"></div>
                 </div>
 
                 <div class="col-12" id="tl-save-reminder" style="display:none;">
