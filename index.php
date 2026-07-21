@@ -36,20 +36,27 @@ if ($_dept_res) {
 // grade 1 sees only self, grades 2-3 see staff in their own department(s), grade
 // 4+/SuperAdmin see everyone. dept_ids lets the frontend narrow the list further
 // when a specific department is also selected.
+// outlet_ids lets the Outlet dashboard tab narrow its Staff dropdown to
+// department 1 ("Outlet") staff, further filtered by the selected outlet.
 $dash_staff_options = array();
 if ((int)$atem_permission === 1 && !$_is_superadmin) {
     $_me_id = (int)$staff_id;
-    $_me_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 AND id = " . $_me_id);
+    $_me_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet FROM staff WHERE recycle != 1 AND id = " . $_me_id);
     if ($_me_res && ($_me_row = mysqli_fetch_assoc($_me_res))) {
         $_deptIds = array();
         foreach (explode(',', (string)$_me_row['department']) as $_p) {
             $_p = (int)trim($_p);
             if ($_p > 0) { $_deptIds[] = $_p; }
         }
-        $dash_staff_options[] = array('id' => (int)$_me_row['id'], 'name' => $_me_row['nama_staff'], 'dept_ids' => $_deptIds);
+        $_outletIds = array();
+        foreach (explode(',', (string)$_me_row['outlet']) as $_o) {
+            $_o = (int)trim($_o);
+            if ($_o > 0) { $_outletIds[] = $_o; }
+        }
+        $dash_staff_options[] = array('id' => (int)$_me_row['id'], 'name' => $_me_row['nama_staff'], 'dept_ids' => $_deptIds, 'outlet_ids' => $_outletIds);
     }
 } else {
-    $_staff_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+    $_staff_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
     if ($_staff_res) {
         while ($_srow = mysqli_fetch_assoc($_staff_res)) {
             $_deptIds = array();
@@ -61,7 +68,12 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
                 && !array_intersect($_deptIds, $dash_user_dept_ids)) {
                 continue;
             }
-            $dash_staff_options[] = array('id' => (int)$_srow['id'], 'name' => $_srow['nama_staff'], 'dept_ids' => $_deptIds);
+            $_outletIds = array();
+            foreach (explode(',', (string)$_srow['outlet']) as $_o) {
+                $_o = (int)trim($_o);
+                if ($_o > 0) { $_outletIds[] = $_o; }
+            }
+            $dash_staff_options[] = array('id' => (int)$_srow['id'], 'name' => $_srow['nama_staff'], 'dept_ids' => $_deptIds, 'outlet_ids' => $_outletIds);
         }
     }
 }
@@ -195,7 +207,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
             </div>
             <div class="col-12 col-sm-6 col-xl">
                 <div class="atem-card atem-dash-stat h-100" data-status="Active" style="cursor:pointer;">
-                    <div class="atem-card-title mb-1">Active / On Hand</div>
+                    <div class="atem-card-title mb-1">Active / Extended</div>
                     <div class="atem-stat-value atem-stat-value--blue" id="dash-active">---</div>
                     <div class="atem-stat-label">not yet closed</div>
                     <div class="atem-stat-label" id="dash-extended-label"
@@ -499,7 +511,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
             </div>
             <div class="col-12 col-sm-6 col-xl">
                 <div class="atem-card atem-dash-stat-outlet h-100" data-status="Active" style="cursor:pointer;">
-                    <div class="atem-card-title mb-1">Active / On Hand</div>
+                    <div class="atem-card-title mb-1">Active / Extended</div>
                     <div class="atem-stat-value atem-stat-value--blue" id="dasho-active">---</div>
                     <div class="atem-stat-label">not yet closed</div>
                     <div class="atem-stat-label" id="dasho-extended-label"

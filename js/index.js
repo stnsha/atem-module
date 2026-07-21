@@ -264,6 +264,93 @@
         if (dropEl) { dropEl.classList.remove('open'); }
     }
 
+    // ---------------------------------------- Outlet tab staff searchable dropdown
+    // Unlike buildSearchDropdown (which renders its <li> list once at init), this
+    // list must be re-filterable at open time: it's always scoped to department 1
+    // ("Outlet"), and narrowed further to the selected dasho-outlet, if any.
+    var OUTLET_STAFF_DEPT_ID = 1;
+
+    function buildStaffDropdownOutlet() {
+        var baseId   = 'dasho-staff';
+        var listEl   = document.getElementById(baseId + '-list');
+        var searchEl = document.getElementById(baseId + '-search');
+        var btnEl    = document.getElementById(baseId + '-btn');
+        var dropEl   = document.getElementById(baseId + '-dropdown');
+        var valEl    = document.getElementById(baseId + '-value');
+        var wrapEl   = document.getElementById(baseId + '-wrap');
+        if (!listEl || !btnEl || !dropEl) { return; }
+
+        syncSearchDropdownSize(baseId, 'dasho-filter-year');
+
+        function currentOutletId() {
+            var outletEl = document.getElementById('dasho-outlet-value');
+            return outletEl ? (parseInt(outletEl.value, 10) || 0) : 0;
+        }
+
+        function visibleStaff() {
+            var all = CFG.staff || [];
+            var outletId = currentOutletId();
+            return all.filter(function (s) {
+                if (!s.dept_ids || s.dept_ids.indexOf(OUTLET_STAFF_DEPT_ID) === -1) { return false; }
+                if (outletId && (!s.outlet_ids || s.outlet_ids.indexOf(outletId) === -1)) { return false; }
+                return true;
+            });
+        }
+
+        function renderList() {
+            var staff = visibleStaff();
+            var html = '<li class="vf-s2-list-item" data-id="0">All staff</li>';
+            for (var i = 0; i < staff.length; i++) {
+                html += '<li class="vf-s2-list-item" data-id="' + staff[i].id + '">' + escapeHtml(staff[i].name) + '</li>';
+            }
+            listEl.innerHTML = html;
+        }
+        renderList();
+
+        function openDropdown() {
+            renderList();
+            dropEl.classList.add('open');
+            if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
+        }
+        function closeDropdown() { dropEl.classList.remove('open'); }
+
+        function filterList(term) {
+            var items = listEl.querySelectorAll('li');
+            var lower = term.toLowerCase();
+            for (var j = 0; j < items.length; j++) {
+                var text = items[j].textContent || '';
+                items[j].classList.toggle('hidden', !(!lower || text.toLowerCase().indexOf(lower) >= 0));
+            }
+        }
+
+        function selectStaff(id, name) {
+            if (valEl) { valEl.value = id; }
+            if (btnEl) { btnEl.textContent = name; }
+            closeDropdown();
+            loadDashboardOutlet(buildPayloadOutlet());
+        }
+
+        btnEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
+        });
+        if (searchEl) {
+            searchEl.addEventListener('input', function () { filterList(this.value); });
+            searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
+        listEl.addEventListener('click', function (e) {
+            var li = e.target.closest ? e.target.closest('li') : null;
+            if (!li) { return; }
+            selectStaff(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
+        });
+        document.addEventListener('click', function (e) {
+            if (wrapEl && !wrapEl.contains(e.target)) { closeDropdown(); }
+        });
+    }
+
     var QUARTER_RANGES = {
         '1': ['01-01', '03-31'],
         '2': ['04-01', '06-30'],
@@ -923,11 +1010,20 @@
         // ----------------------------------------------------- Outlet dashboard
         populatePillarSelect();
         buildSearchDropdown('dasho-outlet', (CFG.outlets || []).map(function (o) { return { id: o.id, name: o.code }; }), 'All outlets', 'dasho-filter-year', function () {
+            // Clear the Staff selection if it falls outside the newly chosen
+            // outlet, same as buildStaffDropdown does when Department changes.
+            var outletId = parseInt((document.getElementById('dasho-outlet-value') || {}).value, 10) || 0;
+            var staffValEl = document.getElementById('dasho-staff-value');
+            var selectedStaffId = staffValEl ? (parseInt(staffValEl.value, 10) || 0) : 0;
+            if (outletId && selectedStaffId) {
+                var match = (CFG.staff || []).some(function (s) {
+                    return s.id === selectedStaffId && s.outlet_ids && s.outlet_ids.indexOf(outletId) !== -1;
+                });
+                if (!match) { resetSearchDropdown('dasho-staff', 'All staff'); }
+            }
             loadDashboardOutlet(buildPayloadOutlet());
         });
-        buildSearchDropdown('dasho-staff', (CFG.staff || []).map(function (s) { return { id: s.id, name: s.name }; }), 'All staff', 'dasho-filter-year', function () {
-            loadDashboardOutlet(buildPayloadOutlet());
-        });
+        buildStaffDropdownOutlet();
 
         // The Outlet dashboard pane is hidden (display:none) until its tab is
         // shown, so the dropdown-button size sync above read 0 - redo it now
