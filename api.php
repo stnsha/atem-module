@@ -1426,6 +1426,28 @@ function okr_status_bucket($status)
     return atem_status_bucket($status);
 }
 
+// Normalizes okr_cards' raw status_value (Draft/Active/Complete/Complete with
+// Excellence/Extend/Fail) to the ATEM-style spelling this file's status
+// whitelist/bucket functions expect ('Completed'/'Completed with
+// Excellence'/'Extended'/'Failed'). OKR has no distinct "Complete with
+// Extension" status - extension is tracked via okr_cards.extended instead -
+// so a completed+extended row maps to that ATEM label here.
+function okr_normalize_status_value($rawStatus, $isExtended)
+{
+    switch ($rawStatus) {
+        case 'Complete':
+            return $isExtended ? 'Completed with Extension' : 'Completed';
+        case 'Complete with Excellence':
+            return 'Completed with Excellence';
+        case 'Extend':
+            return 'Extended';
+        case 'Fail':
+            return 'Failed';
+        default:
+            return $rawStatus; // 'Draft', 'Active', or unrecognized
+    }
+}
+
 // Mirrors CalculateBonusEligibility.php's date basis: completed-family/extended/
 // failed are matched by closure_date, active by start_date.
 function atem_status_period_field($status)
@@ -1647,7 +1669,7 @@ function getStaffOkrPerformanceLive($conn, $month, $year, $quarter, $selectedSta
     $aggregates = array();
 
     $query = "SELECT c.id, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id, c.incentive_rule, c.incentivised_owner_staff_id,
-                     c.result_status, c.incentive_locked, c.start_date, c.closed_at,
+                     c.result_status, c.incentive_locked, c.start_date, c.closed_at, c.extended,
                      os.value AS status_value, lv.base_rm AS level_rm
               FROM okr_cards c
               LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -1660,6 +1682,7 @@ function getStaffOkrPerformanceLive($conn, $month, $year, $quarter, $selectedSta
 
     while ($row = mysqli_fetch_assoc($result)) {
         $statusVal = isset($row['status_value']) ? $row['status_value'] : '';
+        $statusVal = okr_normalize_status_value($statusVal, !empty($row['extended']));
         $ownerId  = (int)$row['owner_staff_id'];
         $owner2Id = ($row['owner2_staff_id'] !== null) ? (int)$row['owner2_staff_id'] : 0;
         $issuerId = ($row['issuer_staff_id'] !== null) ? (int)$row['issuer_staff_id'] : 0;
