@@ -212,7 +212,10 @@ function emit_okr_rows($out, $sid, $name, $dept, $grade, $struct, $o) {
                   : (isset($o['end_date']) ? $o['end_date'] : '');
     $end     = fmt_ex_date($end_raw);
     $closure = fmt_ex_date(isset($o['closed_at']) ? $o['closed_at'] : '');
-    $status  = isset($o['status_value']) ? $o['status_value'] : '';
+    // Normalize okr_cards' raw status word ("Complete") to the ATEM spelling
+    // ("Completed") used everywhere else on this page - see api.php's
+    // okr_normalize_status_value() for the full rationale.
+    $status  = okr_normalize_status_value(isset($o['status_value']) ? $o['status_value'] : '', !empty($o['extended']));
     $is_issuer = (isset($o['issuer_staff_id']) && (int)$o['issuer_staff_id'] === $sid);
     $issuer_yn = $is_issuer ? 'Yes' : 'No';
 
@@ -342,7 +345,8 @@ if ($type === 'performance') {
     $staff_grade      = array();
     $staff_struct     = array();
     $staff_dept_first = array();
-    $_gs_res = mysqli_query($conn, "SELECT id, grade, struct, department FROM staff WHERE recycle != 1");
+    $staff_outlet_ids = array();
+    $_gs_res = mysqli_query($conn, "SELECT id, grade, struct, department, outlet FROM staff WHERE recycle != 1");
     if ($_gs_res) {
         while ($_gs_r = mysqli_fetch_assoc($_gs_res)) {
             $_gs_id = (int)$_gs_r['id'];
@@ -353,6 +357,12 @@ if ($type === 'performance') {
                 $_gsd = (int)trim($_gsd);
                 if ($_gsd > 0) { $staff_dept_first[$_gs_id] = $_gsd; break; }
             }
+            $_gs_outlet_ids = array();
+            foreach (explode(',', (string)$_gs_r['outlet']) as $_gso) {
+                $_gso = (int)trim($_gso);
+                if ($_gso > 0) { $_gs_outlet_ids[] = $_gso; }
+            }
+            $staff_outlet_ids[$_gs_id] = $_gs_outlet_ids;
         }
     }
 
@@ -372,6 +382,13 @@ if ($type === 'performance') {
 
         if (!empty($ids)        && !in_array($sid, $ids, true))    { continue; }
         if ($filter_dept     > 0 && $dept_id !== $filter_dept)     { continue; }
+        // Outlet filter narrows the whole staff list, matching api.php's
+        // get-performance-list - a staff member not assigned to the selected
+        // outlet (staff.outlet) is excluded from the export entirely.
+        if ($filter_outlet_id > 0) {
+            $_own_outlet_ids = isset($staff_outlet_ids[$sid]) ? $staff_outlet_ids[$sid] : array();
+            if (!in_array($filter_outlet_id, $_own_outlet_ids, true)) { continue; }
+        }
         if ($filter_grade    > 0 && $grade_id !== $filter_grade)   { continue; }
         if ($filter_struct   > 0 && $struct_id !== $filter_struct) { continue; }
         if ($filter_staff_id > 0 && $sid !== $filter_staff_id)     { continue; }
@@ -380,18 +397,12 @@ if ($type === 'performance') {
         $okr_total = $okr_rec ? ($okr_rec['complete'] + $okr_rec['active'] + $okr_rec['extend'] + $okr_rec['failed']) : 0;
         if ($total <= 0 && $okr_total <= 0) { continue; }
 
-        // Est. Reward composition mirrors api.php's get-performance-list (struct
-        // 4 = ATEM+OKR summed, struct 5 = OKR-only) - used only for export sort
+        // Est. Reward composition mirrors api.php's get-performance-list - always
+        // ATEM + OKR summed regardless of struct - used only for export sort
         // order here, matching the on-screen table's default sort.
         $atem_reward = $rec ? (float)$rec['total_incentive'] : 0.0;
         $okr_reward  = $okr_rec ? (float)$okr_rec['reward'] : 0.0;
-        if ($struct_id === 4) {
-            $total_reward = $atem_reward + $okr_reward;
-        } elseif ($struct_id === 5) {
-            $total_reward = $okr_reward;
-        } else {
-            $total_reward = $atem_reward;
-        }
+        $total_reward = $atem_reward + $okr_reward;
 
         $out_records[] = array(
             'staff_id' => $sid, 'dept_id' => $dept_id, 'grade_id' => $grade_id, 'struct_id' => $struct_id,
@@ -473,7 +484,10 @@ if ($type === 'performance') {
             $_o_owner2 = !empty($_o['owner2_staff_id']) ? (int)$_o['owner2_staff_id'] : 0;
             if ($sid !== $_o_owner && $sid !== $_o_owner2) { continue; }
 
-            $_o_status = isset($_o['status_value']) ? $_o['status_value'] : '';
+            // Normalize okr_cards' raw status word ("Complete") to the ATEM
+            // spelling ("Completed") that $filter_statuses is expressed in -
+            // see api.php's okr_normalize_status_value() for the rationale.
+            $_o_status = okr_normalize_status_value(isset($_o['status_value']) ? $_o['status_value'] : '', !empty($_o['extended']));
             if (!in_array($_o_status, $filter_statuses, true)) { continue; }
 
             $_o_date = ($_o_status === 'Active')

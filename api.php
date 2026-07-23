@@ -1855,7 +1855,7 @@ function resolvePayoutOkrIds($conn, $month, $year, $quarter, $selectedStatuses, 
     $lockedFlag = $unlock ? 1 : 0;
     $idsCsv = implode(',', array_map('intval', $targetStaffIds));
 
-    $query = "SELECT c.id, c.result_status, c.start_date, c.closed_at, os.value AS status_value
+    $query = "SELECT c.id, c.result_status, c.start_date, c.closed_at, c.extended, os.value AS status_value
               FROM okr_cards c
               LEFT JOIN okr_statuses os ON c.result_status = os.id
               WHERE c.deleted_at IS NULL
@@ -1868,7 +1868,12 @@ function resolvePayoutOkrIds($conn, $month, $year, $quarter, $selectedStatuses, 
 
     $ids = array();
     while ($row = mysqli_fetch_assoc($result)) {
-        $statusVal = isset($row['status_value']) ? $row['status_value'] : '';
+        // Normalize okr_cards' raw status word ("Complete") to the ATEM
+        // spelling ("Completed") that $selectedStatuses/$payoutTerminalStatuses
+        // are expressed in - see okr_normalize_status_value() for the
+        // rationale. Without this, Lock/Unlock Payout would never match any
+        // OKR card.
+        $statusVal = okr_normalize_status_value(isset($row['status_value']) ? $row['status_value'] : '', !empty($row['extended']));
         if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
         if (!in_array($statusVal, $payoutTerminalStatuses, true)) { continue; }
 
@@ -1960,7 +1965,12 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
         ? array_values(array_intersect($jsonData['statuses'], $allowedStatuses))
         : array('Completed', 'Completed with Excellence');
 
-    $live = getStaffPerformanceLive($month, $year, $quarter, $statuses, $staff_id, $atemType, $outletId);
+    // Outlet exclusion is applied below via staff.outlet (matching the merged
+    // Staff Performance table's own scoping), not via getStaffPerformanceLive's
+    // per-card outlet tagging - so this discovery call itself is unrestricted
+    // by outlet, otherwise an outlet-assigned staff member with zero outlet-
+    // tagged cards this period would wrongly disappear from "target staff".
+    $live = getStaffPerformanceLive($month, $year, $quarter, $statuses, $staff_id, $atemType, 0);
     if (empty($live['success'])) {
         return array();
     }
@@ -1969,7 +1979,8 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
     $staffGrade  = array();
     $staffStruct = array();
     $staffDeptFirst = array();
-    $sgr = mysqli_query($conn, "SELECT id, grade, struct, department FROM staff WHERE recycle != 1");
+    $staffOutletIds = array();
+    $sgr = mysqli_query($conn, "SELECT id, grade, struct, department, outlet FROM staff WHERE recycle != 1");
     if ($sgr) {
         while ($r = mysqli_fetch_assoc($sgr)) {
             $id_ = (int)$r['id'];
@@ -1980,6 +1991,12 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
                 $_d = (int)trim($_d);
                 if ($_d > 0) { $staffDeptFirst[$id_] = $_d; break; }
             }
+            $_outletIds = array();
+            foreach (explode(',', (string)$r['outlet']) as $_o) {
+                $_o = (int)trim($_o);
+                if ($_o > 0) { $_outletIds[] = $_o; }
+            }
+            $staffOutletIds[$id_] = $_outletIds;
         }
     }
 
@@ -1995,6 +2012,13 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
         $structId = isset($staffStruct[$sid]) ? $staffStruct[$sid] : null;
 
         if ($dept    > 0 && $deptId   !== $dept)    { continue; }
+        // Same staff.outlet exclusion as get-performance-list's row scoping -
+        // keeps "Lock Payout" (no specific selection) targeting exactly the
+        // staff currently visible in the table when an Outlet filter is set.
+        if ($outletId > 0) {
+            $_ownOutletIds = isset($staffOutletIds[$sid]) ? $staffOutletIds[$sid] : array();
+            if (!in_array($outletId, $_ownOutletIds, true)) { continue; }
+        }
         if ($gradeF  > 0 && $gradeId  !== $gradeF)  { continue; }
         if ($structF > 0 && $structId !== $structF) { continue; }
         if ($staffF  > 0 && $sid      !== $staffF)  { continue; }
@@ -2932,7 +2956,6 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pl_grade      = isset($jsonData['grade'])   ? (int)$jsonData['grade']   : 0;
                     $pl_struct     = isset($jsonData['struct'])  ? (int)$jsonData['struct']  : 0;
                     $pl_staff      = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
-                    $pl_atem_type  = isset($jsonData['filter_atem_type'])  ? (int)$jsonData['filter_atem_type']  : 0;
                     $pl_outlet_id  = isset($jsonData['filter_outlet_id'])  ? (int)$jsonData['filter_outlet_id']  : 0;
 
                     if ($pl_quarter < 1 || $pl_quarter > 4) { $pl_quarter = 0; }
@@ -2947,18 +2970,26 @@ if (!defined('API_JWT_INCLUDED')) {
                         ? array_values(array_intersect($jsonData['statuses'], $pl_allowed_statuses))
                         : array('Completed', 'Completed with Excellence');
 
-                    $pl_live = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, $pl_atem_type, $pl_outlet_id);
-                    if (empty($pl_live['success'])) {
+                    // The page shows HQ ATEM and Outlet ATEM as separate columns on the
+                    // SAME row for a given staff member, so getStaffPerformanceLive() -
+                    // which only ever returns one combined bucket per call - is called
+                    // once per type and merged below, rather than once unfiltered.
+                    // The Outlet filter (if any) only narrows the Outlet-side call.
+                    $pl_live_hq = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 1, 0);
+                    if (empty($pl_live_hq['success'])) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;
                     }
-                    // OKR reward is not tab-scoped (a staff member's Est. Reward stays
-                    // consistent whichever tab is viewed), so this is always fetched -
-                    // only the OKR count COLUMNS are HQ-only (gated by $pl_show_okr_cols
-                    // below, when building each row).
+                    $pl_live_outlet = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 2, $pl_outlet_id);
+                    if (empty($pl_live_outlet['success'])) {
+                        $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
+                        break;
+                    }
+                    // OKR has no HQ/Outlet split at the card level, so it's always
+                    // fetched once, unfiltered, and its columns always shown - there's
+                    // no tab to hide them behind anymore.
                     $pl_okr_live = getStaffOkrPerformanceLive($conn, $pl_month, $pl_year, $pl_quarter, $pl_statuses);
                     if (empty($pl_okr_live['success'])) { $pl_okr_live = array('success' => true, 'data' => array()); }
-                    $pl_show_okr_cols = ($pl_atem_type === 1);
 
                     // Resolve current staff details from ODB directly (live, not a
                     // point-in-time snapshot) — name, department, grade, struct,
@@ -3024,20 +3055,27 @@ if (!defined('API_JWT_INCLUDED')) {
                     // "single tier" access model (no narrower carve-out).
                     $pl_is_scoped_grade = ($pl_perm === 2 && !$pl_is_sa);
 
-                    // Union of ATEM-involved and OKR-involved staff ids - a staff
-                    // member with only OKR cards and no ATEM cards (e.g. struct 5,
-                    // "12 OKR") would otherwise never appear in the table at all.
-                    $pl_union_sids = array_unique(array_merge(array_keys($pl_live['data']), array_keys($pl_okr_live['data'])));
+                    // Union of HQ-ATEM-involved, Outlet-ATEM-involved, and OKR-involved
+                    // staff ids - a staff member with only OKR cards and no ATEM cards
+                    // (e.g. struct 5, "12 OKR") would otherwise never appear at all.
+                    $pl_union_sids = array_unique(array_merge(
+                        array_keys($pl_live_hq['data']),
+                        array_keys($pl_live_outlet['data']),
+                        array_keys($pl_okr_live['data'])
+                    ));
 
                     $pl_out = array();
                     foreach ($pl_union_sids as $pl_sid) {
                         $pl_sid = (int)$pl_sid;
-                        $pl_rec     = isset($pl_live['data'][$pl_sid]) ? $pl_live['data'][$pl_sid] : null;
-                        $pl_okr_rec = isset($pl_okr_live['data'][$pl_sid]) ? $pl_okr_live['data'][$pl_sid] : null;
+                        $pl_hq_rec  = isset($pl_live_hq['data'][$pl_sid])     ? $pl_live_hq['data'][$pl_sid]     : null;
+                        $pl_out_rec = isset($pl_live_outlet['data'][$pl_sid]) ? $pl_live_outlet['data'][$pl_sid] : null;
+                        $pl_okr_rec = isset($pl_okr_live['data'][$pl_sid])    ? $pl_okr_live['data'][$pl_sid]    : null;
 
-                        $pl_rec_dept = ($pl_rec && !empty($pl_rec['dept_id']))
-                            ? (int)$pl_rec['dept_id']
-                            : (isset($pl_staff_dept_first[$pl_sid]) ? $pl_staff_dept_first[$pl_sid] : 0);
+                        $pl_rec_dept = (!empty($pl_hq_rec['dept_id']))
+                            ? (int)$pl_hq_rec['dept_id']
+                            : ((!empty($pl_out_rec['dept_id']))
+                                ? (int)$pl_out_rec['dept_id']
+                                : (isset($pl_staff_dept_first[$pl_sid]) ? $pl_staff_dept_first[$pl_sid] : 0));
                         $pl_grade_id   = isset($pl_staff_grade[$pl_sid])  ? $pl_staff_grade[$pl_sid]  : null;
                         $pl_struct_id  = isset($pl_staff_struct[$pl_sid]) ? $pl_staff_struct[$pl_sid] : null;
 
@@ -3051,30 +3089,43 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
 
                         if ($pl_dept   > 0 && $pl_rec_dept  !== $pl_dept)   { continue; }
+                        // Outlet filter narrows the whole row, not just the Outlet ATEM
+                        // count - a staff member not assigned to the selected outlet
+                        // (staff.outlet) is excluded entirely, matching how the old
+                        // separate Outlet tab worked.
+                        if ($pl_outlet_id > 0) {
+                            $_pl_own_outlet_ids = isset($pl_staff_outlet_ids[$pl_sid]) ? $pl_staff_outlet_ids[$pl_sid] : array();
+                            if (!in_array($pl_outlet_id, $_pl_own_outlet_ids, true)) { continue; }
+                        }
                         if ($pl_grade  > 0 && $pl_grade_id  !== $pl_grade)  { continue; }
                         if ($pl_struct > 0 && $pl_struct_id !== $pl_struct) { continue; }
                         if ($pl_staff  > 0 && $pl_sid        !== $pl_staff)  { continue; }
 
-                        // "ATEM"/"OKR" totals are now the raw, all-status/all-role,
-                        // period-filtered counts (they link straight to edit.php
-                        // rather than opening a modal) - not the status-selected
-                        // bucket sums, which only still drive Completed ATEM/OKR.
-                        $pl_total     = $pl_rec ? $pl_rec['total_all'] : 0;
-                        $pl_okr_total = $pl_okr_rec ? $pl_okr_rec['total_all'] : 0;
-                        if ($pl_total <= 0 && $pl_okr_total <= 0) { continue; }
+                        // "HQ ATEM"/"Outlet ATEM"/"OKR" totals are the raw, all-status/
+                        // all-role, period-filtered counts (they link straight to
+                        // edit.php rather than opening a modal) - not the status-
+                        // selected bucket sums, which only drive Completed/Failed.
+                        $pl_hq_total     = $pl_hq_rec  ? $pl_hq_rec['total_all']  : 0;
+                        $pl_outlet_total = $pl_out_rec ? $pl_out_rec['total_all'] : 0;
+                        $pl_okr_total    = $pl_okr_rec ? $pl_okr_rec['total_all'] : 0;
+                        if ($pl_hq_total <= 0 && $pl_outlet_total <= 0 && $pl_okr_total <= 0) { continue; }
 
-                        // Est. Reward composition (staff.struct 4 = "2 OKR + 8 ATEM",
-                        // 5 = "12 OKR"): sums both for struct 4, OKR-only for struct 5,
-                        // ATEM-only (unchanged) for every other struct.
-                        $pl_atem_reward = $pl_rec ? round($pl_rec['total_incentive'], 2) : 0.0;
+                        // Est. Reward composition: always HQ + Outlet ATEM + OKR summed
+                        // together, regardless of struct - a staff member is rewarded
+                        // for whatever they actually completed, even if their
+                        // Evaluation Structure normally wouldn't include that category
+                        // (e.g. a "12 OKR" staff who completed an ATEM card anyway).
+                        $pl_atem_reward = ($pl_hq_rec ? round($pl_hq_rec['total_incentive'], 2) : 0.0)
+                            + ($pl_out_rec ? round($pl_out_rec['total_incentive'], 2) : 0.0);
                         $pl_okr_reward  = $pl_okr_rec ? round($pl_okr_rec['reward'], 2) : 0.0;
-                        if ($pl_struct_id === 4) {
-                            $pl_total_reward = $pl_atem_reward + $pl_okr_reward;
-                        } elseif ($pl_struct_id === 5) {
-                            $pl_total_reward = $pl_okr_reward;
-                        } else {
-                            $pl_total_reward = $pl_atem_reward;
-                        }
+                        $pl_total_reward = $pl_atem_reward + $pl_okr_reward;
+
+                        $pl_complete_hq     = $pl_hq_rec  ? $pl_hq_rec['complete']  : 0;
+                        $pl_complete_outlet = $pl_out_rec ? $pl_out_rec['complete'] : 0;
+                        $pl_complete_okr    = $pl_okr_rec ? $pl_okr_rec['complete'] : 0;
+                        $pl_failed_hq       = $pl_hq_rec  ? $pl_hq_rec['failed']    : 0;
+                        $pl_failed_outlet   = $pl_out_rec ? $pl_out_rec['failed']   : 0;
+                        $pl_failed_okr      = $pl_okr_rec ? $pl_okr_rec['failed']   : 0;
 
                         $pl_out[] = array(
                             'id'           => $pl_sid,
@@ -3089,19 +3140,26 @@ if (!defined('API_JWT_INCLUDED')) {
                             'grade_label'  => ($pl_grade_id !== null && isset($pl_grade_labels[$pl_grade_id])) ? $pl_grade_labels[$pl_grade_id] : '-',
                             'struct_id'    => $pl_struct_id,
                             'struct_label' => ($pl_struct_id !== null && isset($pl_struct_labels[$pl_struct_id])) ? $pl_struct_labels[$pl_struct_id] : '-',
-                            'total_atem'      => $pl_total,
-                            'complete_count'  => $pl_rec ? $pl_rec['complete'] : 0,
-                            'active_count'    => $pl_rec ? $pl_rec['active'] : 0,
-                            'extend_count'    => $pl_rec ? $pl_rec['extend'] : 0,
-                            'failed_count'    => $pl_rec ? $pl_rec['failed'] : 0,
-                            'total_okr'          => $pl_show_okr_cols ? $pl_okr_total : 0,
-                            'complete_okr_count' => $pl_show_okr_cols && $pl_okr_rec ? $pl_okr_rec['complete'] : 0,
-                            'active_okr_count'   => $pl_show_okr_cols && $pl_okr_rec ? $pl_okr_rec['active'] : 0,
-                            'extend_okr_count'   => $pl_show_okr_cols && $pl_okr_rec ? $pl_okr_rec['extend'] : 0,
-                            'failed_okr_count'   => $pl_show_okr_cols && $pl_okr_rec ? $pl_okr_rec['failed'] : 0,
+                            'total_hq_atem'      => $pl_hq_total,
+                            'complete_hq_count'  => $pl_complete_hq,
+                            'active_hq_count'    => $pl_hq_rec ? $pl_hq_rec['active'] : 0,
+                            'extend_hq_count'    => $pl_hq_rec ? $pl_hq_rec['extend'] : 0,
+                            'failed_hq_count'    => $pl_failed_hq,
+                            'total_outlet_atem'      => $pl_outlet_total,
+                            'complete_outlet_count'  => $pl_complete_outlet,
+                            'active_outlet_count'    => $pl_out_rec ? $pl_out_rec['active'] : 0,
+                            'extend_outlet_count'    => $pl_out_rec ? $pl_out_rec['extend'] : 0,
+                            'failed_outlet_count'    => $pl_failed_outlet,
+                            'total_okr'          => $pl_okr_total,
+                            'complete_okr_count' => $pl_complete_okr,
+                            'active_okr_count'   => $pl_okr_rec ? $pl_okr_rec['active'] : 0,
+                            'extend_okr_count'   => $pl_okr_rec ? $pl_okr_rec['extend'] : 0,
+                            'failed_okr_count'   => $pl_failed_okr,
+                            'complete_total'  => $pl_complete_hq + $pl_complete_outlet + $pl_complete_okr,
+                            'failed_total'    => $pl_failed_hq + $pl_failed_outlet + $pl_failed_okr,
                             'total_incentive' => round($pl_total_reward, 2),
-                            'has_locked'      => !empty($pl_rec['has_locked']) || !empty($pl_okr_rec['has_locked']),
-                            'has_unlocked'    => !empty($pl_rec['has_unlocked']) || !empty($pl_okr_rec['has_unlocked']),
+                            'has_locked'      => !empty($pl_hq_rec['has_locked']) || !empty($pl_out_rec['has_locked']) || !empty($pl_okr_rec['has_locked']),
+                            'has_unlocked'    => !empty($pl_hq_rec['has_unlocked']) || !empty($pl_out_rec['has_unlocked']) || !empty($pl_okr_rec['has_unlocked']),
                         );
                     }
 
@@ -3418,6 +3476,7 @@ if (!defined('API_JWT_INCLUDED')) {
 
                         $_enriched[] = array(
                             'id'          => (int)(isset($_a['id']) ? $_a['id'] : 0),
+                            'atem_type'   => isset($_a['atem_type']) ? (int)$_a['atem_type'] : 1,
                             'title'       => isset($_a['title']) ? $_a['title'] : '',
                             'level_label' => ($_level && isset($_level['level'])) ? $_level['level'] : '',
                             'system_name' => $_level ? (isset($_level['system_name']) ? $_level['system_name'] : '') : '',
@@ -3502,7 +3561,11 @@ if (!defined('API_JWT_INCLUDED')) {
                     $_okr_enriched = array();
                     if ($okr_result) {
                         while ($_o = mysqli_fetch_assoc($okr_result)) {
-                            $_o_status  = isset($_o['status_value']) ? $_o['status_value'] : '';
+                            // Normalize okr_cards' raw status word ("Complete") to the
+                            // ATEM spelling ("Completed") that okr_matches_period_column()
+                            // and $gol_statuses are both expressed in - see
+                            // okr_normalize_status_value() for the full rationale.
+                            $_o_status  = okr_normalize_status_value(isset($_o['status_value']) ? $_o['status_value'] : '', !empty($_o['extended']));
                             $_o_start   = isset($_o['start_date']) ? $_o['start_date'] : '';
                             $_o_closed  = isset($_o['closed_at']) ? $_o['closed_at'] : '';
                             $_o_closure = $_o_closed ? substr($_o_closed, 0, 10) : '';

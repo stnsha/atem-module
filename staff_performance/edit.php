@@ -159,8 +159,24 @@ if ($show_okr_tab) {
     $_ol_r = mysqli_query($conn, "SELECT level, label FROM okr_levels WHERE recycle != 1 ORDER BY level ASC");
     if ($_ol_r) { while ($_ol = mysqli_fetch_assoc($_ol_r)) { $okr_levels_lookup[] = array('value' => 'Level ' . (int)$_ol['level'], 'label' => $_ol['label']); } }
 
+    // Normalized to the ATEM spelling used everywhere else on this page (see
+    // okr_normalize_status_value()) so these checkboxes' values actually match
+    // $o_status below and the ?statuses= carry-over from the Staff Performance
+    // summary page. okr_statuses has no separate "Complete with Extension" row
+    // (extension is a per-card flag, not its own status) - split "Complete"
+    // into both variants here so an extended-completed card is still selectable.
     $_os_r = mysqli_query($conn, "SELECT value FROM okr_statuses WHERE recycle != 1 ORDER BY sort_order ASC");
-    if ($_os_r) { while ($_os = mysqli_fetch_assoc($_os_r)) { $okr_statuses_lookup[] = $_os['value']; } }
+    if ($_os_r) {
+        while ($_os = mysqli_fetch_assoc($_os_r)) {
+            $_os_raw = $_os['value'];
+            if ($_os_raw === 'Complete') {
+                $okr_statuses_lookup[] = 'Completed';
+                $okr_statuses_lookup[] = 'Completed with Extension';
+            } else {
+                $okr_statuses_lookup[] = okr_normalize_status_value($_os_raw, false);
+            }
+        }
+    }
 
     $okr_query = mysqli_query($conn, "SELECT c.id, c.objective, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
                                               c.incentive_rule, c.incentivised_owner_staff_id, c.start_date, c.end_date,
@@ -177,7 +193,12 @@ if ($show_okr_tab) {
             $o_owner_id  = (int)$o['owner_staff_id'];
             $o_owner2_id = !empty($o['owner2_staff_id']) ? (int)$o['owner2_staff_id'] : 0;
             $o_issuer_id = !empty($o['issuer_staff_id']) ? (int)$o['issuer_staff_id'] : 0;
-            $o_status    = isset($o['status_value']) ? $o['status_value'] : '';
+            // Normalize okr_cards' raw status word ("Complete") to the ATEM
+            // spelling ("Completed") used by $okr_status_colors, the Status
+            // filter carried over from the Staff Performance summary page
+            // (?statuses=Completed,...), and everywhere else on this page -
+            // see api.php's okr_normalize_status_value() for the rationale.
+            $o_status    = okr_normalize_status_value(isset($o['status_value']) ? $o['status_value'] : '', !empty($o['extended']));
             $o_level     = isset($o['difficulty_level']) ? ('Level ' . (int)$o['difficulty_level']) : '';
 
             $o_roles = array();
