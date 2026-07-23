@@ -301,6 +301,7 @@ if ($show_okr_tab) {
                 'status_color' => isset($okr_status_colors[$o_status]) ? $okr_status_colors[$o_status] : '#6c757d',
                 'roles'        => $o_roles,
                 'est_reward'   => $o_reward,
+                'is_locked'    => !empty($o['incentive_locked']),
             );
         }
     }
@@ -567,6 +568,7 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
             'status'      => $a_status,
             'status_color'=> $a_color,
             'est_reward'  => $est_reward,
+            'is_locked'   => (isset($a['payout_status']) && $a['payout_status'] === 'Closed'),
         );
     }
     ?>
@@ -585,10 +587,11 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
                     <th>Status</th>
                     <th class="text-end">Est. Reward</th>
                     <th style="width:60px;">Action</th>
+                    <th style="width:70px;">Payout</th>
                 </tr>
             </thead>
             <tbody id="edit-atem-tbody">
-                <tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>
+                <tr><td colspan="12" class="text-center text-muted py-4">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -699,10 +702,11 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
                     <th>Role</th>
                     <th class="text-end">Est. Reward</th>
                     <th style="width:60px;">Action</th>
+                    <th style="width:70px;">Payout</th>
                 </tr>
             </thead>
             <tbody id="edit-okr-tbody">
-                <tr><td colspan="10" class="text-center text-muted py-4">Loading...</td></tr>
+                <tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -986,7 +990,7 @@ function renderEditAtemTable() {
         var emptyMsg = (window.EDIT_ATEM_ROWS && window.EDIT_ATEM_ROWS.length > 0)
             ? 'No records match the current filters.'
             : 'No ATEM records found for this staff.';
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">' + emptyMsg + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">' + emptyMsg + '</td></tr>';
         renderEditAtemPager(0);
         return;
     }
@@ -1037,6 +1041,10 @@ function renderEditAtemTable() {
             ? '<span class="text-muted">-</span>'
             : 'RM ' + editFmtMoney(a.est_reward);
 
+        var payoutHtml = a.is_locked
+            ? '<i class="bi bi-lock-fill" style="color:#dc3545;font-size:16px;" title="Payout locked"></i>'
+            : '<i class="bi bi-unlock-fill" style="color:#ffc107;font-size:16px;" title="Payout not yet locked"></i>';
+
         html += '<tr>'
             + '<td><span class="atem-id">#AT' + a.id + '</span></td>'
             + '<td>' + editEsc(a.title) + '</td>'
@@ -1052,6 +1060,7 @@ function renderEditAtemTable() {
             + '<td><span class="atem-pill" style="background-color:' + editEsc(a.status_color) + '">' + editEsc(a.status || '-') + '</span></td>'
             + '<td class="text-end">' + rewardHtml + '</td>'
             + '<td><a class="btn btn-sm btn-outline-primary" href="' + window.ATEM_MODULE_BASE + 'edit.php?id=' + a.id + '&mode=read" title="View"><i class="bi bi-eye"></i></a></td>'
+            + '<td class="text-center">' + payoutHtml + '</td>'
             + '</tr>';
     }
     tbody.innerHTML = html;
@@ -1242,7 +1251,7 @@ function renderOkrTable() {
         var emptyMsg = (window.EDIT_OKR_ROWS && window.EDIT_OKR_ROWS.length > 0)
             ? 'No records match the current filters.'
             : 'No OKR records found for this staff.';
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">' + emptyMsg + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">' + emptyMsg + '</td></tr>';
         renderOkrPager(0);
         return;
     }
@@ -1281,6 +1290,10 @@ function renderOkrTable() {
             ? '<span class="text-muted">-</span>'
             : 'RM ' + editFmtMoney(o.est_reward);
 
+        var payoutHtml = o.is_locked
+            ? '<i class="bi bi-lock-fill" style="color:#dc3545;font-size:16px;" title="Payout locked"></i>'
+            : '<i class="bi bi-unlock-fill" style="color:#ffc107;font-size:16px;" title="Payout not yet locked"></i>';
+
         html += '<tr>'
             + '<td><span class="atem-id">#OK' + o.id + '</span></td>'
             + '<td>' + editEsc(o.title) + '</td>'
@@ -1292,6 +1305,7 @@ function renderOkrTable() {
             + '<td>' + rolesHtml + '</td>'
             + '<td class="text-end">' + rewardHtml + '</td>'
             + '<td><a class="btn btn-sm btn-outline-primary" href="' + window.OKR_MODULE_BASE + 'view.php?id=' + o.id + '" title="View"><i class="bi bi-eye"></i></a></td>'
+            + '<td class="text-center">' + payoutHtml + '</td>'
             + '</tr>';
     }
     tbody.innerHTML = html;
