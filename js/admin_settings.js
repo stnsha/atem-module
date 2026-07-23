@@ -78,6 +78,40 @@
         });
     });
 
+    $('#payout-lock-window-save').on('click', function () {
+        var btn = $(this);
+        var statusEl = $('#payout-lock-window-status');
+        var data = {};
+        var inputs = {};
+        for (var q = 1; q <= 4; q++) {
+            inputs[q] = $('#payout-lock-window-q' + q);
+            data['q' + q] = parseInt(inputs[q].val(), 10) || 10;
+        }
+        btn.prop('disabled', true);
+        statusEl.text('');
+        $.ajax({
+            url: ADMIN_BACKEND_URL + '?action=updatePayoutLockWindow',
+            type: 'POST',
+            dataType: 'json',
+            data: data,
+            success: function (res) {
+                if (res.success) {
+                    for (var q = 1; q <= 4; q++) { inputs[q].val(res.values[q]); }
+                    statusEl.text('Saved').css('color', '#198754');
+                } else {
+                    statusEl.text('Failed to save').css('color', '#dc3545');
+                }
+            },
+            error: function () {
+                statusEl.text('Failed to save').css('color', '#dc3545');
+            },
+            complete: function () {
+                btn.prop('disabled', false);
+                setTimeout(function () { statusEl.text(''); }, 2000);
+            }
+        });
+    });
+
     $('#okr-backdate-toggle').on('change', function () {
         var newVal = $(this).prop('checked') ? 1 : 0;
         var toggle = $(this);

@@ -7,10 +7,18 @@ if (!$_is_superadmin) {
     exit;
 }
 
-$cfg_keys = array('struct_window_override', 'backdate_enabled');
+$cfg_keys = array(
+    'struct_window_override', 'backdate_enabled',
+    'payout_lock_window_days_q1', 'payout_lock_window_days_q2',
+    'payout_lock_window_days_q3', 'payout_lock_window_days_q4',
+);
 $cfg_values = array(
-    'struct_window_override' => '0',
-    'backdate_enabled'       => '0',
+    'struct_window_override'      => '0',
+    'backdate_enabled'            => '0',
+    'payout_lock_window_days_q1'  => '10',
+    'payout_lock_window_days_q2'  => '10',
+    'payout_lock_window_days_q3'  => '10',
+    'payout_lock_window_days_q4'  => '10',
 );
 
 $escaped_keys = array();
@@ -26,6 +34,12 @@ if ($cfg_result) {
 
 $struct_window_open = ($cfg_values['struct_window_override'] === '1');
 $backdate_enabled   = ($cfg_values['backdate_enabled'] === '1');
+$payout_lock_window_days = array(
+    1 => max(1, (int)$cfg_values['payout_lock_window_days_q1']),
+    2 => max(1, (int)$cfg_values['payout_lock_window_days_q2']),
+    3 => max(1, (int)$cfg_values['payout_lock_window_days_q3']),
+    4 => max(1, (int)$cfg_values['payout_lock_window_days_q4']),
+);
 
 // OKR's own backdate toggle (okr_config.backdate_enabled) - the OKR module
 // has no admin page of its own; ATEM and OKR are combined under this single
@@ -69,7 +83,7 @@ if ($_okr_cfg_result && ($_okr_cfg_row = mysqli_fetch_assoc($_okr_cfg_result))) 
             </div>
         </div>
 
-        <div class="bento-card">
+        <div class="bento-card mb-4">
             <p class="mb-1" style="font-size:13px;font-weight:600;">Allow Backdated OKRs</p>
             <p class="mb-3 text-muted" style="font-size:12px;">When enabled, Start Date, End Date and Extended Date
                 inputs across the OKR module allow past dates to be selected.</p>
@@ -80,6 +94,30 @@ if ($_okr_cfg_result && ($_okr_cfg_row = mysqli_fetch_assoc($_okr_cfg_result))) 
                         style="width:2.5em;height:1.25em;cursor:pointer;">
                 </div>
                 <span id="okr-backdate-status" style="font-size:12px;"></span>
+            </div>
+        </div>
+
+        <div class="bento-card">
+            <p class="mb-1" style="font-size:13px;font-weight:600;">Payout Lock Window</p>
+            <p class="mb-3 text-muted" style="font-size:12px;">Lock Payout (Staff Performance, SuperAdmin only) is
+                only available during the first N days of the month each quarter closes in - Q1 closes in April,
+                Q2 in July, Q3 in October, Q4 in January. Each quarter has its own window length.</p>
+            <div class="row g-2 mb-2">
+                <?php foreach (array(1 => 'Q1 (closes Apr)', 2 => 'Q2 (closes Jul)', 3 => 'Q3 (closes Oct)', 4 => 'Q4 (closes Jan)') as $_q => $_qLabel): ?>
+                <div class="col-6">
+                    <label class="form-label" style="font-size:11px;"><?php echo htmlspecialchars($_qLabel); ?></label>
+                    <div class="d-flex align-items-center gap-1">
+                        <input type="number" min="1" max="90" id="payout-lock-window-q<?php echo $_q; ?>"
+                            class="form-control form-control-sm payout-lock-window-input" style="width:70px;"
+                            value="<?php echo $payout_lock_window_days[$_q]; ?>">
+                        <span style="font-size:12px;">days</span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm btn-primary" id="payout-lock-window-save">Save</button>
+                <span id="payout-lock-window-status" style="font-size:12px;"></span>
             </div>
         </div>
 

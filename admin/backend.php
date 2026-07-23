@@ -56,6 +56,21 @@ if ($action === 'toggleBackdate' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
     exit;
 }
 
+if ($action === 'updatePayoutLockWindow' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $values = array();
+    for ($q = 1; $q <= 4; $q++) {
+        $raw = isset($_POST['q' . $q]) ? (int)$_POST['q' . $q] : 10;
+        $values[$q] = max(1, min(90, $raw));
+        $key = 'payout_lock_window_days_q' . $q;
+        mysqli_query($conn,
+            "INSERT INTO atem_config (setting_key, setting_value) VALUES ('$key', '" . $values[$q] . "')
+             ON DUPLICATE KEY UPDATE setting_value = '" . $values[$q] . "'"
+        );
+    }
+    echo json_encode(array('success' => true, 'values' => $values));
+    exit;
+}
+
 // Writes okr_config.backdate_enabled - OKR has no admin page of its own, so
 // its backdate toggle lives here alongside ATEM's, gated by the same
 // combined SuperAdmin check above.

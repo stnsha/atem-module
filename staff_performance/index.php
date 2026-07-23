@@ -5,9 +5,9 @@ $page_title = 'Staff Performance';
 include('../header.php');
 
 // Page access: grade 2+, People Management (dept 17), or SuperAdmin. Lock
-// Payout is SuperAdmin-only and permanent (see the $_is_superadmin-gated
-// buttons below and api.php's bulk-lock-payout) - dept-17 and grade 2-5 staff
-// can still view and export from this page, just not lock.
+// Payout itself is further restricted to SuperAdmin only, and only during
+// the configurable payout lock window (see $_show_lock_ui below and
+// api.php's bulk-lock-payout) - permanent, no unlock capability.
 $_perf_dept_ids = array();
 if (isset($department) && $department !== '') {
     foreach (explode(',', (string)$department) as $_perf_d) {
@@ -31,6 +31,38 @@ if ($atem_permission < 2 && !$_is_superadmin && !in_array(17, $_perf_dept_ids, t
     ob_end_clean();
     header('Location: ' . ATEM_BASE . 'index.php');
     exit;
+}
+
+// Library-mode include for isPayoutLockWindowOpen()/payoutLockWindowDays() -
+// same pattern edit.php/export.php already use to reuse api.php's helpers
+// without duplicating logic.
+define('API_JWT_INCLUDED', true);
+include(dirname(__FILE__) . '/../api.php');
+
+// Lock Payout access: SuperAdmin only, further restricted to the payout lock
+// window (configurable per-quarter via Admin Settings).
+$_can_lock_payout  = $_is_superadmin;
+$_payout_lock_open = isPayoutLockWindowOpen($conn);
+$_show_lock_ui     = $_can_lock_payout && $_payout_lock_open;
+
+// "Opens on [date]" note for someone who CAN lock but the window is currently
+// shut - finds the next quarter-opening month (Jan/Apr/Jul/Oct) strictly
+// after the current one (wrapping into next year past October), then looks
+// up that specific quarter's own configured window length.
+$_next_lock_window_label = '';
+if ($_can_lock_payout && !$_payout_lock_open) {
+    $_qm_names = array(1 => 'Jan', 4 => 'Apr', 7 => 'Jul', 10 => 'Oct');
+    $_cur_month = (int)date('n');
+    $_cur_year  = (int)date('Y');
+    $_next_month = null;
+    foreach (array(1, 4, 7, 10) as $_m) {
+        if ($_m > $_cur_month) { $_next_month = $_m; break; }
+    }
+    $_next_year = $_cur_year;
+    if ($_next_month === null) { $_next_month = 1; $_next_year = $_cur_year + 1; }
+    $_next_quarter = payoutLockWindowQuarterForMonth($_next_month);
+    $_next_days     = payoutLockWindowDays($conn, $_next_quarter);
+    $_next_lock_window_label = $_qm_names[$_next_month] . ' 1-' . $_next_days . ', ' . $_next_year;
 }
 
 ob_end_flush();
@@ -65,7 +97,8 @@ foreach ($dept_names as $did => $dname) {
     }
 }
 
-$init_month = (int)date('n');
+$init_month   = (int)date('n');
+$init_quarter = (int)ceil($init_month / 3);
 $init_year  = max(2026, (int)date('Y'));
 $year_options = array();
 for ($y = 2026; $y <= $init_year; $y++) {
@@ -170,11 +203,11 @@ if ($_pso_res) {
         <div class="col-md-3 col-sm-6">
             <label class="form-label">Quarter</label>
             <select id="perf-filter-quarter" class="form-select form-select-sm">
-                <option value="0">All Quarter</option>
-                <option value="1">Q1 (Jan-Mar)</option>
-                <option value="2">Q2 (Apr-Jun)</option>
-                <option value="3">Q3 (Jul-Sep)</option>
-                <option value="4">Q4 (Oct-Dec)</option>
+                <option value="0"<?php echo ($init_quarter === 0) ? ' selected' : ''; ?>>All Quarter</option>
+                <option value="1"<?php echo ($init_quarter === 1) ? ' selected' : ''; ?>>Q1 (Jan-Mar)</option>
+                <option value="2"<?php echo ($init_quarter === 2) ? ' selected' : ''; ?>>Q2 (Apr-Jun)</option>
+                <option value="3"<?php echo ($init_quarter === 3) ? ' selected' : ''; ?>>Q3 (Jul-Sep)</option>
+                <option value="4"<?php echo ($init_quarter === 4) ? ' selected' : ''; ?>>Q4 (Oct-Dec)</option>
             </select>
         </div>
         <?php if (!empty($dept_filter_options)): ?>
@@ -253,12 +286,15 @@ if ($_pso_res) {
         <div class="col-auto d-flex align-items-end gap-2 ms-auto">
             <button class="btn btn-sm btn-outline-secondary" id="perf-reset-filter">Reset</button>
             <a id="perf-export-all-btn" href="#" class="btn btn-outline-success btn-sm">Export</a>
-            <?php if ($_is_superadmin): ?>
+            <?php if ($_show_lock_ui): ?>
             <button class="btn btn-danger btn-sm" id="perf-lock-btn">Lock Payout</button>
             <?php endif; ?>
         </div>
     </div>
     <div class="mt-2 text-end">
+        <?php if ($_next_lock_window_label !== ''): ?>
+        <span class="text-muted" style="font-size:12px;">Lock Payout opens <?php echo htmlspecialchars($_next_lock_window_label); ?></span>
+        <?php endif; ?>
         <span class="text-muted" id="perf-filter-label" style="font-size:12px;"></span>
     </div>
 </div>
@@ -306,7 +342,7 @@ if ($_pso_res) {
     <div class="atem-pager" id="perf-pager"></div>
     <div class="d-flex gap-2 justify-content-end mt-3">
         <button class="btn btn-outline-success btn-sm" id="export-selected-btn" disabled>Export Selected</button>
-        <?php if ($_is_superadmin): ?>
+        <?php if ($_show_lock_ui): ?>
         <button class="btn btn-danger btn-sm" id="perf-lock-selected-btn" disabled>Lock Selected</button>
         <?php endif; ?>
     </div>
@@ -341,11 +377,13 @@ var PERF_CFG = <?php echo json_encode(array(
     'apiUrl'          => ATEM_BASE . 'api.php',
     'permission'      => $atem_permission,
     'initMonth'       => $init_month,
+    'initQuarter'     => $init_quarter,
     'initYear'        => $init_year,
     'defaultStatuses' => $perf_default_statuses,
     'staff'           => $perf_staff_options,
     'outlets'         => $outlet_filter_options,
     'isSuperAdmin'    => $_is_superadmin,
+    'canLockPayout'   => $_show_lock_ui,
 )); ?>;
 
 var PERF_API_URL = PERF_CFG.apiUrl;
@@ -870,7 +908,10 @@ function renderTable(data, payload) {
             '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.dept_name) + '</div>' +
             '</td>' +
             '<td>' + escHtml(rec.grade_label) + '</td>' +
-            '<td>' + escHtml(rec.struct_label) + '</td>' +
+            '<td>' +
+            '<div style="font-size:13px;">' + escHtml(rec.struct_label) + '</div>' +
+            (rec.struct_period ? '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.struct_period) + '</div>' : '') +
+            '</td>' +
             '<td class="text-center">' + (hqCount > 0 ? '<a class="perf-count-link" href="' + escHtml(hqEditUrl) + '">' + hqCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
             '<td class="text-center">' + (outletCount > 0 ? '<a class="perf-count-link" href="' + escHtml(outletEditUrl) + '">' + outletCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
             '<td class="text-center">' + (okrCount > 0 ? '<a class="perf-count-link" href="' + escHtml(okrEditUrl) + '">' + okrCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
@@ -880,7 +921,7 @@ function renderTable(data, payload) {
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '" title="View"><i class="bi bi-eye"></i></a>' +
             '<a class="btn btn-sm btn-outline-success me-1 perf-row-export" href="' + escHtml(exportUrl) + '" title="Export"><i class="bi bi-download"></i></a>' +
-            (PERF_CFG.isSuperAdmin
+            (PERF_CFG.canLockPayout
                 ? (rec.has_unlocked
                     ? '<button type="button" class="btn btn-sm btn-outline-danger me-1 perf-row-lock" data-staff-id="' + rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>'
                     : (rec.has_locked ? '<button type="button" class="btn btn-sm btn-danger me-1" disabled title="Payout Locked"><i class="bi bi-lock-fill"></i></button>' : ''))
@@ -988,7 +1029,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('perf-reset-filter').addEventListener('click', function() {
         document.getElementById('perf-filter-year').value = PERF_CFG.initYear;
         document.getElementById('perf-filter-month').value = '0';
-        document.getElementById('perf-filter-quarter').value = '0';
+        document.getElementById('perf-filter-quarter').value = String(PERF_CFG.initQuarter || 0);
         var deptEl = document.getElementById('perf-filter-dept');
         var gradeEl = document.getElementById('perf-filter-grade');
         var structEl = document.getElementById('perf-filter-struct');

@@ -147,6 +147,7 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
     $status    = ex_status_val($a);
     $is_issuer = (isset($a['issuer_staff_id']) && (int)$a['issuer_staff_id'] === $sid);
     $issuer_yn = $is_issuer ? 'Yes' : 'No';
+    $payout_yn = (isset($a['payout_status']) && $a['payout_status'] === 'Closed') ? 'Yes' : '';
 
     $start_raw = isset($a['start_date']) ? $a['start_date'] : '';
     $ex_year   = ($start_raw && strlen($start_raw) >= 7) ? (int)substr($start_raw, 0, 4) : '';
@@ -184,7 +185,7 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
                 'ATEM', $ex_year, $ex_month,
                 $name, $dept, $grade, $struct,
                 $atem_id, $title, $level, $start, $end, $closure,
-                $issuer_yn, $role, $status, $reward
+                $issuer_yn, $role, $status, $reward, $payout_yn
             ));
         }
     } else {
@@ -192,7 +193,7 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
             'ATEM', $ex_year, $ex_month,
             $name, $dept, $grade, $struct,
             $atem_id, $title, $level, $start, $end, $closure,
-            $issuer_yn, '', $status, number_format(0, 2)
+            $issuer_yn, '', $status, number_format(0, 2), $payout_yn
         ));
     }
 }
@@ -218,6 +219,7 @@ function emit_okr_rows($out, $sid, $name, $dept, $grade, $struct, $o) {
     $status  = okr_normalize_status_value(isset($o['status_value']) ? $o['status_value'] : '', !empty($o['extended']));
     $is_issuer = (isset($o['issuer_staff_id']) && (int)$o['issuer_staff_id'] === $sid);
     $issuer_yn = $is_issuer ? 'Yes' : 'No';
+    $payout_yn = (!empty($o['incentive_locked'])) ? 'Yes' : '';
 
     $start_raw = isset($o['start_date']) ? $o['start_date'] : '';
     $ex_year   = ($start_raw && strlen($start_raw) >= 7) ? (int)substr($start_raw, 0, 4) : '';
@@ -244,7 +246,7 @@ function emit_okr_rows($out, $sid, $name, $dept, $grade, $struct, $o) {
         'OKR', $ex_year, $ex_month,
         $name, $dept, $grade, $struct,
         $okr_id, $title, $level, $start, $end, $closure,
-        $issuer_yn, $role, $status, number_format($reward, 2)
+        $issuer_yn, $role, $status, number_format($reward, 2), $payout_yn
     ));
 }
 
@@ -252,7 +254,7 @@ $csv_headers = array(
     'Record Type', 'Year', 'Month',
     'Name', 'Department', 'Grade', 'Evaluation Structure',
     'Record ID', 'Title / Objective', 'Level / Complexity',
-    'Start Date', 'End Date', 'Closure Date', 'Issuer', 'Role', 'Status', 'Est. Reward (RM)'
+    'Start Date', 'End Date', 'Closure Date', 'Issuer', 'Role', 'Status', 'Est. Reward (RM)', 'Payout'
 );
 
 // ----------------------------------------
@@ -278,6 +280,8 @@ if ($type === 'staff-atem') {
 
     $atem_result = getStaffAtemList($target_staff, $staff_id);
     $atem_rows   = (!empty($atem_result['success']) && isset($atem_result['data'])) ? $atem_result['data'] : array();
+
+    logAtemExport($conn, $target_staff, $staff_id, 'atem');
 
     $sname    = preg_replace('/[^A-Za-z0-9_\-]/', '_', $t_name);
     $filename = 'atem_' . $sname . '_' . date('Y-m-d') . '.csv';
@@ -308,7 +312,7 @@ if ($type === 'staff-atem') {
     // history alongside their ATEM history in one file (Requirement 10).
     $okr_q = mysqli_query($conn, "SELECT c.id, c.objective, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
                                           c.incentive_rule, c.incentivised_owner_staff_id, c.start_date, c.end_date,
-                                          c.extended, c.extended_date, c.closed_at, os.value AS status_value,
+                                          c.extended, c.extended_date, c.closed_at, c.incentive_locked, os.value AS status_value,
                                           lv.label AS level_label, lv.base_rm AS level_rm
                                    FROM okr_cards c
                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -416,6 +420,10 @@ if ($type === 'performance') {
         return $b['total_incentive'] <=> $a['total_incentive'];
     });
 
+    foreach ($out_records as $_rec) {
+        logAtemExport($conn, $_rec['staff_id'], $staff_id, 'performance');
+    }
+
     // Fetch all ATEMs once
     $all_atems = array();
     $_atem_res = getApiDataWithJWT('atem', null, 'GET', $staff_id);
@@ -427,7 +435,7 @@ if ($type === 'performance') {
     $all_okrs = array();
     $_okr_res = mysqli_query($conn, "SELECT c.id, c.objective, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
                                              c.incentive_rule, c.incentivised_owner_staff_id, c.start_date, c.end_date,
-                                             c.extended, c.extended_date, c.closed_at, os.value AS status_value,
+                                             c.extended, c.extended_date, c.closed_at, c.incentive_locked, os.value AS status_value,
                                              lv.label AS level_label, lv.base_rm AS level_rm
                                       FROM okr_cards c
                                       LEFT JOIN okr_statuses os ON c.result_status = os.id

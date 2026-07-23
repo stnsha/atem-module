@@ -1406,6 +1406,58 @@ function atem_performance_status_options()
     return array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
 }
 
+// Quarter-opening month (Jan/Apr/Jul/Oct) -> the quarter number that just
+// closed and is being paid out this month (Jan closes Q4, Apr closes Q1,
+// Jul closes Q2, Oct closes Q3). Returns null for any other month.
+function payoutLockWindowQuarterForMonth($month)
+{
+    $map = array(1 => 4, 4 => 1, 7 => 2, 10 => 3);
+    return isset($map[$month]) ? $map[$month] : null;
+}
+
+// Number of days into that opening month Lock Payout stays open for the
+// closed quarter - each quarter has its own independently configurable
+// duration (atem_config keys payout_lock_window_days_q1..q4), since e.g. the
+// year-end quarter may need a longer/shorter window than the others.
+function payoutLockWindowDays($conn, $quarter)
+{
+    $quarter = (int)$quarter;
+    if ($quarter < 1 || $quarter > 4) { return 10; }
+    $days = 10;
+    $key = 'payout_lock_window_days_q' . $quarter;
+    $r = mysqli_query($conn, "SELECT setting_value FROM atem_config WHERE setting_key = '" . $key . "'");
+    if ($r && ($row = mysqli_fetch_assoc($r))) {
+        $d = (int)$row['setting_value'];
+        if ($d > 0) { $days = $d; }
+    }
+    return $days;
+}
+
+// Unlike the struct window (any month's first N days), Lock Payout only ever
+// opens in the month a quarter actually closes in (Jan/Apr/Jul/Oct) - locking
+// mid-quarter makes no sense since the period isn't closed out yet. Which
+// quarter's own configured duration applies depends on which quarter just
+// closed (see payoutLockWindowQuarterForMonth()).
+function isPayoutLockWindowOpen($conn)
+{
+    $quarter = payoutLockWindowQuarterForMonth((int)date('n'));
+    if ($quarter === null) { return false; }
+    return (int)date('j') <= payoutLockWindowDays($conn, $quarter);
+}
+
+// Records one export event per target staff, shown in the Logs section of
+// staff_performance/edit.php alongside ATEM/OKR lock events. $exportType is
+// a free-form label (e.g. 'atem', 'performance') just for display context.
+function logAtemExport($conn, $targetStaffId, $actorStaffId, $exportType)
+{
+    $targetStaffId = (int)$targetStaffId;
+    $actorStaffId  = (int)$actorStaffId;
+    if ($targetStaffId <= 0 || $actorStaffId <= 0) { return; }
+    $exportTypeEsc = mysqli_real_escape_string($conn, (string)$exportType);
+    mysqli_query($conn, "INSERT INTO atem_export_logs (target_staff_id, actor_staff_id, export_type)
+                          VALUES ($targetStaffId, $actorStaffId, '$exportTypeEsc')");
+}
+
 // Which performance-table column ('complete'/'active'/'extend'/'failed') a status
 // belongs to, or null if it's not a performance-relevant status at all.
 function atem_status_bucket($status)
@@ -3043,6 +3095,27 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pl_str = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
                     if ($pl_str) { while ($pl_r = mysqli_fetch_assoc($pl_str)) { $pl_struct_labels[(int)$pl_r['id']] = $pl_r['struct_name']; } }
 
+                    // Evaluation Structure can change over time (staff_struct_history is
+                    // written per staff/quarter by access_control/backend.php) - shown
+                    // as a "Qx - year" subtext under the struct name (same two-line
+                    // pattern as the Staff Details column), always, from each staff's
+                    // most recent history entry, independent of whatever period the
+                    // page's own filter happens to be set to. Staff with no history row
+                    // yet (never recorded a struct change) simply show no subtext.
+                    $pl_struct_period = array();
+                    $pl_sh = mysqli_query($conn, "SELECT h.staff_id, h.year, h.quarter
+                                                   FROM staff_struct_history h
+                                                   INNER JOIN (
+                                                       SELECT staff_id, MAX(year * 10 + quarter) AS latest
+                                                       FROM staff_struct_history
+                                                       GROUP BY staff_id
+                                                   ) m ON m.staff_id = h.staff_id AND (h.year * 10 + h.quarter) = m.latest");
+                    if ($pl_sh) {
+                        while ($pl_r = mysqli_fetch_assoc($pl_sh)) {
+                            $pl_struct_period[(int)$pl_r['staff_id']] = 'Q' . (int)$pl_r['quarter'] . ' - ' . (int)$pl_r['year'];
+                        }
+                    }
+
                     // Only grade 2 (non-SA) is mandatorily scoped to their own
                     // department overlap - a grade-2 Outlet-department caller is
                     // narrowed further to their own specific outlet(s). Grade 3+
@@ -3127,6 +3200,15 @@ if (!defined('API_JWT_INCLUDED')) {
                         $pl_failed_outlet   = $pl_out_rec ? $pl_out_rec['failed']   : 0;
                         $pl_failed_okr      = $pl_okr_rec ? $pl_okr_rec['failed']   : 0;
 
+                        $pl_has_locked   = !empty($pl_hq_rec['has_locked'])   || !empty($pl_out_rec['has_locked'])   || !empty($pl_okr_rec['has_locked']);
+                        $pl_has_unlocked = !empty($pl_hq_rec['has_unlocked']) || !empty($pl_out_rec['has_unlocked']) || !empty($pl_okr_rec['has_unlocked']);
+                        // Once a staff member's payout is fully locked (nothing left
+                        // unlocked), drop them from the on-screen list entirely - there's
+                        // nothing actionable left for them here. They still appear in
+                        // the Export CSV (with a "Payout" column), which is the actual
+                        // record of who's been paid.
+                        if ($pl_has_locked && !$pl_has_unlocked) { continue; }
+
                         $pl_out[] = array(
                             'id'           => $pl_sid,
                             'staff_id'     => $pl_sid,
@@ -3140,6 +3222,7 @@ if (!defined('API_JWT_INCLUDED')) {
                             'grade_label'  => ($pl_grade_id !== null && isset($pl_grade_labels[$pl_grade_id])) ? $pl_grade_labels[$pl_grade_id] : '-',
                             'struct_id'    => $pl_struct_id,
                             'struct_label' => ($pl_struct_id !== null && isset($pl_struct_labels[$pl_struct_id])) ? $pl_struct_labels[$pl_struct_id] : '-',
+                            'struct_period' => isset($pl_struct_period[$pl_sid]) ? $pl_struct_period[$pl_sid] : '',
                             'total_hq_atem'      => $pl_hq_total,
                             'complete_hq_count'  => $pl_complete_hq,
                             'active_hq_count'    => $pl_hq_rec ? $pl_hq_rec['active'] : 0,
@@ -3158,8 +3241,8 @@ if (!defined('API_JWT_INCLUDED')) {
                             'complete_total'  => $pl_complete_hq + $pl_complete_outlet + $pl_complete_okr,
                             'failed_total'    => $pl_failed_hq + $pl_failed_outlet + $pl_failed_okr,
                             'total_incentive' => round($pl_total_reward, 2),
-                            'has_locked'      => !empty($pl_hq_rec['has_locked']) || !empty($pl_out_rec['has_locked']) || !empty($pl_okr_rec['has_locked']),
-                            'has_unlocked'    => !empty($pl_hq_rec['has_unlocked']) || !empty($pl_out_rec['has_unlocked']) || !empty($pl_okr_rec['has_unlocked']),
+                            'has_locked'      => $pl_has_locked,
+                            'has_unlocked'    => $pl_has_unlocked,
                         );
                     }
 
@@ -3190,6 +3273,11 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     if (!$pyk_is_sa) {
                         $response = array('success' => false, 'message' => 'Insufficient permission to lock payout.');
+                        break;
+                    }
+                    if (!isPayoutLockWindowOpen($conn)) {
+                        $response = array('success' => false, 'message' =>
+                            'Lock Payout is only available during the configured window at the start of each quarter (Jan/Apr/Jul/Oct).');
                         break;
                     }
 

@@ -77,11 +77,20 @@ $t_dept   = ($t_dept_id   && isset($dept_names[$t_dept_id]))                  ? 
 $t_grade  = ($t_grade_id  !== null && isset($grade_labels[$t_grade_id]))       ? $grade_labels[$t_grade_id]         : '-';
 $t_struct = ($t_struct_id !== null && isset($struct_labels[$t_struct_id]))     ? $struct_labels[$t_struct_id]       : '-';
 
-// OKR tab only applies to staff.struct 4 ("2 OKR + 8 ATEM") or 5 ("12 OKR") -
-// every other struct has no OKR evaluation component at all. Fall back to
-// the ATEM tab if a stale/manual tab=okr link was followed for a staff who
-// doesn't qualify.
+// OKR tab shows for staff.struct 4 ("2 OKR + 8 ATEM") or 5 ("12 OKR"), OR for
+// anyone who actually has OKR involvement (owner/owner2/issuer) regardless of
+// their current Evaluation Structure - a staff can be reassigned to an
+// ATEM-only struct after having done OKRs, and those records shouldn't
+// disappear from view. Fall back to the ATEM tab if a stale/manual tab=okr
+// link was followed for a staff who qualifies for neither.
 $show_okr_tab = ($t_struct_id === 4 || $t_struct_id === 5);
+if (!$show_okr_tab) {
+    $_okr_exists_r = mysqli_query($conn, "SELECT 1 FROM okr_cards
+                                           WHERE deleted_at IS NULL
+                                             AND (owner_staff_id = " . $target_sid . " OR owner2_staff_id = " . $target_sid . " OR issuer_staff_id = " . $target_sid . ")
+                                           LIMIT 1");
+    $show_okr_tab = ($_okr_exists_r && mysqli_num_rows($_okr_exists_r) > 0);
+}
 if ($active_tab === 'okr' && !$show_okr_tab) {
     $active_tab = 'atem';
 }
@@ -153,8 +162,50 @@ $okr_levels_lookup    = array();
 $okr_statuses_lookup  = array();
 $edit_okr_js_rows     = array();
 
-// Only queried/built for struct 4/5 staff - the OKR tab doesn't exist at all
-// for anyone else (see $show_okr_tab above), so there's nothing to fetch.
+// Combined activity log for this staff (ATEM/OKR payout locks + exports),
+// built up across the ATEM/OKR fetch blocks below plus a dedicated export-log
+// query, then sorted/rendered next to Staff Details further down.
+$activity_logs = array();
+
+// ATEM lock events - payout_closed_by/payout_closed_at are set by the
+// Laravel atem-api's single-record payout-status endpoint (the only ATEM
+// lock path that currently actually works - see bulk-lock-payout's own
+// notes in api.php).
+foreach ($atem_rows as $_a) {
+    if (isset($_a['payout_status']) && $_a['payout_status'] === 'Closed'
+        && !empty($_a['payout_closed_by']) && !empty($_a['payout_closed_at'])
+    ) {
+        $_lock_actor_id = (int)$_a['payout_closed_by'];
+        $activity_logs[] = array(
+            'type'  => 'ATEM Lock',
+            'ref'   => '#AT' . (int)(isset($_a['id']) ? $_a['id'] : 0),
+            'actor' => isset($staff_names[$_lock_actor_id]) ? $staff_names[$_lock_actor_id] : ('Staff #' . $_lock_actor_id),
+            'when'  => $_a['payout_closed_at'],
+        );
+    }
+}
+
+// Export events - written by export.php's logAtemExport() every time this
+// staff's data is included in an export (single-staff or bulk performance).
+$_exp_res = mysqli_query($conn, "SELECT actor_staff_id, export_type, exported_at
+                                  FROM atem_export_logs
+                                  WHERE target_staff_id = " . $target_sid . "
+                                  ORDER BY exported_at DESC
+                                  LIMIT 15");
+if ($_exp_res) {
+    while ($_exp = mysqli_fetch_assoc($_exp_res)) {
+        $_exp_actor_id = (int)$_exp['actor_staff_id'];
+        $activity_logs[] = array(
+            'type'  => 'Export',
+            'ref'   => ucfirst($_exp['export_type']),
+            'actor' => isset($staff_names[$_exp_actor_id]) ? $staff_names[$_exp_actor_id] : ('Staff #' . $_exp_actor_id),
+            'when'  => $_exp['exported_at'],
+        );
+    }
+}
+
+// Only queried/built when the OKR tab is shown (struct 4/5, or actual OKR
+// involvement - see $show_okr_tab above); nothing to fetch otherwise.
 if ($show_okr_tab) {
     $_ol_r = mysqli_query($conn, "SELECT level, label FROM okr_levels WHERE recycle != 1 ORDER BY level ASC");
     if ($_ol_r) { while ($_ol = mysqli_fetch_assoc($_ol_r)) { $okr_levels_lookup[] = array('value' => 'Level ' . (int)$_ol['level'], 'label' => $_ol['label']); } }
@@ -181,6 +232,7 @@ if ($show_okr_tab) {
     $okr_query = mysqli_query($conn, "SELECT c.id, c.objective, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
                                               c.incentive_rule, c.incentivised_owner_staff_id, c.start_date, c.end_date,
                                               c.extended, c.extended_date, c.closed_at, c.difficulty_level,
+                                              c.incentive_locked, c.locked_by, c.locked_at,
                                               os.value AS status_value, lv.base_rm AS level_rm, ty.value AS type_label
                                        FROM okr_cards c
                                        LEFT JOIN okr_statuses os ON c.result_status = os.id
@@ -205,6 +257,16 @@ if ($show_okr_tab) {
             if ($o_issuer_id === $target_sid) { $o_roles[] = 'Issuer'; }
             if ($o_owner_id  === $target_sid) { $o_roles[] = 'Owner'; }
             if ($o_owner2_id === $target_sid) { $o_roles[] = 'Owner 2'; }
+
+            if (!empty($o['incentive_locked']) && !empty($o['locked_by']) && !empty($o['locked_at'])) {
+                $_lock_actor_id = (int)$o['locked_by'];
+                $activity_logs[] = array(
+                    'type'  => 'OKR Lock',
+                    'ref'   => '#OK' . (int)$o['id'],
+                    'actor' => isset($staff_names[$_lock_actor_id]) ? $staff_names[$_lock_actor_id] : ('Staff #' . $_lock_actor_id),
+                    'when'  => $o['locked_at'],
+                );
+            }
 
             // Est. Reward: the target's own share, mirroring getStaffOkrPerformanceLive()'s
             // RULE1 (single incentivised owner gets 100%, other owner 0%) / RULE2
@@ -243,6 +305,12 @@ if ($show_okr_tab) {
         }
     }
 }
+
+// Newest first, capped so this doesn't grow unbounded on the page over time.
+usort($activity_logs, function ($a, $b) {
+    return strtotime($b['when']) <=> strtotime($a['when']);
+});
+$activity_logs = array_slice($activity_logs, 0, 15);
 
 $back_url = ATEM_BASE . 'staff_performance/index.php';
 if ($filter_month > 0 || $filter_year > 0 || $filter_quarter > 0) {
@@ -644,6 +712,25 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
 </div><!-- /#edit-tab-okr -->
 <?php endif; ?>
 </div><!-- /.tab-content -->
+
+<div class="atem-card mt-3">
+    <h6 class="atem-card-title"><i class="bi bi-clock-history"></i> Activity Log</h6>
+    <?php if (empty($activity_logs)): ?>
+    <p class="text-muted mb-0 mt-2" style="font-size:13px;">No lock or export activity recorded yet.</p>
+    <?php else: ?>
+    <div class="mt-2">
+        <?php foreach ($activity_logs as $_log): ?>
+        <div style="padding:8px 0;border-bottom:1px solid #f1f3f5;">
+            <div style="font-size:13px;font-weight:500;"><?php echo htmlspecialchars($_log['type']); ?> <?php echo htmlspecialchars($_log['ref']); ?></div>
+            <div class="text-muted" style="font-size:12px;">
+                <?php echo htmlspecialchars($_log['actor']); ?>
+                &middot; <?php echo htmlspecialchars(date('Y-m-d H:i:s', strtotime($_log['when']))); ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+</div>
 
 </div><!-- /.atem-container -->
 
