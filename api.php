@@ -3315,7 +3315,12 @@ if (!defined('API_JWT_INCLUDED')) {
                         break;
                     }
 
-                    $pyk_atem_result = bulkUpdatePayoutStatus($pyk_atem_ids, $pyk_remarks, $staff_id, false, $pyk_is_sa);
+                    // Skip the ATEM-side call entirely when there are no eligible ATEM
+                    // ids - the atem-api endpoint rejects an empty ids[] outright ("No
+                    // ATEM ids supplied."), which would otherwise fail an OKR-only lock.
+                    $pyk_atem_result = !empty($pyk_atem_ids)
+                        ? bulkUpdatePayoutStatus($pyk_atem_ids, $pyk_remarks, $staff_id, false, $pyk_is_sa)
+                        : array('success' => true, 'locked' => 0, 'skipped' => 0);
                     $pyk_okr_result  = bulkUpdateOkrPayoutStatus($conn, $pyk_okr_ids, $pyk_remarks, $staff_id, false);
                     if (empty($pyk_atem_result['success'])) {
                         $response = $pyk_atem_result;
@@ -3382,7 +3387,12 @@ if (!defined('API_JWT_INCLUDED')) {
                         break;
                     }
 
-                    $pyu_atem_result = bulkUpdatePayoutStatus($pyu_atem_ids, $pyu_remarks, $staff_id, true, $pyu_is_sa);
+                    // Skip the ATEM-side call entirely when there are no eligible ATEM
+                    // ids - the atem-api endpoint rejects an empty ids[] outright ("No
+                    // ATEM ids supplied."), which would otherwise fail an OKR-only unlock.
+                    $pyu_atem_result = !empty($pyu_atem_ids)
+                        ? bulkUpdatePayoutStatus($pyu_atem_ids, $pyu_remarks, $staff_id, true, $pyu_is_sa)
+                        : array('success' => true, 'unlocked' => 0, 'skipped' => 0);
                     $pyu_okr_result  = bulkUpdateOkrPayoutStatus($conn, $pyu_okr_ids, $pyu_remarks, $staff_id, true);
                     if (empty($pyu_atem_result['success'])) {
                         $response = $pyu_atem_result;
