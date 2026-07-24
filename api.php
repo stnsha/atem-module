@@ -2941,9 +2941,8 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'get-performance-list':
-                    // Access: grade 2+, People Management (dept 17), or SuperAdmin —
-                    // mirrors staff_performance/index.php's page guard so every
-                    // page-admitted user can also load the table.
+                    // Access: grade 3+ or SuperAdmin — mirrors staff_performance/index.php's
+                    // page guard so every page-admitted user can also load the table.
                     $pl_perm  = 0;
                     $pl_is_sa = false;
                     if (isset($atem_permission)) {
@@ -2989,7 +2988,7 @@ if (!defined('API_JWT_INCLUDED')) {
                             if ($_plo > 0) { $pl_outlet_ids[] = $_plo; }
                         }
                     }
-                    if ($pl_perm < 2 && !$pl_is_sa && !in_array(17, $pl_dept_ids, true)) {
+                    if ($pl_perm < 3 && !$pl_is_sa) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
@@ -3399,33 +3398,23 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'get-staff-atem-list':
-                    // Access: grade 2+, People Management (dept 17), or SuperAdmin — same
-                    // tier as get-performance-list, since this only ever backs that page's
-                    // drill-down modal. $atem_permission is set when included from a page,
-                    // not in direct-access mode.
+                    // Access: grade 3+ or SuperAdmin — same tier as get-performance-list,
+                    // since this only ever backs that page's drill-down modal.
+                    // $atem_permission is set when included from a page, not in
+                    // direct-access mode.
                     $caller_perm  = 0;
                     $caller_is_sa = false;
-                    $caller_dept_str = '';
                     if (isset($atem_permission)) {
                         $caller_perm  = (int)$atem_permission;
                         $caller_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
-                        $caller_dept_str = isset($department) ? (string)$department : '';
                     } elseif ($staff_id) {
-                        $_perm_res = mysqli_query($conn, "SELECT grade, atem, department FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_perm_res && ($_perm_row = mysqli_fetch_assoc($_perm_res))) {
                             $caller_perm  = (int)$_perm_row['grade'];
                             $caller_is_sa = ((int)$_perm_row['atem'] === 1);
-                            $caller_dept_str = (string)$_perm_row['department'];
                         }
                     }
-                    $caller_dept_ids = array();
-                    if ($caller_dept_str !== '') {
-                        foreach (explode(',', $caller_dept_str) as $_cdid) {
-                            $_cdid = (int)trim($_cdid);
-                            if ($_cdid > 0) { $caller_dept_ids[] = $_cdid; }
-                        }
-                    }
-                    if ($caller_perm < 2 && !$caller_is_sa && !in_array(17, $caller_dept_ids, true)) {
+                    if ($caller_perm < 3 && !$caller_is_sa) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
@@ -3582,33 +3571,23 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'get-staff-okr-list':
-                    // Access: same tier as get-staff-atem-list (grade 2+, People
-                    // Management, or SuperAdmin) - no caller-side department scoping,
-                    // mirroring that sibling's current (unscoped) behavior; this is a
-                    // known, pre-existing gap, not something this task fixes.
+                    // Access: same tier as get-staff-atem-list (grade 3+ or SuperAdmin) -
+                    // no caller-side department scoping, mirroring that sibling's current
+                    // (unscoped) behavior; this is a known, pre-existing gap, not
+                    // something this task fixes.
                     $okr_caller_perm  = 0;
                     $okr_caller_is_sa = false;
-                    $okr_caller_dept_str = '';
                     if (isset($atem_permission)) {
                         $okr_caller_perm  = (int)$atem_permission;
                         $okr_caller_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
-                        $okr_caller_dept_str = isset($department) ? (string)$department : '';
                     } elseif ($staff_id) {
-                        $_okr_perm_res = mysqli_query($conn, "SELECT grade, atem, department FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_okr_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_okr_perm_res && ($_okr_perm_row = mysqli_fetch_assoc($_okr_perm_res))) {
                             $okr_caller_perm  = (int)$_okr_perm_row['grade'];
                             $okr_caller_is_sa = ((int)$_okr_perm_row['atem'] === 1);
-                            $okr_caller_dept_str = (string)$_okr_perm_row['department'];
                         }
                     }
-                    $okr_caller_dept_ids = array();
-                    if ($okr_caller_dept_str !== '') {
-                        foreach (explode(',', $okr_caller_dept_str) as $_ocdid) {
-                            $_ocdid = (int)trim($_ocdid);
-                            if ($_ocdid > 0) { $okr_caller_dept_ids[] = $_ocdid; }
-                        }
-                    }
-                    if ($okr_caller_perm < 2 && !$okr_caller_is_sa && !in_array(17, $okr_caller_dept_ids, true)) {
+                    if ($okr_caller_perm < 3 && !$okr_caller_is_sa) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }

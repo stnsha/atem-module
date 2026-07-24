@@ -4,10 +4,10 @@ ob_start();
 $page_title = 'Staff Performance';
 include('../header.php');
 
-// Page access: grade 2+, People Management (dept 17), or SuperAdmin. Lock
-// Payout itself is further restricted to SuperAdmin only, and only during
-// the configurable payout lock window (see $_show_lock_ui below and
-// api.php's bulk-lock-payout) - permanent, no unlock capability.
+// Page access: grade 3+ or SuperAdmin. Lock Payout itself is further
+// restricted to SuperAdmin only, and only during the configurable payout
+// lock window (see $_show_lock_ui below and api.php's bulk-lock-payout) -
+// permanent, no unlock capability.
 $_perf_dept_ids = array();
 if (isset($department) && $department !== '') {
     foreach (explode(',', (string)$department) as $_perf_d) {
@@ -27,7 +27,7 @@ if (isset($outlet) && $outlet !== '') {
     }
 }
 
-if ($atem_permission < 2 && !$_is_superadmin && !in_array(17, $_perf_dept_ids, true)) {
+if ($atem_permission < 3 && !$_is_superadmin) {
     ob_end_clean();
     header('Location: ' . ATEM_BASE . 'index.php');
     exit;

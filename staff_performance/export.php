@@ -10,32 +10,23 @@ if (!isset($conn)) { http_response_code(500); exit('Database connection error');
 $staff_id       = null;
 $caller_grade   = 0;
 $caller_atem    = 0;
-$caller_dept    = '';
 if (isset($_SESSION['myusername'])) {
     $un     = $_SESSION['myusername'];
     $un_esc = mysqli_real_escape_string($conn, $un);
-    $res    = mysqli_query($conn, "SELECT id, grade, atem, department FROM staff WHERE username = '$un_esc' AND recycle != 1");
+    $res    = mysqli_query($conn, "SELECT id, grade, atem FROM staff WHERE username = '$un_esc' AND recycle != 1");
     if ($res && mysqli_num_rows($res) > 0) {
         $row          = mysqli_fetch_assoc($res);
         $staff_id     = (int)$row['id'];
         $caller_grade = (int)$row['grade'];
         $caller_atem  = (int)$row['atem'];
-        $caller_dept  = (string)$row['department'];
     }
 }
 if (!$staff_id) { http_response_code(403); exit('Unauthorized'); }
 $effective_grade = ($caller_atem === 1) ? 6 : $caller_grade;
-$caller_dept_ids = array();
-if ($caller_dept !== '') {
-    foreach (explode(',', $caller_dept) as $_cd) {
-        $_cd = (int)trim($_cd);
-        if ($_cd > 0) { $caller_dept_ids[] = $_cd; }
-    }
-}
-// Access: grade 2+, People Management (dept 17), or SuperAdmin (folded into
-// $effective_grade = 6 above) — mirrors staff_performance/index.php's page
-// guard and api.php's list/lock/unlock permission checks.
-if ($effective_grade < 2 && !in_array(17, $caller_dept_ids, true)) { http_response_code(403); exit('Forbidden'); }
+// Access: grade 3+ or SuperAdmin (folded into $effective_grade = 6 above) —
+// mirrors staff_performance/index.php's page guard and api.php's list/
+// lock/unlock permission checks.
+if ($effective_grade < 3) { http_response_code(403); exit('Forbidden'); }
 
 // Include API functions
 define('API_JWT_INCLUDED', true);

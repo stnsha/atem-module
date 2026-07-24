@@ -110,16 +110,7 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                     <a class="nav-link" href="okr/list.php">OKR</a>
                 </li>
                 <?php endif; ?>
-                <?php
-                $_navbar_dept_ids = array();
-                if (isset($department) && $department !== '') {
-                    foreach (explode(',', (string)$department) as $_navbar_d) {
-                        $_navbar_d = (int)trim($_navbar_d);
-                        if ($_navbar_d > 0) { $_navbar_dept_ids[] = $_navbar_d; }
-                    }
-                }
-                ?>
-                <?php if ($atem_role >= 2 || $_is_superadmin || in_array(17, $_navbar_dept_ids, true)): ?>
+                <?php if ($atem_role >= 3 || $_is_superadmin): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $performance_active; ?>"
                         href="<?php echo ATEM_BASE; ?>staff_performance/index.php">Performance</a>

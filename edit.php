@@ -756,6 +756,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                 </div>
 
                 <!-- Reward Decision — HQ cards only, shown once a terminal status is selected -->
+                <!-- Hidden: not yet in use.
                 <div class="col-12" id="tl-reward-decision-wrap" style="display:none;">
                     <label class="form-label" style="font-weight:600;">Reward Decision <span class="atem-req">*</span></label>
                     <div class="form-check">
@@ -774,6 +775,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     </div>
                     <div class="atem-form-error" id="tl-reward-decision-error"></div>
                 </div>
+                -->
 
                 <!-- Row 3: Final Due, Closure (auto, disabled) -->
                 <div class="col-md-4">

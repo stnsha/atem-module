@@ -528,6 +528,7 @@
     // --------------------------------------------------------------- delete permission
     function canDelete(r) {
         if (r.is_deleted) { return false; }
+        if (r.payout_status === 'Closed') { return false; }
         if (CFG.isSuperAdmin) { return true; }
         if (!CFG.staffId) { return false; }
         if (r.issuer_staff_id != CFG.staffId) { return false; }
@@ -544,6 +545,7 @@
 
     // --------------------------------------------------------------- edit permission
     function canEdit(r) {
+        if (r.payout_status === 'Closed') { return false; }
         if (CFG.isSuperAdmin) { return true; }
         if (!CFG.staffId) { return false; }
         if (r.issuer_staff_id == CFG.staffId) { return true; }

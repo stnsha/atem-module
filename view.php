@@ -217,6 +217,7 @@ foreach ($rows as $a) {
         // card is always locked down even if its deleted_at drifted from its status.
         'is_deleted'      => (!empty($a['deleted_at']) || ($status && $status['value'] === 'Suspended')),
         'deleted_at'      => isset($a['deleted_at']) ? $a['deleted_at'] : null,
+        'payout_status'   => isset($a['payout_status']) ? $a['payout_status'] : null,
     );
     $row_arci_dept_ids[] = $arci_dept_ids;
     $row_outlet_ids[]    = $outlet_ids;
