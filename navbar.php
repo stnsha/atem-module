@@ -213,6 +213,8 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                 snippet = 'You received a chat on ATEM ID ' + n.atem_id;
             } else if (n.type === 'atem_suspended' && n.atem_id) {
                 snippet = 'Your ATEM ID ' + n.atem_id + ' has been suspended.';
+            } else if (n.type === 'atem_appealed' && n.atem_id) {
+                snippet = 'An appeal was submitted for ATEM ID ' + n.atem_id + '.';
             } else {
                 snippet = 'New activity on ATEM #' + n.atem_id;
             }

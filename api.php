@@ -812,6 +812,19 @@ function suspendAtem($id, $staff_id, $remarks)
     return array('success' => false, 'message' => $msg);
 }
 
+function appealAtem($id, $staff_id, $remarks)
+{
+    $endpoint = 'atem/' . (int)$id . '/appeal';
+    $result   = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id, 'remarks' => $remarks), 'POST', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : null);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to submit appeal.';
+    return array('success' => false, 'message' => $msg);
+}
+
 function unsuspendAtem($id, $staff_id)
 {
     $endpoint = 'atem/' . (int)$id . '/unsuspend';
@@ -2370,20 +2383,6 @@ function getIidasMigrationSummary($staff_id)
 
 // Only run request handler if this file is accessed directly (not included)
 if (!defined('API_JWT_INCLUDED')) {
-    // Check if we have a staff ID for authentication
-    if (!$staff_id) {
-        echo json_encode(array(
-            'success' => false,
-            'error' => 'No staff ID available for authentication',
-            'message' => 'Staff ID is required for JWT authentication. Please ensure you are logged in.',
-            'debug' => array(
-                'session_username' => isset($_SESSION["myusername"]) ? $_SESSION["myusername"] : 'not set',
-                'staff_id' => $staff_id
-            )
-        ));
-        exit;
-    }
-
     // Main request handler
     $input = file_get_contents('php://input');
     $jsonData = json_decode($input, true);
@@ -2397,6 +2396,20 @@ if (!defined('API_JWT_INCLUDED')) {
         : (isset($_POST['action'])
             ? $_POST['action']
             : (isset($jsonData['action']) ? $jsonData['action'] : null));
+
+    // Check if we have a staff ID for authentication
+    if (!$staff_id) {
+        echo json_encode(array(
+            'success' => false,
+            'error' => 'No staff ID available for authentication',
+            'message' => 'Staff ID is required for JWT authentication. Please ensure you are logged in.',
+            'debug' => array(
+                'session_username' => isset($_SESSION["myusername"]) ? $_SESSION["myusername"] : 'not set',
+                'staff_id' => $staff_id
+            )
+        ));
+        exit;
+    }
 
     // Attachment download is a plain GET link that streams binary content rather
     // than JSON, so it is handled before the JSON request switch below.
@@ -2888,7 +2901,27 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($is_api_superadmin) {
                             $data['superadmin_override'] = 1;
                         }
+                        $update_before = getAtem($jsonData['id'], $staff_id);
+                        $update_was_suspended = !empty($update_before['success']) && isset($update_before['data']['status']['value'])
+                            && $update_before['data']['status']['value'] === 'Suspended';
                         $response = updateAtem($jsonData['id'], $data, $staff_id);
+                        // Manual Suspended -> Force Terminated transition: atem-api already
+                        // created the in-app notification; this only sends the email, since
+                        // atem-api never sends mail itself.
+                        if ($response['success'] && $update_was_suspended
+                            && isset($response['data']['status']['value']) && $response['data']['status']['value'] === 'Force Terminated') {
+                            $ft_issuer_id = isset($response['data']['issuer_staff_id']) ? (int)$response['data']['issuer_staff_id'] : 0;
+                            $ft_issuer = $ft_issuer_id ? getStaffEmail($ft_issuer_id) : null;
+                            if ($ft_issuer) {
+                                sendAtemForceTerminateEmail(
+                                    $ft_issuer['email'],
+                                    $ft_issuer['name'],
+                                    $jsonData['id'],
+                                    isset($response['data']['title']) ? $response['data']['title'] : ('ATEM #' . (int)$jsonData['id']),
+                                    ''
+                                );
+                            }
+                        }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or data');
                     }
@@ -2937,6 +2970,43 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID.');
+                    }
+                    break;
+
+                case 'appeal-atem':
+                    if (!$staff_id) {
+                        $response = array('success' => false, 'message' => 'Not authenticated.');
+                        break;
+                    }
+                    if (isset($jsonData['id']) && isset($jsonData['remarks']) && trim((string)$jsonData['remarks']) !== '') {
+                        $appeal_atem = getAtem($jsonData['id'], $staff_id);
+                        if (empty($appeal_atem['success']) || !isset($appeal_atem['data'])) {
+                            $response = array('success' => false, 'message' => 'ATEM card not found.');
+                            break;
+                        }
+                        $appeal_issuer_id = (int)(isset($appeal_atem['data']['issuer_staff_id']) ? $appeal_atem['data']['issuer_staff_id'] : 0);
+                        if ((int)$staff_id !== $appeal_issuer_id) {
+                            $response = array('success' => false, 'message' => 'Only the Issuer can appeal this suspension.');
+                            break;
+                        }
+                        $appeal_remarks = trim((string)$jsonData['remarks']);
+                        $response = appealAtem($jsonData['id'], $staff_id, $appeal_remarks);
+                        if ($response['success']) {
+                            $appeal_suspended_by = (int)(isset($appeal_atem['data']['suspended_by']) ? $appeal_atem['data']['suspended_by'] : 0);
+                            $appeal_suspender = $appeal_suspended_by ? getStaffEmail($appeal_suspended_by) : null;
+                            if ($appeal_suspender) {
+                                sendAtemAppealEmail(
+                                    $appeal_suspender['email'],
+                                    $appeal_suspender['name'],
+                                    $jsonData['id'],
+                                    isset($appeal_atem['data']['title']) ? $appeal_atem['data']['title'] : ('ATEM #' . (int)$jsonData['id']),
+                                    $appeal_remarks,
+                                    $nama_staff ? $nama_staff : 'Issuer'
+                                );
+                            }
+                        }
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or appeal reason.');
                     }
                     break;
 
@@ -3136,6 +3206,16 @@ if (!defined('API_JWT_INCLUDED')) {
                         $chat_atem = getAtem($jsonData['id'], $staff_id);
                         if (empty($chat_atem['success']) || !isset($chat_atem['data'])) {
                             $response = array('success' => false, 'message' => 'ATEM card not found.');
+                            break;
+                        }
+                        // Chat stays open regardless of status (Suspended/Force Terminated/
+                        // Completed/etc) - only a genuinely deleted or payout-closed card blocks it.
+                        if (!empty($chat_atem['data']['deleted_at'])) {
+                            $response = array('success' => false, 'message' => 'This ATEM card has been deleted.');
+                            break;
+                        }
+                        if (isset($chat_atem['data']['payout_status']) && $chat_atem['data']['payout_status'] === 'Closed') {
+                            $response = array('success' => false, 'message' => 'This ATEM card is locked because its payout has been closed.');
                             break;
                         }
                         if (!userCanPostAtemChat($chat_atem['data'], $staff_id, $is_api_superadmin)) {

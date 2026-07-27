@@ -581,7 +581,7 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
                     <th>Issuer</th>
                     <th>Accountable</th>
                     <th>ARCI</th>
-                    <th>Level Structure</th>
+                    <th>Level</th>
                     <th>Start</th>
                     <th>End</th>
                     <th>Status</th>
