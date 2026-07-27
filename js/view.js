@@ -37,7 +37,7 @@
         'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Completed with Extension': '#495057',
         'Extended': '#fd7e14', 'Failed': '#dc3545',
-        'Deleted': '#dc3545', 'Suspended': '#e11d48'
+        'Deleted': '#dc3545', 'Suspended': '#e11d48', 'Force Terminated': '#7c3aed'
     };
     function $(id) { return document.getElementById(id); }
 
@@ -108,7 +108,7 @@
 
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         var statuses = (CFG.statuses || [])
-            .filter(function (s) { return canSeeDeleted || (s.value !== 'Deleted' && s.value !== 'Suspended'); })
+            .filter(function (s) { return canSeeDeleted || (s.value !== 'Deleted' && s.value !== 'Suspended' && s.value !== 'Force Terminated'); })
             .map(function (s) { return s.value; });
         buildStatusOptions('vf-status', statuses);
         buildStatusOptions('vfo-status', statuses);
@@ -355,7 +355,14 @@
     // atem_status_period_field()/dashboard-stats convention, so the counts
     // shown here and on the dashboard agree for the same filter selection.
     function periodDateOf(r) {
-        return (r.status === 'Active' || r.status === 'Draft') ? r.start_date : r.closure_date;
+        // Active/Draft haven't closed yet, so period by start_date; Suspended/
+        // Force Terminated never get a closure_date either (they're soft-deleted
+        // without ever actually closing) - period them by start_date too, or the
+        // Year/Month filter would silently exclude every one of them.
+        if (r.status === 'Active' || r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated') {
+            return r.start_date;
+        }
+        return r.closure_date;
     }
 
     function applyHqFilters(sourceRows) {
@@ -1015,6 +1022,21 @@
                     if (issuersList[mi].id == CFG.staffId) { meName = issuersList[mi].name; break; }
                 }
                 ibEl.textContent = meName;
+            }
+        } else if (params.get('issuer_id')) {
+            // Deep link from the dashboard's Suspended/Force Terminated breakdown -
+            // like issuer=me but for an arbitrary staff id, not just the viewer.
+            var issuerIdNum = parseInt(params.get('issuer_id'), 10);
+            var ivEl2 = $(_tabPrefix + '-issuer-value');
+            var ibEl2 = $(_tabPrefix + '-issuer-btn');
+            if (ivEl2 && issuerIdNum > 0) { ivEl2.value = issuerIdNum; }
+            if (ibEl2 && issuerIdNum > 0) {
+                var targetName = 'Staff #' + issuerIdNum;
+                var issuersList2 = CFG.issuers || [];
+                for (var mi2 = 0; mi2 < issuersList2.length; mi2++) {
+                    if (issuersList2[mi2].id == issuerIdNum) { targetName = issuersList2[mi2].name; break; }
+                }
+                ibEl2.textContent = targetName;
             }
         }
         bind();

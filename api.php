@@ -2443,7 +2443,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'dashboard-stats':
-                    $listResult = getAtemList($staff_id);
+                    $listResult = getAtemList($staff_id, true);
                     if (!$listResult['success']) {
                         $response = array('success' => false, 'message' => 'Failed to load ATEM data');
                         break;
@@ -2585,6 +2585,14 @@ if (!defined('API_JWT_INCLUDED')) {
                     $byDept = array();
                     $today = date('Y-m-d');
 
+                    // Suspended/Force Terminated live outside every other aggregate
+                    // above (they are soft-deleted, like genuinely-Deleted cards) but
+                    // still need their own dashboard visibility - tallied separately
+                    // below rather than folded into $byStatus/$total.
+                    $suspendedCount = 0;
+                    $forceTerminatedCount = 0;
+                    $byIssuerSft = array();
+
                     // Involvement breakdown — how many (filtered, non-deleted) cards
                     // someone is tagged on as Issuer vs. each ARCI role. A single card
                     // can count toward multiple roles (e.g. Issuer AND 'C'), but each
@@ -2609,20 +2617,11 @@ if (!defined('API_JWT_INCLUDED')) {
 
                     foreach ($items as $item) {
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
-                        if ($statusVal === 'Deleted' || $statusVal === 'Suspended' || !empty($item['deleted_at'])) { continue; }
 
-                        if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
-                            // Active/Draft cards haven't closed yet, so the period filter
-                            // goes by when they started; every other status (Completed
-                            // family, Extended, Failed) is bucketed by when it closed —
-                            // mirrors atem_status_period_field()'s convention already used
-                            // by Staff Performance, instead of start_date for everything.
-                            $periodField = ($statusVal === 'Active' || $statusVal === 'Draft') ? 'start_date' : 'closure_date';
-                            $periodDate  = isset($item[$periodField]) ? $item[$periodField] : '';
-                            if ($periodDate && !atem_date_in_period($periodDate, $periodMonths, $filterYear)) {
-                                continue;
-                            }
-                        }
+                        // Generic scope filters apply regardless of status, so the
+                        // Suspended/Force Terminated tally below stays consistent with
+                        // every other aggregate (same dept/staff/atem-type/outlet/pillar
+                        // scope) instead of only inheriting the earlier role-based filter.
                         if ($filterDeptId > 0) {
                             $itemDeptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
                             $itemArciDepts = array();
@@ -2665,6 +2664,54 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($filterPillarName !== '') {
                             $itemPillarName = isset($item['pillar']['name']) ? $item['pillar']['name'] : '';
                             if ($itemPillarName !== $filterPillarName) { continue; }
+                        }
+
+                        if ($statusVal === 'Suspended' || $statusVal === 'Force Terminated') {
+                            // closure_date is always null for these statuses (they never
+                            // actually closed), so period filtering falls back to
+                            // start_date instead of the closure_date used below.
+                            if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
+                                $sftPeriodDate = isset($item['start_date']) ? $item['start_date'] : '';
+                                if ($sftPeriodDate && !atem_date_in_period($sftPeriodDate, $periodMonths, $filterYear)) {
+                                    continue;
+                                }
+                            }
+                            if ($statusVal === 'Suspended') {
+                                $suspendedCount++;
+                            } else {
+                                $forceTerminatedCount++;
+                            }
+                            $sftIssuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
+                            if ($sftIssuerId > 0) {
+                                if (!isset($byIssuerSft[$sftIssuerId])) {
+                                    $byIssuerSft[$sftIssuerId] = array(
+                                        'issuer_staff_id'  => $sftIssuerId,
+                                        'dept_id'          => isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0,
+                                        'suspended'        => 0,
+                                        'force_terminated' => 0,
+                                    );
+                                }
+                                if ($statusVal === 'Suspended') {
+                                    $byIssuerSft[$sftIssuerId]['suspended']++;
+                                } else {
+                                    $byIssuerSft[$sftIssuerId]['force_terminated']++;
+                                }
+                            }
+                            continue;
+                        }
+                        if ($statusVal === 'Deleted' || !empty($item['deleted_at'])) { continue; }
+
+                        if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
+                            // Active/Draft cards haven't closed yet, so the period filter
+                            // goes by when they started; every other status (Completed
+                            // family, Extended, Failed) is bucketed by when it closed —
+                            // mirrors atem_status_period_field()'s convention already used
+                            // by Staff Performance, instead of start_date for everything.
+                            $periodField = ($statusVal === 'Active' || $statusVal === 'Draft') ? 'start_date' : 'closure_date';
+                            $periodDate  = isset($item[$periodField]) ? $item[$periodField] : '';
+                            if ($periodDate && !atem_date_in_period($periodDate, $periodMonths, $filterYear)) {
+                                continue;
+                            }
                         }
 
                         $total++;
@@ -2765,20 +2812,27 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
 
-                        // Include all non-Draft, non-Failed cards in the incentive/
-                        // reward forecast — Active/Extended cards carry a projected
-                        // payout that should appear in the estimate until they close or
-                        // are suspended (suspended cards are soft-deleted and excluded
-                        // from getAtemList entirely, so their reset 0 amounts never
-                        // reach this loop). HQ cards forecast off total_incentive_amount;
-                        // Outlet cards have no incentive-rule amount, so they forecast
-                        // off reward_amount (the potential reward before closure -
-                        // final_amount only gets set once the card actually closes).
+                        // Active cards have an undecided outcome, so they forecast off
+                        // the potential/raw amount (what they'd earn if they close well).
+                        // Completed/Completed with Excellence/Extended are already
+                        // decided - Extended always forfeits incentive per the
+                        // no-incentive-on-extension rule (AtemController::update()), so
+                        // using the raw potential amount there would overstate the
+                        // forecast; using final_incentive_amount/final_amount instead
+                        // correctly contributes RM0 for Extended and the real payout for
+                        // Completed/Excellence. Suspended/Force Terminated cards are
+                        // soft-deleted and excluded from this loop entirely already.
                         $forecastStatuses = array('Active', 'Extended', 'Completed', 'Completed with Excellence');
                         $itemAtemTypeVal  = isset($item['atem_type']) ? (int)$item['atem_type'] : 1;
-                        $forecastAmount   = ($itemAtemTypeVal === 2)
-                            ? (float)($item['reward_amount'] ?? 0)
-                            : (float)($item['total_incentive_amount'] ?? 0);
+                        if ($statusVal === 'Active') {
+                            $forecastAmount = ($itemAtemTypeVal === 2)
+                                ? (float)($item['reward_amount'] ?? 0)
+                                : (float)($item['total_incentive_amount'] ?? 0);
+                        } else {
+                            $forecastAmount = ($itemAtemTypeVal === 2)
+                                ? (float)($item['final_amount'] ?? 0)
+                                : (float)($item['final_incentive_amount'] ?? 0);
+                        }
                         if (in_array($statusVal, $forecastStatuses)) {
                             $incentiveTotal += $forecastAmount;
                             if ($levelNum >= 1 && $levelNum <= 4) {
@@ -2863,6 +2917,31 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     usort($byDepartment, function($a, $b) { return $b['cards'] - $a['cards']; });
 
+                    $bySuspendForceTerminate = array();
+                    if (!empty($byIssuerSft)) {
+                        $sftStaffNames = array();
+                        $sftStaffIds = array_map('intval', array_keys($byIssuerSft));
+                        $staffRes = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE id IN (" . implode(',', $sftStaffIds) . ")");
+                        if ($staffRes) {
+                            while ($srow = mysqli_fetch_assoc($staffRes)) {
+                                $sftStaffNames[(int)$srow['id']] = $srow['nama_staff'];
+                            }
+                        }
+                        foreach ($byIssuerSft as $sftIssuerId => $sftRow) {
+                            $bySuspendForceTerminate[] = array(
+                                'issuer_staff_id'  => $sftIssuerId,
+                                'issuer_name'      => isset($sftStaffNames[$sftIssuerId]) ? $sftStaffNames[$sftIssuerId] : ('Staff #' . $sftIssuerId),
+                                'dept_id'          => $sftRow['dept_id'],
+                                'dept_name'        => isset($deptNames[$sftRow['dept_id']]) ? $deptNames[$sftRow['dept_id']] : ($sftRow['dept_id'] ? 'Dept #' . $sftRow['dept_id'] : 'Unknown'),
+                                'suspended'        => $sftRow['suspended'],
+                                'force_terminated' => $sftRow['force_terminated'],
+                            );
+                        }
+                        usort($bySuspendForceTerminate, function($a, $b) {
+                            return ($b['suspended'] + $b['force_terminated']) - ($a['suspended'] + $a['force_terminated']);
+                        });
+                    }
+
                     $response = array(
                         'success' => true,
                         'data'    => array(
@@ -2872,7 +2951,10 @@ if (!defined('API_JWT_INCLUDED')) {
                             'by_pillar'       => $byPillar,
                             'incentive_total' => $incentiveTotal,
                             'overdue_count'   => $overdueCount,
+                            'suspended_count' => $suspendedCount,
+                            'force_terminated_count' => $forceTerminatedCount,
                             'by_department'   => $byDepartment,
+                            'by_suspend_force_terminate' => $bySuspendForceTerminate,
                             'my_roles'        => array(
                                 'issuer'   => $myRoleBreakdown['issuer'],
                                 'A'        => $myRoleBreakdown['A'],

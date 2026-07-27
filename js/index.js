@@ -358,7 +358,7 @@
         '4': ['10-01', '12-31']
     };
 
-    function buildViewUrl(statusOverride, levelIdOverride, deptOverride, statusesOverride, overdueOnly, incentiveOnly, roleOverride, issuerOverride, mineOverride) {
+    function buildViewUrl(statusOverride, levelIdOverride, deptOverride, statusesOverride, overdueOnly, incentiveOnly, roleOverride, issuerOverride, mineOverride, issuerIdOverride) {
         var yearEl    = document.getElementById('dash-filter-year');
         var monthEl   = document.getElementById('dash-filter-month');
         var quarterEl = document.getElementById('dash-filter-quarter');
@@ -378,6 +378,7 @@
         if (incentiveOnly)   { params.push('min_level_id=2'); }
         if (roleOverride)    { params.push('role='       + encodeURIComponent(roleOverride)); }
         if (issuerOverride)  { params.push('issuer='     + encodeURIComponent(issuerOverride)); }
+        if (issuerIdOverride) { params.push('issuer_id=' + encodeURIComponent(issuerIdOverride)); }
         if (mineOverride)    { params.push('mine='       + encodeURIComponent(mineOverride)); }
         if (year)   { params.push('year='  + encodeURIComponent(year)); }
         if (month)  { params.push('month=' + encodeURIComponent(month)); }
@@ -387,7 +388,14 @@
             params.push('to='   + encodeURIComponent(year + '-' + range[1]));
         }
         if (deptName) { params.push('dept=' + encodeURIComponent(deptName)); }
-        params.push('no_deleted=1');
+        // Suspended/Force Terminated cards are soft-deleted like genuinely-Deleted
+        // ones - no_deleted=1 would hide the very rows this link is pointing at, so
+        // only suppress soft-deleted rows when navigating to some other status(es).
+        var targetsSoftDeleted = statusOverride === 'Suspended' || statusOverride === 'Force Terminated'
+            || (statusesOverride && (statusesOverride.indexOf('Suspended') !== -1 || statusesOverride.indexOf('Force Terminated') !== -1));
+        if (!targetsSoftDeleted) {
+            params.push('no_deleted=1');
+        }
 
         return (window.ATEM_MODULE_BASE || 'atem/') + 'view.php' + (params.length ? '?' + params.join('&') : '');
     }
@@ -395,7 +403,7 @@
     // Outlet dashboard's equivalent of buildViewUrl - always lands on view.php's
     // Outlet tab (tab=outlet), has no level/dept concept, and adds a pillar param
     // (matched by name, same convention as vfo-pillar) for pillar-table row clicks.
-    function buildViewUrlOutlet(statusOverride, pillarOverride, statusesOverride, overdueOnly, roleOverride, issuerOverride, mineOverride) {
+    function buildViewUrlOutlet(statusOverride, pillarOverride, statusesOverride, overdueOnly, roleOverride, issuerOverride, mineOverride, issuerIdOverride) {
         var yearEl    = document.getElementById('dasho-filter-year');
         var monthEl   = document.getElementById('dasho-filter-month');
         var quarterEl = document.getElementById('dasho-filter-quarter');
@@ -411,6 +419,7 @@
         if (overdueOnly)     { params.push('overdue=1'); }
         if (roleOverride)    { params.push('role='   + encodeURIComponent(roleOverride)); }
         if (issuerOverride)  { params.push('issuer=' + encodeURIComponent(issuerOverride)); }
+        if (issuerIdOverride) { params.push('issuer_id=' + encodeURIComponent(issuerIdOverride)); }
         if (mineOverride)    { params.push('mine='   + encodeURIComponent(mineOverride)); }
         if (year)   { params.push('year='  + encodeURIComponent(year)); }
         if (month)  { params.push('month=' + encodeURIComponent(month)); }
@@ -419,7 +428,11 @@
             params.push('from=' + encodeURIComponent(year + '-' + range[0]));
             params.push('to='   + encodeURIComponent(year + '-' + range[1]));
         }
-        params.push('no_deleted=1');
+        var targetsSoftDeletedOutlet = statusOverride === 'Suspended' || statusOverride === 'Force Terminated'
+            || (statusesOverride && (statusesOverride.indexOf('Suspended') !== -1 || statusesOverride.indexOf('Force Terminated') !== -1));
+        if (!targetsSoftDeletedOutlet) {
+            params.push('no_deleted=1');
+        }
 
         return (window.ATEM_MODULE_BASE || 'atem/') + 'view.php?' + params.join('&');
     }
@@ -517,6 +530,7 @@
         setText('dash-fail-rate',  failRate);
         setText('dash-incentive',  formatRM(data.incentive_total));
         setText('dash-overdue',    formatNumber(data.overdue_count || 0));
+        setText('dash-suspended',  formatNumber(data.suspended_count || 0));
 
         var myRoles = data.my_roles || {};
         setText('dash-myrole-issuer',   formatNumber(myRoles.issuer));
@@ -555,14 +569,51 @@
             };
         }
 
-        setWidth('bar-complete',   total > 0 ? Math.round((s.complete   || 0) / total * 100) : 0);
-        setWidth('bar-excellence', total > 0 ? Math.round((s.excellence || 0) / total * 100) : 0);
-        setWidth('bar-extended',   total > 0 ? Math.round((s.extended   || 0) / total * 100) : 0);
-        setWidth('bar-failed',     total > 0 ? Math.round(failed              / total * 100) : 0);
+        var suspendedN = data.suspended_count || 0;
+        var forceTerminatedN = data.force_terminated_count || 0;
+        var barScale = total + suspendedN + forceTerminatedN;
+        setWidth('bar-complete',   barScale > 0 ? Math.round((s.complete   || 0) / barScale * 100) : 0);
+        setWidth('bar-excellence', barScale > 0 ? Math.round((s.excellence || 0) / barScale * 100) : 0);
+        setWidth('bar-extended',   barScale > 0 ? Math.round((s.extended   || 0) / barScale * 100) : 0);
+        setWidth('bar-failed',     barScale > 0 ? Math.round(failed              / barScale * 100) : 0);
+        setWidth('bar-suspended',        barScale > 0 ? Math.round(suspendedN       / barScale * 100) : 0);
+        setWidth('bar-force-terminated', barScale > 0 ? Math.round(forceTerminatedN / barScale * 100) : 0);
         setText('bar-complete-n',   s.complete   || 0);
         setText('bar-excellence-n', s.excellence || 0);
         setText('bar-extended-n',   s.extended   || 0);
         setText('bar-failed-n',     failed);
+        setText('bar-suspended-n',        suspendedN);
+        setText('bar-force-terminated-n', forceTerminatedN);
+
+        var sftTbody = document.getElementById('dash-sft-body');
+        if (sftTbody) {
+            var sftRows = data.by_suspend_force_terminate || [];
+            if (sftRows.length > 0) {
+                var sftHtml = '';
+                for (var si = 0; si < sftRows.length; si++) {
+                    var sftRow = sftRows[si];
+                    sftHtml += '<tr style="cursor:pointer;" data-nav-issuer-id="' + sftRow.issuer_staff_id + '">' +
+                        '<td style="font-size:12px;font-weight:600;">' + escapeHtml(sftRow.issuer_name) + '</td>' +
+                        '<td style="font-size:12px;">' + escapeHtml(sftRow.dept_name) + '</td>' +
+                        '<td style="font-size:12px;color:#e11d48;">' + (sftRow.suspended || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#7c3aed;">' + (sftRow.force_terminated || 0) + '</td>' +
+                        '</tr>';
+                }
+                sftTbody.innerHTML = sftHtml;
+                sftTbody.onclick = function (e) {
+                    var tr = e.target;
+                    while (tr && tr !== sftTbody) {
+                        if (tr.tagName === 'TR' && tr.hasAttribute('data-nav-issuer-id')) {
+                            window.location.href = buildViewUrl('', '', '', ['Suspended', 'Force Terminated'], false, false, '', '', '', tr.getAttribute('data-nav-issuer-id'));
+                            return;
+                        }
+                        tr = tr.parentNode;
+                    }
+                };
+            } else {
+                sftTbody.innerHTML = '<tr><td colspan="4" class="text-muted" style="font-size:12px;">No suspended or force terminated cards for the selected period.</td></tr>';
+            }
+        }
 
         var deptTbody = document.getElementById('dash-dept-body');
         if (deptTbody) {
@@ -629,6 +680,7 @@
         setText('dasho-fail-rate',  failRate);
         setText('dasho-incentive',  formatRM(data.incentive_total));
         setText('dasho-overdue',    formatNumber(data.overdue_count || 0));
+        setText('dasho-suspended',  formatNumber(data.suspended_count || 0));
 
         var myRoles = data.my_roles || {};
         setText('dasho-myrole-issuer',   formatNumber(myRoles.issuer));
@@ -670,14 +722,51 @@
             }
         }
 
-        setWidth('bar-o-complete',   total > 0 ? Math.round((s.complete   || 0) / total * 100) : 0);
-        setWidth('bar-o-excellence', total > 0 ? Math.round((s.excellence || 0) / total * 100) : 0);
-        setWidth('bar-o-extended',   total > 0 ? Math.round((s.extended   || 0) / total * 100) : 0);
-        setWidth('bar-o-failed',     total > 0 ? Math.round(failed              / total * 100) : 0);
+        var suspendedNO = data.suspended_count || 0;
+        var forceTerminatedNO = data.force_terminated_count || 0;
+        var barScaleO = total + suspendedNO + forceTerminatedNO;
+        setWidth('bar-o-complete',   barScaleO > 0 ? Math.round((s.complete   || 0) / barScaleO * 100) : 0);
+        setWidth('bar-o-excellence', barScaleO > 0 ? Math.round((s.excellence || 0) / barScaleO * 100) : 0);
+        setWidth('bar-o-extended',   barScaleO > 0 ? Math.round((s.extended   || 0) / barScaleO * 100) : 0);
+        setWidth('bar-o-failed',     barScaleO > 0 ? Math.round(failed              / barScaleO * 100) : 0);
+        setWidth('bar-o-suspended',        barScaleO > 0 ? Math.round(suspendedNO       / barScaleO * 100) : 0);
+        setWidth('bar-o-force-terminated', barScaleO > 0 ? Math.round(forceTerminatedNO / barScaleO * 100) : 0);
         setText('bar-o-complete-n',   s.complete   || 0);
         setText('bar-o-excellence-n', s.excellence || 0);
         setText('bar-o-extended-n',   s.extended   || 0);
         setText('bar-o-failed-n',     failed);
+        setText('bar-o-suspended-n',        suspendedNO);
+        setText('bar-o-force-terminated-n', forceTerminatedNO);
+
+        var sftTbodyO = document.getElementById('dasho-sft-body');
+        if (sftTbodyO) {
+            var sftRowsO = data.by_suspend_force_terminate || [];
+            if (sftRowsO.length > 0) {
+                var sftHtmlO = '';
+                for (var soi = 0; soi < sftRowsO.length; soi++) {
+                    var sftRowO = sftRowsO[soi];
+                    sftHtmlO += '<tr style="cursor:pointer;" data-nav-issuer-id="' + sftRowO.issuer_staff_id + '">' +
+                        '<td style="font-size:12px;font-weight:600;">' + escapeHtml(sftRowO.issuer_name) + '</td>' +
+                        '<td style="font-size:12px;">' + escapeHtml(sftRowO.dept_name) + '</td>' +
+                        '<td style="font-size:12px;color:#e11d48;">' + (sftRowO.suspended || 0) + '</td>' +
+                        '<td style="font-size:12px;color:#7c3aed;">' + (sftRowO.force_terminated || 0) + '</td>' +
+                        '</tr>';
+                }
+                sftTbodyO.innerHTML = sftHtmlO;
+                sftTbodyO.onclick = function (e) {
+                    var tr = e.target;
+                    while (tr && tr !== sftTbodyO) {
+                        if (tr.tagName === 'TR' && tr.hasAttribute('data-nav-issuer-id')) {
+                            window.location.href = buildViewUrlOutlet('', '', ['Suspended', 'Force Terminated'], false, '', '', '', tr.getAttribute('data-nav-issuer-id'));
+                            return;
+                        }
+                        tr = tr.parentNode;
+                    }
+                };
+            } else {
+                sftTbodyO.innerHTML = '<tr><td colspan="4" class="text-muted" style="font-size:12px;">No suspended or force terminated cards for the selected period.</td></tr>';
+            }
+        }
 
         setLoading(false, 'dash-tab-outlet');
     }
@@ -690,6 +779,7 @@
         setText('dash-failed',          'err');
         setText('dash-incentive',       'err');
         setText('dash-overdue',         'err');
+        setText('dash-suspended',       'err');
         setText('dash-myrole-issuer',   'err');
         setText('dash-myrole-a',        'err');
         setText('dash-myrole-r',        'err');
@@ -704,6 +794,10 @@
         if (deptTbody) {
             deptTbody.innerHTML = '<tr><td colspan="7" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
         }
+        var sftTbody = document.getElementById('dash-sft-body');
+        if (sftTbody) {
+            sftTbody.innerHTML = '<tr><td colspan="4" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
+        }
     }
 
     function showErrorOutlet(msg) {
@@ -714,6 +808,7 @@
         setText('dasho-failed',          'err');
         setText('dasho-incentive',       'err');
         setText('dasho-overdue',         'err');
+        setText('dasho-suspended',       'err');
         setText('dasho-myrole-issuer',   'err');
         setText('dasho-myrole-a',        'err');
         setText('dasho-myrole-r',        'err');
@@ -723,6 +818,10 @@
         var tbody = document.getElementById('dasho-pillar-body');
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
+        }
+        var sftTbodyErr = document.getElementById('dasho-sft-body');
+        if (sftTbodyErr) {
+            sftTbodyErr.innerHTML = '<tr><td colspan="4" class="text-danger" style="font-size:12px;">' + msg + '</td></tr>';
         }
     }
 
@@ -864,6 +963,7 @@
         setText('dash-failed',          '---');
         setText('dash-incentive',       '---');
         setText('dash-overdue',         '---');
+        setText('dash-suspended',       '---');
         setText('dash-myrole-issuer',   '---');
         setText('dash-myrole-a',        '---');
         setText('dash-myrole-r',        '---');
@@ -896,6 +996,7 @@
         setText('dasho-failed',          '---');
         setText('dasho-incentive',       '---');
         setText('dasho-overdue',         '---');
+        setText('dasho-suspended',       '---');
         setText('dasho-myrole-issuer',   '---');
         setText('dasho-myrole-a',        '---');
         setText('dasho-myrole-r',        '---');
