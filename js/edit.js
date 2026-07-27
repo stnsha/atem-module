@@ -35,6 +35,8 @@
     var reflinks = [];
     var attachments = [];
     var progressUpdates = [];
+    var chatMessages = [];
+    var _chatPollTimer = null;
     var outletTags = []; // [{ id, code }] - derived from areaManagerTags, read-only
     var areaManagerTags = []; // [{ id, name, position, outlet_ids }] - outlet-type ATEMs only
     var _inlineSaveTimer = null;
@@ -1425,6 +1427,184 @@
         return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() + ', ' + hh + ':' + mm;
     }
 
+    var CHAT_EDIT_WINDOW_MS = 60000;
+
+    function chatWithinEditWindow(createdAt) {
+        var t = new Date(String(createdAt).replace(' ', 'T')).getTime();
+        if (isNaN(t)) { return false; }
+        return (Date.now() - t) < CHAT_EDIT_WINDOW_MS;
+    }
+
+    function findChatMessage(id) {
+        for (var i = 0; i < chatMessages.length; i++) {
+            if (String(chatMessages[i].id) === String(id)) { return chatMessages[i]; }
+        }
+        return null;
+    }
+
+    function renderChat() {
+        var wrap = $('atem-chat-wrap');
+        if (!wrap) { return; }
+        if (!chatMessages.length) {
+            wrap.innerHTML = '<div class="atem-empty-state">No messages yet.</div>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < chatMessages.length; i++) {
+            var m = chatMessages[i];
+            var mine = String(m.sender_staff_id) === String(CFG.staffId);
+            var canManage = mine && chatWithinEditWindow(m.created_at);
+            var actionsHtml = canManage
+                ? '<div class="atem-chat-bubble-actions">'
+                    + '<button type="button" class="btn btn-link btn-sm p-0 atem-chat-edit-btn" data-id="' + m.id + '">Edit</button>'
+                    + '<button type="button" class="btn btn-link btn-sm p-0 text-danger atem-chat-unsend-btn" data-id="' + m.id + '">Unsend</button>'
+                    + '</div>'
+                : '';
+            html += '<div class="atem-chat-bubble' + (mine ? ' atem-chat-bubble-mine' : '') + '" data-message-id="' + m.id + '" data-created-at="' + escapeHtml(m.created_at) + '">'
+                + '<div class="atem-chat-bubble-header"><strong>' + escapeHtml(m.sender_name || ('Staff #' + m.sender_staff_id)) + '</strong>'
+                + ' <span class="atem-chat-bubble-time">' + escapeHtml(formatDateTime(m.created_at)) + '</span></div>'
+                + '<div class="atem-chat-bubble-body" id="atem-chat-body-' + m.id + '">' + escapeHtml(m.message).replace(/\n/g, '<br>') + '</div>'
+                + actionsHtml
+                + '</div>';
+        }
+        wrap.innerHTML = html;
+        wrap.scrollTop = wrap.scrollHeight;
+    }
+
+    // Hides expired Edit/Unsend buttons without a full re-render (which would
+    // reset scroll position); safe to run on a timer independent of polling.
+    function refreshChatActionVisibility() {
+        var wrap = $('atem-chat-wrap');
+        if (!wrap) { return; }
+        var bubbles = wrap.querySelectorAll('.atem-chat-bubble[data-created-at]');
+        for (var i = 0; i < bubbles.length; i++) {
+            var b = bubbles[i];
+            var actions = b.querySelector('.atem-chat-bubble-actions');
+            if (actions && !chatWithinEditWindow(b.getAttribute('data-created-at'))) {
+                actions.parentNode.removeChild(actions);
+            }
+        }
+    }
+
+    function startEditChatMessage(id) {
+        var body = $('atem-chat-body-' + id);
+        var msg = findChatMessage(id);
+        if (!body || !msg) { return; }
+        body.innerHTML = '<textarea class="form-control atem-chat-edit-input" rows="2" maxlength="4000">' + escapeHtml(msg.message) + '</textarea>'
+            + '<div class="atem-form-error" id="atem-chat-edit-error-' + id + '"></div>'
+            + '<div class="atem-chat-edit-actions">'
+            + '<button type="button" class="btn btn-primary btn-sm atem-chat-edit-save" data-id="' + id + '">Save</button>'
+            + '<button type="button" class="btn btn-outline-secondary btn-sm atem-chat-edit-cancel" data-id="' + id + '">Cancel</button>'
+            + '</div>';
+        var ta = body.querySelector('textarea');
+        if (ta) { ta.focus(); }
+    }
+
+    function cancelEditChatMessage() {
+        renderChat();
+    }
+
+    function saveEditChatMessage(id) {
+        var body = $('atem-chat-body-' + id);
+        var ta = body ? body.querySelector('textarea') : null;
+        var text = ta ? ta.value.trim() : '';
+        var errId = 'atem-chat-edit-error-' + id;
+        setError(errId, '');
+        if (!text) { setError(errId, 'Message cannot be empty.'); return; }
+        apiCall('chat-edit', { id: CFG.atemId, message_id: id, message: text }).then(function (res) {
+            if (res && res.success) {
+                for (var i = 0; i < chatMessages.length; i++) {
+                    if (String(chatMessages[i].id) === String(id)) { chatMessages[i] = res.data; break; }
+                }
+                renderChat();
+            } else {
+                setError(errId, (res && res.message) ? res.message : 'Failed to save message.');
+            }
+        }).catch(function () {
+            setError(errId, 'Network error while saving message.');
+        });
+    }
+
+    function unsendChatMessage(id) {
+        confirmAction('Unsend this message?', function () {
+            apiCall('chat-unsend', { id: CFG.atemId, message_id: id }).then(function (res) {
+                if (res && res.success) {
+                    chatMessages = chatMessages.filter(function (m) { return String(m.id) !== String(id); });
+                    renderChat();
+                } else {
+                    setError('atem-chat-error', (res && res.message) ? res.message : 'Failed to unsend message.');
+                }
+            }).catch(function () {
+                setError('atem-chat-error', 'Network error while unsending message.');
+            });
+        });
+    }
+
+    function bindChatWrap() {
+        var wrap = $('atem-chat-wrap');
+        if (!wrap) { return; }
+        wrap.addEventListener('click', function (e) {
+            var t = e.target;
+            if (t.classList.contains('atem-chat-edit-btn')) {
+                startEditChatMessage(parseInt(t.getAttribute('data-id'), 10));
+            } else if (t.classList.contains('atem-chat-unsend-btn')) {
+                unsendChatMessage(parseInt(t.getAttribute('data-id'), 10));
+            } else if (t.classList.contains('atem-chat-edit-save')) {
+                saveEditChatMessage(parseInt(t.getAttribute('data-id'), 10));
+            } else if (t.classList.contains('atem-chat-edit-cancel')) {
+                cancelEditChatMessage();
+            }
+        });
+    }
+
+    function sendChatMessage() {
+        var input = $('atem-chat-input');
+        var text = input ? input.value.trim() : '';
+        setError('atem-chat-error', '');
+        if (!text) { setError('atem-chat-error', 'Message cannot be empty.'); return; }
+        var btn = $('atem-chat-send-btn');
+        if (btn) { btn.disabled = true; }
+        apiCall('chat-send', { id: CFG.atemId, message: text }).then(function (res) {
+            if (btn) { btn.disabled = false; }
+            if (res && res.success) {
+                chatMessages.push(res.data);
+                if (input) { input.value = ''; }
+                renderChat();
+            } else {
+                setError('atem-chat-error', (res && res.message) ? res.message : 'Failed to send message.');
+            }
+        }).catch(function () {
+            if (btn) { btn.disabled = false; }
+            setError('atem-chat-error', 'Network error while sending message.');
+        });
+    }
+
+    function pollChatMessages() {
+        if (!CFG.atemId) { return; }
+        // Full resync (not incremental by id) so edits and unsends on existing
+        // messages - which don't create a new id - reach other viewers too.
+        apiCall('chat-list', { id: CFG.atemId }).then(function (res) {
+            if (res && res.success && res.data) {
+                if (JSON.stringify(res.data) !== JSON.stringify(chatMessages)) {
+                    chatMessages = res.data;
+                    renderChat();
+                }
+            }
+        }).catch(function () {});
+    }
+
+    function bindChat() {
+        var btn = $('atem-chat-send-btn');
+        if (btn) { btn.addEventListener('click', sendChatMessage); }
+        var input = $('atem-chat-input');
+        if (input) {
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { sendChatMessage(); }
+            });
+        }
+        bindChatWrap();
+    }
+
     function renderAuditLog() {
         var metaEl = $('atem-audit-meta');
         var logEl  = $('atem-audit-log');
@@ -1553,12 +1733,14 @@
         reflinks = REC.reference_links || [];
         attachments = REC.attachments || [];
         progressUpdates = REC.progress || [];
+        chatMessages = REC.messages || [];
 
         renderArci();
         renderReferenceLinks();
         renderAttachments();
         renderProgress();
         renderAuditLog();
+        renderChat();
         recalcIncentive();
     }
 
@@ -1962,14 +2144,25 @@
                             return;
                         }
                         setError('suspend-remarks-error', '');
+                        var confirmBtn = $('atem-suspend-confirm-btn');
+                        var originalHtml = confirmBtn ? confirmBtn.innerHTML : '';
+                        if (confirmBtn) {
+                            confirmBtn.disabled = true;
+                            confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Suspending...';
+                        }
+                        function resetBtn() {
+                            if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.innerHTML = originalHtml; }
+                        }
                         apiCall('suspend-atem', { id: CFG.atemId, remarks: remarks }).then(function (res) {
                             if (res && res.success) {
                                 window.location.reload();
                             } else {
+                                resetBtn();
                                 if (_modal) { _modal.hide(); }
                                 setError('atem-save-error', res && res.message ? res.message : 'Failed to suspend ATEM.');
                             }
                         }).catch(function () {
+                            resetBtn();
                             if (_modal) { _modal.hide(); }
                             setError('atem-save-error', 'Network error while suspending.');
                         });
@@ -2155,7 +2348,12 @@
         }
         initEditor();
         bind();
+        bindChat();
         hydrate();
+        if (CFG.atemId) {
+            _chatPollTimer = setInterval(pollChatMessages, 4000);
+            setInterval(refreshChatActionVisibility, 5000);
+        }
         restrictDraftStatus();
         syncExtendedByStatus();
         applyExtMins();

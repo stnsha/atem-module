@@ -6,6 +6,13 @@ if (!defined('API_JWT_INCLUDED')) {
     header('Content-Type: application/json');
 }
 
+// header.php normally defines this, but api.php is also hit directly as a
+// standalone POST endpoint (no header.php in that request) - mailer.php's
+// buildAtemCardLink() needs it, so define it here too if not already set.
+if (!defined('ATEM_BASE')) {
+    define('ATEM_BASE', '/odb/' . basename(dirname(__FILE__)) . '/');
+}
+
 // Start session if not already started (PHP 5.3 compatible)
 if (session_id() == '') {
     session_start();
@@ -20,6 +27,8 @@ if (!isset($conn)) {
 if (!isset($conn)) {
     die(json_encode(array("status" => 500, "message" => "Database connection error")));
 }
+
+require_once __DIR__ . '/mailer.php';
 
 // Get staff information from session
 $staff_id = null;
@@ -228,6 +237,34 @@ function getStaffAuthData($staff_id)
         'staff_name'      => $row['nama_staff'],
         'staff_dept_id'   => $row['department'] !== null ? (int)$row['department'] : null,
         'department_name' => $row['depart_name']
+    );
+}
+
+/**
+ * Resolve a staff_id to their email + display name (for notification emails).
+ */
+function getStaffEmail($staff_id)
+{
+    global $conn;
+
+    $staff_id = (int)$staff_id;
+    if (!$staff_id) {
+        return null;
+    }
+
+    $result = mysqli_query($conn, "SELECT email, nama_staff FROM staff WHERE id = $staff_id AND recycle != 1");
+    if (!$result) {
+        return null;
+    }
+
+    $row = mysqli_fetch_assoc($result);
+    if (!$row || empty($row['email'])) {
+        return null;
+    }
+
+    return array(
+        'email' => $row['email'],
+        'name'  => $row['nama_staff']
     );
 }
 
@@ -1278,6 +1315,197 @@ function removeAtemProgress($id, $progress_id, $staff_id)
             'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to remove progress update'
         );
     }
+}
+
+/**
+ * Resolve sender_staff_id -> sender_name for a list of chat messages.
+ * Mirrors resolveProgressCreatorNames() above.
+ */
+function resolveMessageSenderNames($messages, $conn)
+{
+    if (!is_array($messages) || empty($messages)) {
+        return $messages;
+    }
+    $ids = array();
+    foreach ($messages as $m) {
+        if (!empty($m['sender_staff_id'])) {
+            $ids[] = (int) $m['sender_staff_id'];
+        }
+    }
+    if (empty($ids)) {
+        return $messages;
+    }
+    $ids_str = implode(',', array_unique($ids));
+    $names = array();
+    $res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE id IN ($ids_str) AND recycle != 1");
+    if ($res) {
+        while ($row = mysqli_fetch_assoc($res)) {
+            $names[(int) $row['id']] = $row['nama_staff'];
+        }
+    }
+    foreach ($messages as $k => $m) {
+        $sid = isset($m['sender_staff_id']) ? (int) $m['sender_staff_id'] : 0;
+        $messages[$k]['sender_name'] = ($sid && isset($names[$sid])) ? $names[$sid] : ('Staff #' . $sid);
+    }
+    return $messages;
+}
+
+/**
+ * Get the full chat thread for an ATEM card. The frontend polls this on an
+ * interval and fully resyncs its local copy, so edits/unsends on existing
+ * messages are picked up too (not just newly-added ones).
+ */
+function getAtemMessages($id, $staff_id)
+{
+    $result = getApiDataWithJWT('atem/' . (int)$id . '/messages', null, 'GET', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : array()
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to retrieve messages'
+        );
+    }
+}
+
+/**
+ * Post a chat message to an ATEM card. Caller must already have verified
+ * send permission via userCanPostAtemChat() before calling this.
+ */
+function addAtemMessage($id, $data, $staff_id)
+{
+    $result = getApiDataWithJWT('atem/' . (int)$id . '/messages', $data, 'POST', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200 || $httpCode == 201) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to send message',
+            'errors' => isset($decoded['errors']) ? $decoded['errors'] : null
+        );
+    }
+}
+
+/**
+ * Edit a chat message. Ownership + the 60s edit window are enforced backend-side
+ * against the message's own sender_staff_id/created_at, not trusted from the client.
+ */
+function updateAtemMessage($id, $message_id, $data, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/messages/' . (int)$message_id;
+    $result = getApiDataWithJWT($endpoint, $data, 'PATCH', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to edit message'
+        );
+    }
+}
+
+/**
+ * Unsend (soft-delete) a chat message. Same ownership/time-window rule as edit.
+ */
+function deleteAtemMessage($id, $message_id, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/messages/' . (int)$message_id;
+    $result = getApiDataWithJWT($endpoint, array('sender_staff_id' => (int)$staff_id), 'DELETE', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array('success' => true);
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to unsend message'
+        );
+    }
+}
+
+/**
+ * Server-side gate for chat-send. api.php is directly POST-able, so this is
+ * re-checked here rather than trusting edit.php's page-level gating alone.
+ * Mirrors edit.php's $is_arci_member scan (ANY ARCI role qualifies, not just
+ * the stricter Accountable-only $can_edit rule).
+ */
+function userCanPostAtemChat($record, $staff_id, $is_superadmin)
+{
+    if ($is_superadmin) {
+        return true;
+    }
+    $sid = (int) $staff_id;
+    if (!$sid || !is_array($record)) {
+        return false;
+    }
+    if ((int)(isset($record['issuer_staff_id']) ? $record['issuer_staff_id'] : 0) === $sid) {
+        return true;
+    }
+    if (isset($record['arci']) && is_array($record['arci'])) {
+        foreach ($record['arci'] as $m) {
+            if ((int)(isset($m['staff_id']) ? $m['staff_id'] : 0) === $sid) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * List recent notifications + unread count for the given staff member.
+ */
+function getAtemNotifications($staff_id, $limit = 20)
+{
+    $result = getApiDataWithJWT('notifications?staff_id=' . (int)$staff_id . '&limit=' . (int)$limit, null, 'GET', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : array(),
+            'unread_count' => isset($decoded['meta']['unread_count']) ? (int)$decoded['meta']['unread_count'] : 0
+        );
+    } else {
+        return array('success' => false, 'message' => 'Failed to load notifications');
+    }
+}
+
+function markAtemNotificationRead($notif_id, $staff_id)
+{
+    $result = getApiDataWithJWT('notifications/' . (int)$notif_id . '/read', array('recipient_staff_id' => (int)$staff_id), 'PATCH', $staff_id);
+    $decoded = json_decode($result['response'], true);
+    return (!empty($decoded['success']))
+        ? array('success' => true)
+        : array('success' => false, 'message' => 'Failed to mark notification read');
+}
+
+function markAllAtemNotificationsRead($staff_id)
+{
+    $result = getApiDataWithJWT('notifications/mark-all-read', array('recipient_staff_id' => (int)$staff_id), 'PATCH', $staff_id);
+    $decoded = json_decode($result['response'], true);
+    return (!empty($decoded['success']))
+        ? array('success' => true)
+        : array('success' => false, 'message' => 'Failed to mark all notifications read');
 }
 
 /**
@@ -2688,7 +2916,25 @@ if (!defined('API_JWT_INCLUDED')) {
                 case 'suspend-atem':
                     if (isset($jsonData['id'])) {
                         $suspend_remarks = isset($jsonData['remarks']) ? (string)$jsonData['remarks'] : '';
+                        // Fetch the record before suspending so we still have the
+                        // issuer/title even after the status changes (suspend() itself
+                        // returns no record data - mirrors chat-send's getAtem() usage).
+                        $suspend_atem = getAtem($jsonData['id'], $staff_id);
                         $response = suspendAtem($jsonData['id'], $staff_id, $suspend_remarks);
+                        if ($response['success'] && !empty($suspend_atem['success']) && isset($suspend_atem['data'])) {
+                            $suspend_issuer_id = isset($suspend_atem['data']['issuer_staff_id']) ? (int)$suspend_atem['data']['issuer_staff_id'] : 0;
+                            $suspend_issuer = $suspend_issuer_id ? getStaffEmail($suspend_issuer_id) : null;
+                            if ($suspend_issuer) {
+                                sendAtemSuspensionEmail(
+                                    $suspend_issuer['email'],
+                                    $suspend_issuer['name'],
+                                    $jsonData['id'],
+                                    isset($suspend_atem['data']['title']) ? $suspend_atem['data']['title'] : ('ATEM #' . (int)$jsonData['id']),
+                                    $suspend_remarks,
+                                    $nama_staff ? $nama_staff : 'SuperAdmin'
+                                );
+                            }
+                        }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID.');
                     }
@@ -2868,6 +3114,96 @@ if (!defined('API_JWT_INCLUDED')) {
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or progress_id');
                     }
+                    break;
+
+                case 'chat-list':
+                    if (isset($jsonData['id'])) {
+                        $response = getAtemMessages($jsonData['id'], $staff_id);
+                        if ($response['success'] && is_array($response['data'])) {
+                            $response['data'] = resolveMessageSenderNames($response['data'], $conn);
+                        }
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID');
+                    }
+                    break;
+
+                case 'chat-send':
+                    if (!$staff_id) {
+                        $response = array('success' => false, 'message' => 'Not authenticated.');
+                        break;
+                    }
+                    if (isset($jsonData['id']) && isset($jsonData['message']) && trim((string)$jsonData['message']) !== '') {
+                        $chat_atem = getAtem($jsonData['id'], $staff_id);
+                        if (empty($chat_atem['success']) || !isset($chat_atem['data'])) {
+                            $response = array('success' => false, 'message' => 'ATEM card not found.');
+                            break;
+                        }
+                        if (!userCanPostAtemChat($chat_atem['data'], $staff_id, $is_api_superadmin)) {
+                            $response = array('success' => false, 'message' => 'You do not have permission to post in this chat.');
+                            break;
+                        }
+                        $chat_data = array(
+                            'message' => trim((string)$jsonData['message']),
+                            'sender_staff_id' => $staff_id
+                        );
+                        $response = addAtemMessage($jsonData['id'], $chat_data, $staff_id);
+                        if ($response['success'] && is_array($response['data'])) {
+                            $resolved = resolveMessageSenderNames(array($response['data']), $conn);
+                            $response['data'] = $resolved[0];
+                        }
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or message text');
+                    }
+                    break;
+
+                case 'chat-edit':
+                    if (!$staff_id) {
+                        $response = array('success' => false, 'message' => 'Not authenticated.');
+                        break;
+                    }
+                    if (isset($jsonData['id']) && isset($jsonData['message_id']) && isset($jsonData['message']) && trim((string)$jsonData['message']) !== '') {
+                        $edit_data = array(
+                            'message' => trim((string)$jsonData['message']),
+                            'sender_staff_id' => $staff_id
+                        );
+                        $response = updateAtemMessage($jsonData['id'], $jsonData['message_id'], $edit_data, $staff_id);
+                        if ($response['success'] && is_array($response['data'])) {
+                            $resolved = resolveMessageSenderNames(array($response['data']), $conn);
+                            $response['data'] = $resolved[0];
+                        }
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID, message id, or message text');
+                    }
+                    break;
+
+                case 'chat-unsend':
+                    if (!$staff_id) {
+                        $response = array('success' => false, 'message' => 'Not authenticated.');
+                        break;
+                    }
+                    if (isset($jsonData['id']) && isset($jsonData['message_id'])) {
+                        $response = deleteAtemMessage($jsonData['id'], $jsonData['message_id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or message id');
+                    }
+                    break;
+
+                case 'notif-list':
+                    $response = $staff_id
+                        ? getAtemNotifications($staff_id)
+                        : array('success' => false, 'message' => 'Not authenticated.');
+                    break;
+
+                case 'notif-mark-read':
+                    if (isset($jsonData['id'])) {
+                        $response = markAtemNotificationRead($jsonData['id'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing notification id');
+                    }
+                    break;
+
+                case 'notif-mark-all-read':
+                    $response = markAllAtemNotificationsRead($staff_id);
                     break;
 
                 // --- Session-backed in-progress draft (no DB row until save) ---

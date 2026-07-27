@@ -205,6 +205,14 @@ if ($record) {
                 : '';
         }
     }
+    if (isset($record['messages']) && is_array($record['messages'])) {
+        foreach ($record['messages'] as $k => $msg) {
+            $sid = isset($msg['sender_staff_id']) ? (int) $msg['sender_staff_id'] : 0;
+            $record['messages'][$k]['sender_name'] = ($sid && isset($staff_names[$sid]))
+                ? $staff_names[$sid]
+                : ($sid ? 'Staff #' . $sid : 'System');
+        }
+    }
 }
 
 // Access control (view): grades 2-5 and a real SuperAdmin may open any card.
@@ -320,6 +328,14 @@ $show_suspension_history = ($record && !empty($record['suspended_by']))
 $can_add_progress = ($is_issuer_now || $is_arci_member)
     && !$record_is_deleted
     && !in_array($current_status_value, $terminal_statuses);
+
+// Chat send: Issuer, ANY ARCI role (reuse $is_arci_member, not the stricter
+// Accountable-only $can_edit below), or a real SuperAdmin. Unlike progress,
+// chat stays open regardless of terminal status — it's a discussion thread,
+// not a card edit. Actual enforcement lives in api.php's chat-send case; this
+// only gates whether the composer is rendered.
+$can_send_chat = !$record_is_deleted && !$api_unavailable
+    && ($_is_superadmin || $is_issuer_now || $is_arci_member);
 
 // While suspended, the Issuer may still edit Title, Description, Reference Links,
 // and Attachments. Everything else (level, rule, timeline, status, ARCI, incentive)
@@ -928,6 +944,22 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     </div>
 </div>
 <?php endif; ?>
+
+<!-- Chat -->
+<div class="atem-card mt-4" id="atem-chat-card">
+    <h6 class="atem-card-title"><i class="bi bi-chat-dots"></i> Chat</h6>
+    <p class="atem-card-hint">Shared discussion thread for this ATEM card. Visible to everyone who can view this card.</p>
+    <div id="atem-chat-wrap" class="atem-chat-wrap"></div>
+    <?php if ($can_send_chat): ?>
+    <div class="atem-chat-composer" id="atem-chat-composer">
+        <textarea class="form-control" id="atem-chat-input" rows="2" maxlength="4000" placeholder="Write a message..."></textarea>
+        <div class="atem-form-error" id="atem-chat-error"></div>
+        <div class="atem-chat-composer-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="atem-chat-send-btn">Send</button>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
 
 <!-- Audit Log -->
 <div class="atem-card mt-4" id="atem-audit-card">

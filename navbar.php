@@ -97,8 +97,8 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
             aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
             <i class="bi bi-list"></i>
         </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav align-items-lg-center">
+        <div class="collapse navbar-collapse w-100" id="navbarNav">
+            <ul class="navbar-nav align-items-lg-center w-100">
                 <li class="nav-item">
                     <a class="nav-link <?php echo $dashboard_active; ?>" href="<?php echo ATEM_BASE; ?>index.php">Dashboard</a>
                 </li>
@@ -131,7 +131,129 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                     <a class="nav-link <?php echo $admin_settings_active; ?>" href="<?php echo ATEM_BASE; ?>admin/index.php">Admin</a>
                 </li>
                 <?php endif; ?>
+                <?php if ($atem_role >= 1 || $_is_superadmin): ?>
+                <li class="nav-item dropdown atem-notif-dropdown ms-lg-auto">
+                    <a class="nav-link position-relative" href="#" id="atemNotifBell" role="button"
+                        data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+                        <i class="bi bi-bell"></i>
+                        <span id="atem-notif-badge" class="atem-notif-badge atem-hidden">0</span>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end atem-notif-menu" aria-labelledby="atemNotifBell">
+                        <div class="atem-notif-menu-header">
+                            <span>Notifications</span>
+                            <button type="button" class="btn btn-link btn-sm p-0" id="atem-notif-markall">Mark all read</button>
+                        </div>
+                        <div id="atem-notif-list" class="atem-notif-list">
+                            <div class="atem-notif-empty">No notifications.</div>
+                        </div>
+                    </div>
+                </li>
+                <?php endif; ?>
             </ul>
         </div>
     </div>
 </nav>
+<?php if ($atem_role >= 1 || $_is_superadmin): ?>
+<script>
+(function () {
+    'use strict';
+    var API_URL = <?php echo json_encode(ATEM_BASE); ?> + 'api.php';
+    var EDIT_URL = <?php echo json_encode(ATEM_BASE); ?> + 'edit.php';
+    var POLL_MS = 8000;
+
+    function apiCall(action, payload) {
+        var body = { action: action };
+        if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) { body[k] = payload[k]; } } }
+        return fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+            .then(function (r) { return r.json(); });
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    // Renders in the browser's local timezone (not UTC) - new Date() on an ISO
+    // string with a Z suffix parses as UTC, but getHours()/getMinutes() below
+    // read back the local-time equivalent, same as edit.js's formatDateTime().
+    function formatDateTime(v) {
+        if (!v) { return ''; }
+        var d = new Date(String(v).replace(' ', 'T'));
+        if (isNaN(d.getTime())) { return v; }
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var hh = String(d.getHours()).padStart(2, '0');
+        var mm = String(d.getMinutes()).padStart(2, '0');
+        return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() + ', ' + hh + ':' + mm;
+    }
+
+    function setBadge(count) {
+        var badge = document.getElementById('atem-notif-badge');
+        if (!badge) { return; }
+        if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : String(count);
+            badge.classList.remove('atem-hidden');
+        } else {
+            badge.classList.add('atem-hidden');
+        }
+    }
+
+    function renderList(items) {
+        var list = document.getElementById('atem-notif-list');
+        if (!list) { return; }
+        if (!items.length) {
+            list.innerHTML = '<div class="atem-notif-empty">No notifications.</div>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < items.length; i++) {
+            var n = items[i];
+            var snippet;
+            if (n.type === 'chat_message' && n.atem_id) {
+                snippet = 'You received a chat on ATEM ID ' + n.atem_id;
+            } else if (n.type === 'atem_suspended' && n.atem_id) {
+                snippet = 'Your ATEM ID ' + n.atem_id + ' has been suspended.';
+            } else {
+                snippet = 'New activity on ATEM #' + n.atem_id;
+            }
+            html += '<div class="atem-notif-item' + (!n.read_at ? ' atem-notif-item-unread' : '') + '" data-id="' + n.id + '" data-atem-id="' + (n.atem_id || '') + '">'
+                + '<div class="atem-notif-item-snippet">' + escapeHtml(snippet) + '</div>'
+                + '<div class="atem-notif-item-time">' + escapeHtml(formatDateTime(n.created_at)) + '</div></div>';
+        }
+        list.innerHTML = html;
+    }
+
+    function refresh() {
+        apiCall('notif-list', {}).then(function (res) {
+            if (res && res.success) {
+                setBadge(res.unread_count || 0);
+                renderList(res.data || []);
+            }
+        }).catch(function () {});
+    }
+
+    document.addEventListener('click', function (e) {
+        var item = e.target.closest('.atem-notif-item');
+        if (item) {
+            var id = item.getAttribute('data-id');
+            var atemId = item.getAttribute('data-atem-id');
+            apiCall('notif-mark-read', { id: id }).then(function () {
+                if (atemId) {
+                    window.location.href = EDIT_URL + '?id=' + atemId;
+                } else {
+                    refresh();
+                }
+            });
+            return;
+        }
+        if (e.target.closest('#atem-notif-markall')) {
+            e.preventDefault();
+            apiCall('notif-mark-all-read', {}).then(refresh);
+        }
+    });
+
+    refresh();
+    setInterval(refresh, POLL_MS);
+})();
+</script>
+<?php endif; ?>
