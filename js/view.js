@@ -37,7 +37,7 @@
         'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Completed with Extension': '#495057',
         'Extended': '#fd7e14', 'Failed': '#dc3545',
-        'Deleted': '#dc3545', 'Suspended': '#e11d48'
+        'Deleted': '#dc3545', 'Suspended': '#e11d48', 'Force Terminated': '#7c3aed'
     };
     function $(id) { return document.getElementById(id); }
 
@@ -59,10 +59,21 @@
         return '<span class="atem-pill" style="background-color:' + color + '"' + t + '>' + escapeHtml(text) + '</span>';
     }
 
+    // "Level 1" -> "L1", etc. - shown in the table; the full label + system
+    // name still appear on hover via the pill's title attribute.
+    function shortLevelLabel(label) {
+        return label ? String(label).replace(/^Level\s*/i, 'L') : label;
+    }
+
     function fmtDate(v) {
         if (!v) { return '-'; }
         var p = String(v).substring(0, 10).split('-'); // YYYY-MM-DD
         return (p.length === 3) ? (p[2] + '-' + p[1] + '-' + p[0]) : v;
+    }
+
+    // Same muted em-dash style used for empty ARCI cells.
+    function fmtDateOrDash(v) {
+        return v ? fmtDate(v) : '<span style="color:#adb5bd;font-size:12px;">—</span>';
     }
 
     // ----------------------------------------------------------- filter setup
@@ -97,7 +108,7 @@
 
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         var statuses = (CFG.statuses || [])
-            .filter(function (s) { return canSeeDeleted || (s.value !== 'Deleted' && s.value !== 'Suspended'); })
+            .filter(function (s) { return canSeeDeleted || (s.value !== 'Deleted' && s.value !== 'Suspended' && s.value !== 'Force Terminated'); })
             .map(function (s) { return s.value; });
         buildStatusOptions('vf-status', statuses);
         buildStatusOptions('vfo-status', statuses);
@@ -110,15 +121,15 @@
             tabState.outlet.page = 1; renderTable('outlet', outletRows);
         });
 
-        var roleOptions = ['A', 'R', 'C', 'I', 'ARCI', 'Not Applicable'];
+        var roleOptions = ['Issuer', 'A', 'R', 'C', 'I', 'ARCI', 'Not Applicable'];
         fillSelect($('vf-role'), 'All roles', roleOptions);
         fillSelect($('vfo-role'), 'All roles', roleOptions);
 
         var issuers = (CFG.issuers || []).map(function (i) { return { id: i.id, label: i.name }; });
-        buildS2Dropdown('vf-issuer', issuers, 'All issuers', 'vf-year', function () {
+        buildS2Dropdown('vf-issuer', issuers, 'All staff', 'vf-year', function () {
             tabState.hq.page = 1; renderTable('hq', hqRows);
         });
-        buildS2Dropdown('vfo-issuer', issuers, 'All issuers', 'vfo-year', function () {
+        buildS2Dropdown('vfo-issuer', issuers, 'All staff', 'vfo-year', function () {
             tabState.outlet.page = 1; renderTable('outlet', outletRows);
         });
 
@@ -344,7 +355,14 @@
     // atem_status_period_field()/dashboard-stats convention, so the counts
     // shown here and on the dashboard agree for the same filter selection.
     function periodDateOf(r) {
-        return (r.status === 'Active' || r.status === 'Draft') ? r.start_date : r.closure_date;
+        // Active/Draft haven't closed yet, so period by start_date; Suspended/
+        // Force Terminated never get a closure_date either (they're soft-deleted
+        // without ever actually closing) - period them by start_date too, or the
+        // Year/Month filter would silently exclude every one of them.
+        if (r.status === 'Active' || r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated') {
+            return r.start_date;
+        }
+        return r.closure_date;
     }
 
     function applyHqFilters(sourceRows) {
@@ -357,6 +375,8 @@
         var role = $('vf-role').value;
         var from = $('vf-from').value;
         var to = $('vf-to').value;
+        var closureFrom = $('vf-closure-from').value;
+        var closureTo = $('vf-closure-to').value;
         var term = $('vf-search').value.toLowerCase().trim();
         var issuerValEl = $('vf-issuer-value');
         var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
@@ -389,7 +409,9 @@
                 if (levelNum < minLevelId) { return false; }
             }
             if (role) {
-                if (role === 'ARCI') {
+                if (role === 'Issuer') {
+                    if (!(CFG.staffId && r.issuer_staff_id == CFG.staffId)) { return false; }
+                } else if (role === 'ARCI') {
                     if (!r.user_arci_roles || r.user_arci_roles.length === 0) { return false; }
                 } else if (role === 'Not Applicable') {
                     if (r.user_arci_roles && r.user_arci_roles.length > 0) { return false; }
@@ -402,8 +424,10 @@
                 var isMyArci  = r.user_arci_roles && r.user_arci_roles.length > 0;
                 if (!isMyIssue && !isMyArci) { return false; }
             }
-            if (from && (!pDate || pDate.substring(0, 10) < from)) { return false; }
-            if (to && (!pDate || pDate.substring(0, 10) > to)) { return false; }
+            if (from && (!r.start_date || String(r.start_date).substring(0, 10) < from)) { return false; }
+            if (to && (!r.end_date || String(r.end_date).substring(0, 10) > to)) { return false; }
+            if (closureFrom && (!r.closure_date || String(r.closure_date).substring(0, 10) < closureFrom)) { return false; }
+            if (closureTo && (!r.closure_date || String(r.closure_date).substring(0, 10) > closureTo)) { return false; }
             if (term) {
                 var atemIdStr = 'at' + r.id;
                 var matchesTitle = String(r.title).toLowerCase().indexOf(term) >= 0;
@@ -423,6 +447,8 @@
         var role = $('vfo-role').value;
         var from = $('vfo-from').value;
         var to = $('vfo-to').value;
+        var closureFrom = $('vfo-closure-from').value;
+        var closureTo = $('vfo-closure-to').value;
         var term = $('vfo-search').value.toLowerCase().trim();
         var issuerValEl = $('vfo-issuer-value');
         var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
@@ -444,7 +470,9 @@
             if (pillar && r.pillar_name !== pillar) { return false; }
             if (outletCode && (!r.outlet_codes || r.outlet_codes.indexOf(outletCode) < 0)) { return false; }
             if (role) {
-                if (role === 'ARCI') {
+                if (role === 'Issuer') {
+                    if (!(CFG.staffId && r.issuer_staff_id == CFG.staffId)) { return false; }
+                } else if (role === 'ARCI') {
                     if (!r.user_arci_roles || r.user_arci_roles.length === 0) { return false; }
                 } else if (role === 'Not Applicable') {
                     if (r.user_arci_roles && r.user_arci_roles.length > 0) { return false; }
@@ -462,8 +490,10 @@
                 if (r.status !== 'Active' && r.status !== 'Extended') { return false; }
                 if (!effectiveDue || effectiveDue >= TODAY) { return false; }
             }
-            if (from && (!pDate || pDate.substring(0, 10) < from)) { return false; }
-            if (to && (!pDate || pDate.substring(0, 10) > to)) { return false; }
+            if (from && (!r.start_date || String(r.start_date).substring(0, 10) < from)) { return false; }
+            if (to && (!r.end_date || String(r.end_date).substring(0, 10) > to)) { return false; }
+            if (closureFrom && (!r.closure_date || String(r.closure_date).substring(0, 10) < closureFrom)) { return false; }
+            if (closureTo && (!r.closure_date || String(r.closure_date).substring(0, 10) > closureTo)) { return false; }
             if (term) {
                 var atemIdStr = 'at' + r.id;
                 var matchesTitle = String(r.title).toLowerCase().indexOf(term) >= 0;
@@ -576,6 +606,9 @@
             ? (_canViewDeleted
                 ? '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Suspended)"><i class="bi bi-eye"></i></a>'
                 : '')
+            + (r.status === 'Suspended' && CFG.isSuperAdmin
+                ? ' <a href="' + _base + 'edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
+                : '')
             + (canDeleteSuspended(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '')
             : '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
             + (canEdit(r) ? '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
@@ -593,23 +626,41 @@
         return endCell;
     }
 
+    // Shared "-" divider for merged columns (Start/End, Issuer/Accountable).
+    // display:block + width:100% guarantee centering regardless of the plain
+    // text/inline content stacked around it; darker color + bold for visibility.
+    // Left-aligned (not centered on the full cell width) so it lines up under
+    // the text above/below it, which is itself left-aligned and narrower than
+    // the column.
+    var CELL_DIVIDER_HTML = '<div style="text-align:left;color:#6c757d;font-weight:700;font-size:12px;margin:3px 0;">-</div>';
+
+    // Merged Start + End column: Start on top, a "-" divider, then End below.
+    function buildStartEndCell(r) {
+        return fmtDate(r.start_date) + CELL_DIVIDER_HTML + buildEndCell(r);
+    }
+
     function rowStyleFor(r) {
-        return (r.is_deleted && r.status !== 'Suspended') ? ' style="opacity:0.55;"' : '';
+        return ((r.is_deleted && r.status !== 'Suspended') || r.payout_status === 'Closed')
+            ? ' style="opacity:0.55;"' : '';
     }
 
     // Shared Issuer/Accountable cell styling (name + sub-label, divider
     // between multiple accountable members) - used by both the HQ and
     // Outlet tables, each as their own separate column.
+    var CELL_LABEL_STYLE = 'font-size:10px;color:#0A5AA8;font-weight:700;text-transform:uppercase;letter-spacing:.03em;';
+
     function buildIssuerCell(r) {
-        return '<div style="font-size:13px;">' + escapeHtml(r.issuer_name) + '</div>'
+        return '<div style="' + CELL_LABEL_STYLE + '">Issuer</div>'
+            + '<div style="font-size:13px;">' + escapeHtml(r.issuer_name) + '</div>'
             + '<div style="font-size:11px;color:#6c757d;">' + escapeHtml(r.department_name) + '</div>';
     }
 
     function buildAccountableCell(r) {
+        var label = '<div style="' + CELL_LABEL_STYLE + '">Accountable</div>';
         if (!r.accountable || r.accountable.length === 0) {
-            return '<span style="color:#adb5bd;font-size:12px;">—</span>';
+            return label + '<span style="color:#adb5bd;font-size:12px;">—</span>';
         }
-        var html = '';
+        var html = label;
         for (var ai = 0; ai < r.accountable.length; ai++) {
             if (ai > 0) {
                 html += '<div style="border-top:1px solid #dee2e6;margin:4px 0;"></div>';
@@ -620,8 +671,14 @@
         return html;
     }
 
+    // Merged Issuer + Accountable column: Issuer on top, a "-" divider, then
+    // Accountable below.
+    function buildIssuerAccountableCell(r) {
+        return buildIssuerCell(r) + CELL_DIVIDER_HTML + buildAccountableCell(r);
+    }
+
     function buildHqRowHtml(r) {
-        var levelCell = r.level_label ? pill(r.level_label, LEVEL_COLOR[r.level_label] || '#6c757d', r.system_name) : '-';
+        var levelCell = r.level_label ? pill(shortLevelLabel(r.level_label), LEVEL_COLOR[r.level_label] || '#6c757d', r.level_label + (r.system_name ? ' - ' + r.system_name : '')) : '-';
         var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
         var arciCell = '';
         if (r.user_arci_roles && r.user_arci_roles.length > 0) {
@@ -636,12 +693,11 @@
         return '<tr' + rowStyleFor(r) + '>'
             + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
             + '<td>' + escapeHtml(r.title) + '</td>'
-            + '<td>' + buildIssuerCell(r) + '</td>'
-            + '<td>' + buildAccountableCell(r) + '</td>'
+            + '<td>' + buildIssuerAccountableCell(r) + '</td>'
             + '<td>' + arciCell + '</td>'
             + '<td>' + levelCell + '</td>'
-            + '<td>' + fmtDate(r.start_date) + '</td>'
-            + '<td>' + buildEndCell(r) + '</td>'
+            + '<td>' + buildStartEndCell(r) + '</td>'
+            + '<td>' + fmtDateOrDash(r.closure_date) + '</td>'
             + '<td>' + statusCell + '</td>'
             + '<td class="atem-view-actions">' + buildActionCell(r) + '</td></tr>';
     }
@@ -652,11 +708,10 @@
         return '<tr' + rowStyleFor(r) + '>'
             + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
             + '<td>' + escapeHtml(r.title) + '</td>'
-            + '<td>' + buildIssuerCell(r) + '</td>'
-            + '<td>' + buildAccountableCell(r) + '</td>'
+            + '<td>' + buildIssuerAccountableCell(r) + '</td>'
             + '<td>' + pillarCell + '</td>'
-            + '<td>' + fmtDate(r.start_date) + '</td>'
-            + '<td>' + buildEndCell(r) + '</td>'
+            + '<td>' + buildStartEndCell(r) + '</td>'
+            + '<td>' + fmtDateOrDash(r.closure_date) + '</td>'
             + '<td>' + statusCell + '</td>'
             + '<td class="atem-view-actions">' + buildActionCell(r) + '</td></tr>';
     }
@@ -730,7 +785,7 @@
     function bind() {
         // HQ filter bar - always renders the HQ table (it's only visible
         // while that tab is active anyway).
-        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to'].forEach(function (id) {
+        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-closure-from', 'vf-closure-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
@@ -745,9 +800,9 @@
             renderTable('hq', hqRows);
         });
         $('vf-reset').addEventListener('click', function () {
-            ['vf-year', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vf-year', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-closure-from', 'vf-closure-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
-            resetS2Dropdown('vf-issuer', 'All issuers');
+            resetS2Dropdown('vf-issuer', 'All staff');
             resetStatusDropdown('vf-status');
             presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false;
             tabState.hq.page = 1;
@@ -755,7 +810,7 @@
         });
 
         // Outlet filter bar - always renders the Outlet table.
-        ['vfo-year', 'vfo-month', 'vfo-pillar', 'vfo-from', 'vfo-to'].forEach(function (id) {
+        ['vfo-year', 'vfo-month', 'vfo-pillar', 'vfo-from', 'vfo-to', 'vfo-closure-from', 'vfo-closure-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
@@ -770,9 +825,9 @@
             renderTable('outlet', outletRows);
         });
         $('vfo-reset').addEventListener('click', function () {
-            ['vfo-year', 'vfo-pillar', 'vfo-from', 'vfo-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vfo-year', 'vfo-pillar', 'vfo-from', 'vfo-to', 'vfo-closure-from', 'vfo-closure-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl2 = $('vfo-month'); if (monthEl2) { monthEl2.value = '0'; }
-            resetS2Dropdown('vfo-issuer', 'All issuers');
+            resetS2Dropdown('vfo-issuer', 'All staff');
             resetS2Dropdown('vfo-outlet', 'All outlets');
             resetStatusDropdown('vfo-status');
             presetClosed = false; overdueFilter = false; mineFilter = false;
@@ -967,6 +1022,21 @@
                     if (issuersList[mi].id == CFG.staffId) { meName = issuersList[mi].name; break; }
                 }
                 ibEl.textContent = meName;
+            }
+        } else if (params.get('issuer_id')) {
+            // Deep link from the dashboard's Suspended/Force Terminated breakdown -
+            // like issuer=me but for an arbitrary staff id, not just the viewer.
+            var issuerIdNum = parseInt(params.get('issuer_id'), 10);
+            var ivEl2 = $(_tabPrefix + '-issuer-value');
+            var ibEl2 = $(_tabPrefix + '-issuer-btn');
+            if (ivEl2 && issuerIdNum > 0) { ivEl2.value = issuerIdNum; }
+            if (ibEl2 && issuerIdNum > 0) {
+                var targetName = 'Staff #' + issuerIdNum;
+                var issuersList2 = CFG.issuers || [];
+                for (var mi2 = 0; mi2 < issuersList2.length; mi2++) {
+                    if (issuersList2[mi2].id == issuerIdNum) { targetName = issuersList2[mi2].name; break; }
+                }
+                ibEl2.textContent = targetName;
             }
         }
         bind();

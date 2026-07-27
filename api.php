@@ -812,6 +812,19 @@ function suspendAtem($id, $staff_id, $remarks)
     return array('success' => false, 'message' => $msg);
 }
 
+function appealAtem($id, $staff_id, $remarks)
+{
+    $endpoint = 'atem/' . (int)$id . '/appeal';
+    $result   = getApiDataWithJWT($endpoint, array('actor_id' => (int)$staff_id, 'remarks' => $remarks), 'POST', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : null);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to submit appeal.';
+    return array('success' => false, 'message' => $msg);
+}
+
 function unsuspendAtem($id, $staff_id)
 {
     $endpoint = 'atem/' . (int)$id . '/unsuspend';
@@ -2108,20 +2121,6 @@ function getIidasMigrationSummary($staff_id)
 
 // Only run request handler if this file is accessed directly (not included)
 if (!defined('API_JWT_INCLUDED')) {
-    // Check if we have a staff ID for authentication
-    if (!$staff_id) {
-        echo json_encode(array(
-            'success' => false,
-            'error' => 'No staff ID available for authentication',
-            'message' => 'Staff ID is required for JWT authentication. Please ensure you are logged in.',
-            'debug' => array(
-                'session_username' => isset($_SESSION["myusername"]) ? $_SESSION["myusername"] : 'not set',
-                'staff_id' => $staff_id
-            )
-        ));
-        exit;
-    }
-
     // Main request handler
     $input = file_get_contents('php://input');
     $jsonData = json_decode($input, true);
@@ -2135,6 +2134,20 @@ if (!defined('API_JWT_INCLUDED')) {
         : (isset($_POST['action'])
             ? $_POST['action']
             : (isset($jsonData['action']) ? $jsonData['action'] : null));
+
+    // Check if we have a staff ID for authentication
+    if (!$staff_id) {
+        echo json_encode(array(
+            'success' => false,
+            'error' => 'No staff ID available for authentication',
+            'message' => 'Staff ID is required for JWT authentication. Please ensure you are logged in.',
+            'debug' => array(
+                'session_username' => isset($_SESSION["myusername"]) ? $_SESSION["myusername"] : 'not set',
+                'staff_id' => $staff_id
+            )
+        ));
+        exit;
+    }
 
     // Attachment download is a plain GET link that streams binary content rather
     // than JSON, so it is handled before the JSON request switch below.
@@ -2168,7 +2181,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'dashboard-stats':
-                    $listResult = getAtemList($staff_id);
+                    $listResult = getAtemList($staff_id, true);
                     if (!$listResult['success']) {
                         $response = array('success' => false, 'message' => 'Failed to load ATEM data');
                         break;
@@ -2310,6 +2323,14 @@ if (!defined('API_JWT_INCLUDED')) {
                     $byDept = array();
                     $today = date('Y-m-d');
 
+                    // Suspended/Force Terminated live outside every other aggregate
+                    // above (they are soft-deleted, like genuinely-Deleted cards) but
+                    // still need their own dashboard visibility - tallied separately
+                    // below rather than folded into $byStatus/$total.
+                    $suspendedCount = 0;
+                    $forceTerminatedCount = 0;
+                    $byIssuerSft = array();
+
                     // Involvement breakdown — how many (filtered, non-deleted) cards
                     // someone is tagged on as Issuer vs. each ARCI role. A single card
                     // can count toward multiple roles (e.g. Issuer AND 'C'), but each
@@ -2334,20 +2355,11 @@ if (!defined('API_JWT_INCLUDED')) {
 
                     foreach ($items as $item) {
                         $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
-                        if ($statusVal === 'Deleted' || $statusVal === 'Suspended' || !empty($item['deleted_at'])) { continue; }
 
-                        if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
-                            // Active/Draft cards haven't closed yet, so the period filter
-                            // goes by when they started; every other status (Completed
-                            // family, Extended, Failed) is bucketed by when it closed —
-                            // mirrors atem_status_period_field()'s convention already used
-                            // by Staff Performance, instead of start_date for everything.
-                            $periodField = ($statusVal === 'Active' || $statusVal === 'Draft') ? 'start_date' : 'closure_date';
-                            $periodDate  = isset($item[$periodField]) ? $item[$periodField] : '';
-                            if ($periodDate && !atem_date_in_period($periodDate, $periodMonths, $filterYear)) {
-                                continue;
-                            }
-                        }
+                        // Generic scope filters apply regardless of status, so the
+                        // Suspended/Force Terminated tally below stays consistent with
+                        // every other aggregate (same dept/staff/atem-type/outlet/pillar
+                        // scope) instead of only inheriting the earlier role-based filter.
                         if ($filterDeptId > 0) {
                             $itemDeptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
                             $itemArciDepts = array();
@@ -2390,6 +2402,54 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($filterPillarName !== '') {
                             $itemPillarName = isset($item['pillar']['name']) ? $item['pillar']['name'] : '';
                             if ($itemPillarName !== $filterPillarName) { continue; }
+                        }
+
+                        if ($statusVal === 'Suspended' || $statusVal === 'Force Terminated') {
+                            // closure_date is always null for these statuses (they never
+                            // actually closed), so period filtering falls back to
+                            // start_date instead of the closure_date used below.
+                            if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
+                                $sftPeriodDate = isset($item['start_date']) ? $item['start_date'] : '';
+                                if ($sftPeriodDate && !atem_date_in_period($sftPeriodDate, $periodMonths, $filterYear)) {
+                                    continue;
+                                }
+                            }
+                            if ($statusVal === 'Suspended') {
+                                $suspendedCount++;
+                            } else {
+                                $forceTerminatedCount++;
+                            }
+                            $sftIssuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
+                            if ($sftIssuerId > 0) {
+                                if (!isset($byIssuerSft[$sftIssuerId])) {
+                                    $byIssuerSft[$sftIssuerId] = array(
+                                        'issuer_staff_id'  => $sftIssuerId,
+                                        'dept_id'          => isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0,
+                                        'suspended'        => 0,
+                                        'force_terminated' => 0,
+                                    );
+                                }
+                                if ($statusVal === 'Suspended') {
+                                    $byIssuerSft[$sftIssuerId]['suspended']++;
+                                } else {
+                                    $byIssuerSft[$sftIssuerId]['force_terminated']++;
+                                }
+                            }
+                            continue;
+                        }
+                        if ($statusVal === 'Deleted' || !empty($item['deleted_at'])) { continue; }
+
+                        if ($filterYear > 0 || $filterMonth > 0 || $filterQuarter > 0) {
+                            // Active/Draft cards haven't closed yet, so the period filter
+                            // goes by when they started; every other status (Completed
+                            // family, Extended, Failed) is bucketed by when it closed —
+                            // mirrors atem_status_period_field()'s convention already used
+                            // by Staff Performance, instead of start_date for everything.
+                            $periodField = ($statusVal === 'Active' || $statusVal === 'Draft') ? 'start_date' : 'closure_date';
+                            $periodDate  = isset($item[$periodField]) ? $item[$periodField] : '';
+                            if ($periodDate && !atem_date_in_period($periodDate, $periodMonths, $filterYear)) {
+                                continue;
+                            }
                         }
 
                         $total++;
@@ -2490,20 +2550,27 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
 
-                        // Include all non-Draft, non-Failed cards in the incentive/
-                        // reward forecast — Active/Extended cards carry a projected
-                        // payout that should appear in the estimate until they close or
-                        // are suspended (suspended cards are soft-deleted and excluded
-                        // from getAtemList entirely, so their reset 0 amounts never
-                        // reach this loop). HQ cards forecast off total_incentive_amount;
-                        // Outlet cards have no incentive-rule amount, so they forecast
-                        // off reward_amount (the potential reward before closure -
-                        // final_amount only gets set once the card actually closes).
+                        // Active cards have an undecided outcome, so they forecast off
+                        // the potential/raw amount (what they'd earn if they close well).
+                        // Completed/Completed with Excellence/Extended are already
+                        // decided - Extended always forfeits incentive per the
+                        // no-incentive-on-extension rule (AtemController::update()), so
+                        // using the raw potential amount there would overstate the
+                        // forecast; using final_incentive_amount/final_amount instead
+                        // correctly contributes RM0 for Extended and the real payout for
+                        // Completed/Excellence. Suspended/Force Terminated cards are
+                        // soft-deleted and excluded from this loop entirely already.
                         $forecastStatuses = array('Active', 'Extended', 'Completed', 'Completed with Excellence');
                         $itemAtemTypeVal  = isset($item['atem_type']) ? (int)$item['atem_type'] : 1;
-                        $forecastAmount   = ($itemAtemTypeVal === 2)
-                            ? (float)($item['reward_amount'] ?? 0)
-                            : (float)($item['total_incentive_amount'] ?? 0);
+                        if ($statusVal === 'Active') {
+                            $forecastAmount = ($itemAtemTypeVal === 2)
+                                ? (float)($item['reward_amount'] ?? 0)
+                                : (float)($item['total_incentive_amount'] ?? 0);
+                        } else {
+                            $forecastAmount = ($itemAtemTypeVal === 2)
+                                ? (float)($item['final_amount'] ?? 0)
+                                : (float)($item['final_incentive_amount'] ?? 0);
+                        }
                         if (in_array($statusVal, $forecastStatuses)) {
                             $incentiveTotal += $forecastAmount;
                             if ($levelNum >= 1 && $levelNum <= 4) {
@@ -2588,6 +2655,31 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     usort($byDepartment, function($a, $b) { return $b['cards'] - $a['cards']; });
 
+                    $bySuspendForceTerminate = array();
+                    if (!empty($byIssuerSft)) {
+                        $sftStaffNames = array();
+                        $sftStaffIds = array_map('intval', array_keys($byIssuerSft));
+                        $staffRes = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE id IN (" . implode(',', $sftStaffIds) . ")");
+                        if ($staffRes) {
+                            while ($srow = mysqli_fetch_assoc($staffRes)) {
+                                $sftStaffNames[(int)$srow['id']] = $srow['nama_staff'];
+                            }
+                        }
+                        foreach ($byIssuerSft as $sftIssuerId => $sftRow) {
+                            $bySuspendForceTerminate[] = array(
+                                'issuer_staff_id'  => $sftIssuerId,
+                                'issuer_name'      => isset($sftStaffNames[$sftIssuerId]) ? $sftStaffNames[$sftIssuerId] : ('Staff #' . $sftIssuerId),
+                                'dept_id'          => $sftRow['dept_id'],
+                                'dept_name'        => isset($deptNames[$sftRow['dept_id']]) ? $deptNames[$sftRow['dept_id']] : ($sftRow['dept_id'] ? 'Dept #' . $sftRow['dept_id'] : 'Unknown'),
+                                'suspended'        => $sftRow['suspended'],
+                                'force_terminated' => $sftRow['force_terminated'],
+                            );
+                        }
+                        usort($bySuspendForceTerminate, function($a, $b) {
+                            return ($b['suspended'] + $b['force_terminated']) - ($a['suspended'] + $a['force_terminated']);
+                        });
+                    }
+
                     $response = array(
                         'success' => true,
                         'data'    => array(
@@ -2597,7 +2689,10 @@ if (!defined('API_JWT_INCLUDED')) {
                             'by_pillar'       => $byPillar,
                             'incentive_total' => $incentiveTotal,
                             'overdue_count'   => $overdueCount,
+                            'suspended_count' => $suspendedCount,
+                            'force_terminated_count' => $forceTerminatedCount,
                             'by_department'   => $byDepartment,
+                            'by_suspend_force_terminate' => $bySuspendForceTerminate,
                             'my_roles'        => array(
                                 'issuer'   => $myRoleBreakdown['issuer'],
                                 'A'        => $myRoleBreakdown['A'],
@@ -2626,7 +2721,27 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($is_api_superadmin) {
                             $data['superadmin_override'] = 1;
                         }
+                        $update_before = getAtem($jsonData['id'], $staff_id);
+                        $update_was_suspended = !empty($update_before['success']) && isset($update_before['data']['status']['value'])
+                            && $update_before['data']['status']['value'] === 'Suspended';
                         $response = updateAtem($jsonData['id'], $data, $staff_id);
+                        // Manual Suspended -> Force Terminated transition: atem-api already
+                        // created the in-app notification; this only sends the email, since
+                        // atem-api never sends mail itself.
+                        if ($response['success'] && $update_was_suspended
+                            && isset($response['data']['status']['value']) && $response['data']['status']['value'] === 'Force Terminated') {
+                            $ft_issuer_id = isset($response['data']['issuer_staff_id']) ? (int)$response['data']['issuer_staff_id'] : 0;
+                            $ft_issuer = $ft_issuer_id ? getStaffEmail($ft_issuer_id) : null;
+                            if ($ft_issuer) {
+                                sendAtemForceTerminateEmail(
+                                    $ft_issuer['email'],
+                                    $ft_issuer['name'],
+                                    $jsonData['id'],
+                                    isset($response['data']['title']) ? $response['data']['title'] : ('ATEM #' . (int)$jsonData['id']),
+                                    ''
+                                );
+                            }
+                        }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or data');
                     }
@@ -2675,6 +2790,43 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID.');
+                    }
+                    break;
+
+                case 'appeal-atem':
+                    if (!$staff_id) {
+                        $response = array('success' => false, 'message' => 'Not authenticated.');
+                        break;
+                    }
+                    if (isset($jsonData['id']) && isset($jsonData['remarks']) && trim((string)$jsonData['remarks']) !== '') {
+                        $appeal_atem = getAtem($jsonData['id'], $staff_id);
+                        if (empty($appeal_atem['success']) || !isset($appeal_atem['data'])) {
+                            $response = array('success' => false, 'message' => 'ATEM card not found.');
+                            break;
+                        }
+                        $appeal_issuer_id = (int)(isset($appeal_atem['data']['issuer_staff_id']) ? $appeal_atem['data']['issuer_staff_id'] : 0);
+                        if ((int)$staff_id !== $appeal_issuer_id) {
+                            $response = array('success' => false, 'message' => 'Only the Issuer can appeal this suspension.');
+                            break;
+                        }
+                        $appeal_remarks = trim((string)$jsonData['remarks']);
+                        $response = appealAtem($jsonData['id'], $staff_id, $appeal_remarks);
+                        if ($response['success']) {
+                            $appeal_suspended_by = (int)(isset($appeal_atem['data']['suspended_by']) ? $appeal_atem['data']['suspended_by'] : 0);
+                            $appeal_suspender = $appeal_suspended_by ? getStaffEmail($appeal_suspended_by) : null;
+                            if ($appeal_suspender) {
+                                sendAtemAppealEmail(
+                                    $appeal_suspender['email'],
+                                    $appeal_suspender['name'],
+                                    $jsonData['id'],
+                                    isset($appeal_atem['data']['title']) ? $appeal_atem['data']['title'] : ('ATEM #' . (int)$jsonData['id']),
+                                    $appeal_remarks,
+                                    $nama_staff ? $nama_staff : 'Issuer'
+                                );
+                            }
+                        }
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or appeal reason.');
                     }
                     break;
 
@@ -2874,6 +3026,16 @@ if (!defined('API_JWT_INCLUDED')) {
                         $chat_atem = getAtem($jsonData['id'], $staff_id);
                         if (empty($chat_atem['success']) || !isset($chat_atem['data'])) {
                             $response = array('success' => false, 'message' => 'ATEM card not found.');
+                            break;
+                        }
+                        // Chat stays open regardless of status (Suspended/Force Terminated/
+                        // Completed/etc) - only a genuinely deleted or payout-closed card blocks it.
+                        if (!empty($chat_atem['data']['deleted_at'])) {
+                            $response = array('success' => false, 'message' => 'This ATEM card has been deleted.');
+                            break;
+                        }
+                        if (isset($chat_atem['data']['payout_status']) && $chat_atem['data']['payout_status'] === 'Closed') {
+                            $response = array('success' => false, 'message' => 'This ATEM card is locked because its payout has been closed.');
                             break;
                         }
                         if (!userCanPostAtemChat($chat_atem['data'], $staff_id, $is_api_superadmin)) {

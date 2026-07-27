@@ -12,9 +12,11 @@ $_okr_menu_visible = ((int)$atem_permission >= 3 || $_is_superadmin || in_array(
 ?>
 <?php if (!$_okr_menu_visible): ?>
 <script>
-(function () {
+(function() {
     var el = document.getElementById('switch-okr-btn');
-    if (el) { el.remove(); }
+    if (el) {
+        el.remove();
+    }
 })();
 </script>
 <?php endif; ?>
@@ -238,9 +240,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                 <div class="atem-card atem-dash-stat h-100" data-status="Active" style="cursor:pointer;">
                     <div class="atem-card-title mb-1">Active / Extended</div>
                     <div class="atem-stat-value atem-stat-value--blue" id="dash-active">---</div>
-                    <div class="atem-stat-label">not yet closed</div>
-                    <div class="atem-stat-label" id="dash-extended-label"
-                        style="display:none;color:#fd7e14;margin-top:2px;">
+                    <div class="atem-stat-label" id="dash-extended-label" style="display:none;color:#fd7e14;">
                     </div>
                 </div>
             </div>
@@ -249,7 +249,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     style="cursor:pointer;">
                     <div class="atem-card-title mb-1">Complete + Excellence</div>
                     <div class="atem-stat-value atem-stat-value--green" id="dash-closed">---</div>
-                    <div class="atem-stat-label">eligible for completion count</div>
+                    <div class="atem-stat-label">closed successfully</div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-xl">
@@ -264,7 +264,14 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     style="cursor:pointer;">
                     <div class="atem-card-title mb-1">Overdue Cards</div>
                     <div class="atem-stat-value atem-stat-value--red" id="dash-overdue">---</div>
-                    <div class="atem-stat-label">active/extended past end date</div>
+                    <div class="atem-stat-label">past due date</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat h-100" data-status="Suspended" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Suspended</div>
+                    <div class="atem-stat-value atem-stat-value--red" id="dash-suspended">---</div>
+                    <div class="atem-stat-label">temporarily on hold</div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-xl">
@@ -277,15 +284,15 @@ window.ATEM_DASH = <?php echo json_encode(array(
             </div>
         </div>
 
-        <!-- My Role Breakdown -->
+        <!-- My Involvement + ATEM Complexity Reward -->
         <div class="row g-3">
-            <div class="col-12">
-                <div class="atem-card">
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
                     <h6 class="atem-card-title mb-0" id="dash-myroles-title">My Involvement</h6>
                     <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;" id="dash-myroles-subtitle">
                         Cards where you are the Issuer or an ARCI member, by role</div>
                     <div class="row g-2" id="dash-myroles-row">
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
                                 data-issuer="me">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Issuer</div>
@@ -293,7 +300,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     style="font-size:22px;">---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
                                 data-myrole="A">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Accountable (A)</div>
@@ -301,7 +308,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     ---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
                                 data-myrole="R">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Responsible (R)</div>
@@ -309,7 +316,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     ---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
                                 data-myrole="C">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Consulted (C)</div>
@@ -317,7 +324,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     ---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
                                 data-myrole="I">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Informed (I)</div>
@@ -325,7 +332,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     ---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat h-100" style="cursor:pointer;padding:10px;"
                                 data-mine="1">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Total Involved</div>
@@ -336,10 +343,6 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Level table + Bar chart -->
-        <div class="row g-3 mt-0">
             <div class="col-lg-6">
                 <div class="atem-card h-100">
                     <h6 class="atem-card-title mb-0">ATEM Complexity Reward</h6>
@@ -361,6 +364,34 @@ window.ATEM_DASH = <?php echo json_encode(array(
                             <tbody id="dash-level-body">
                                 <tr>
                                     <td colspan="6" class="text-muted" style="font-size:12px;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Suspended & Force Terminated Breakdown + Closure & Failure Analysis -->
+        <div class="row g-3 mt-0">
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
+                    <h6 class="atem-card-title mb-0">Suspended &amp; Force Terminated Breakdown</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">By issuer - click a row to
+                        view their cards</div>
+                    <div class="table-responsive" style="max-height:280px;overflow-y:auto;">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="font-size:12px;text-align:left;">Issuer</th>
+                                    <th style="font-size:12px;text-align:left;">Department</th>
+                                    <th style="font-size:12px;text-align:left;">Suspended</th>
+                                    <th style="font-size:12px;text-align:left;">Force Terminated</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dash-sft-body">
+                                <tr>
+                                    <td colspan="4" class="text-muted" style="font-size:12px;">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -402,10 +433,23 @@ window.ATEM_DASH = <?php echo json_encode(array(
                             </div>
                             <div class="atem-bar-count" id="bar-failed-n">-</div>
                         </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Suspended</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-suspended" style="width:0%;background:#e11d48;">
+                                </div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-suspended-n">-</div>
+                        </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Force Terminated</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-force-terminated"
+                                    style="width:0%;background:#7c3aed;"></div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-force-terminated-n">-</div>
+                        </div>
                     </div>
-                    <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by
-                        department,
-                        issuer, level and month.</div>
                 </div>
             </div>
         </div>
@@ -543,9 +587,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                 <div class="atem-card atem-dash-stat-outlet h-100" data-status="Active" style="cursor:pointer;">
                     <div class="atem-card-title mb-1">Active / Extended</div>
                     <div class="atem-stat-value atem-stat-value--blue" id="dasho-active">---</div>
-                    <div class="atem-stat-label">not yet closed</div>
-                    <div class="atem-stat-label" id="dasho-extended-label"
-                        style="display:none;color:#fd7e14;margin-top:2px;">
+                    <div class="atem-stat-label" id="dasho-extended-label" style="display:none;color:#fd7e14;">
                     </div>
                 </div>
             </div>
@@ -554,7 +596,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     style="cursor:pointer;">
                     <div class="atem-card-title mb-1">Complete + Excellence</div>
                     <div class="atem-stat-value atem-stat-value--green" id="dasho-closed">---</div>
-                    <div class="atem-stat-label">eligible for completion count</div>
+                    <div class="atem-stat-label">closed successfully</div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-xl">
@@ -569,7 +611,14 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     style="cursor:pointer;">
                     <div class="atem-card-title mb-1">Overdue Cards</div>
                     <div class="atem-stat-value atem-stat-value--red" id="dasho-overdue">---</div>
-                    <div class="atem-stat-label">active/extended past end date</div>
+                    <div class="atem-stat-label">past due date</div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl">
+                <div class="atem-card atem-dash-stat-outlet h-100" data-status="Suspended" style="cursor:pointer;">
+                    <div class="atem-card-title mb-1">Suspended</div>
+                    <div class="atem-stat-value atem-stat-value--red" id="dasho-suspended">---</div>
+                    <div class="atem-stat-label">temporarily on hold</div>
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-xl">
@@ -582,15 +631,15 @@ window.ATEM_DASH = <?php echo json_encode(array(
             </div>
         </div>
 
-        <!-- Outlet My Role Breakdown -->
+        <!-- Outlet My Involvement + ATEM Pillar Reward -->
         <div class="row g-3">
-            <div class="col-12">
-                <div class="atem-card">
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
                     <h6 class="atem-card-title mb-0" id="dasho-myroles-title">My Involvement</h6>
                     <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;" id="dasho-myroles-subtitle">
                         Cards where you are the Issuer or an ARCI member, by role</div>
                     <div class="row g-2" id="dasho-myroles-row">
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
                                 data-issuer="me">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Issuer</div>
@@ -598,7 +647,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     style="font-size:22px;">---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
                                 data-myrole="A">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Accountable (A)</div>
@@ -606,7 +655,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     ---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
                                 data-myrole="R">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Responsible (R)</div>
@@ -614,7 +663,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     ---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
                                 data-myrole="C">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Consulted (C)</div>
@@ -622,7 +671,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     ---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
                                 data-myrole="I">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Informed (I)</div>
@@ -630,7 +679,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                                     ---</div>
                             </div>
                         </div>
-                        <div class="col-6 col-md-2">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <div class="atem-card atem-dash-stat-outlet h-100" style="cursor:pointer;padding:10px;"
                                 data-mine="1">
                                 <div class="atem-card-title mb-1" style="font-size:11px;">Total Involved</div>
@@ -641,10 +690,6 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Pillar table + Bar chart -->
-        <div class="row g-3 mt-0">
             <div class="col-lg-6">
                 <div class="atem-card h-100">
                     <h6 class="atem-card-title mb-0">ATEM Pillar Reward</h6>
@@ -665,6 +710,34 @@ window.ATEM_DASH = <?php echo json_encode(array(
                             <tbody id="dasho-pillar-body">
                                 <tr>
                                     <td colspan="6" class="text-muted" style="font-size:12px;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Outlet Suspended & Force Terminated Breakdown + Closure & Failure Analysis -->
+        <div class="row g-3 mt-0">
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
+                    <h6 class="atem-card-title mb-0">Suspended &amp; Force Terminated Breakdown</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">By issuer - click a row to
+                        view their cards</div>
+                    <div class="table-responsive" style="max-height:280px;overflow-y:auto;">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="font-size:12px;text-align:left;">Issuer</th>
+                                    <th style="font-size:12px;text-align:left;">Department</th>
+                                    <th style="font-size:12px;text-align:left;">Suspended</th>
+                                    <th style="font-size:12px;text-align:left;">Force Terminated</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dasho-sft-body">
+                                <tr>
+                                    <td colspan="4" class="text-muted" style="font-size:12px;">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -708,10 +781,23 @@ window.ATEM_DASH = <?php echo json_encode(array(
                             </div>
                             <div class="atem-bar-count" id="bar-o-failed-n">-</div>
                         </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Suspended</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-o-suspended" style="width:0%;background:#e11d48;">
+                                </div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-o-suspended-n">-</div>
+                        </div>
+                        <div class="atem-bar-row">
+                            <div class="atem-bar-label">Force Terminated</div>
+                            <div class="atem-bar-track">
+                                <div class="atem-bar-fill" id="bar-o-force-terminated"
+                                    style="width:0%;background:#7c3aed;"></div>
+                            </div>
+                            <div class="atem-bar-count" id="bar-o-force-terminated-n">-</div>
+                        </div>
                     </div>
-                    <div class="text-muted mt-3" style="font-size:11px;">Critical CEO use: identify failure rate by
-                        outlet,
-                        issuer, pillar and month.</div>
                 </div>
             </div>
         </div>

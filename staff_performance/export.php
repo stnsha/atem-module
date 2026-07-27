@@ -123,6 +123,12 @@ function ex_level_val($a) {
 // Emit one or more rows for one staff member's involvement in one ATEM.
 // One row per ARCI role; if issuer-only (no ARCI), one row with ARCI blank.
 // Reward per role: A -> a_incentive_amount; R -> r_incentive_amount / R-count; C/I/issuer-only -> 0.
+// Reward per role: A -> a_incentive_amount split among incentivised A members;
+// R -> r_incentive_amount split among incentivised R members; a non-incentivised
+// A/R member (or C/I/issuer-only) gets 0 - mirrors api.php's
+// getStaffPerformanceLive() exactly, so this matches the on-screen table.
+// 'Record Type' is always 'ATEM' here - shares the same column layout as
+// emit_okr_rows() below so ATEM and OKR rows can sit in one flat CSV.
 function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
     $atem_id   = '#AT' . (int)(isset($a['id']) ? $a['id'] : 0);
     $title     = isset($a['title']) ? $a['title'] : '';
@@ -145,10 +151,17 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
     $a_amount = isset($a['a_incentive_amount']) ? (float)$a['a_incentive_amount'] : 0.0;
     $r_amount = isset($a['r_incentive_amount']) ? (float)$a['r_incentive_amount'] : 0.0;
 
-    $r_count = 0;
+    // Reward pools are split only among ARCI members actually marked
+    // is_incentivised - mirrors api.php's getStaffPerformanceLive() so the
+    // export matches the on-screen table (a non-incentivised A/R member gets
+    // RM 0, not an equal share of the pool).
+    $inc_a_count = 0;
+    $inc_r_count = 0;
     if (!empty($a['arci']) && is_array($a['arci'])) {
         foreach ($a['arci'] as $m) {
-            if (isset($m['role']) && $m['role'] === 'R') { $r_count++; }
+            if (empty($m['is_incentivised'])) { continue; }
+            if (isset($m['role']) && $m['role'] === 'A') { $inc_a_count++; }
+            if (isset($m['role']) && $m['role'] === 'R') { $inc_r_count++; }
         }
     }
 
@@ -156,17 +169,18 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
     if (!empty($a['arci']) && is_array($a['arci'])) {
         foreach ($a['arci'] as $m) {
             if (!empty($m['staff_id']) && (int)$m['staff_id'] === $sid && !empty($m['role'])) {
-                $roles[] = $m['role'];
+                $roles[] = array('role' => $m['role'], 'is_incentivised' => !empty($m['is_incentivised']));
             }
         }
     }
 
     if (!empty($roles)) {
-        foreach ($roles as $role) {
-            if ($role === 'A') {
-                $reward = number_format($a_amount, 2);
-            } elseif ($role === 'R') {
-                $reward = number_format($r_count > 0 ? $r_amount / $r_count : 0.0, 2);
+        foreach ($roles as $r) {
+            $role = $r['role'];
+            if ($role === 'A' && $r['is_incentivised'] && $inc_a_count > 0) {
+                $reward = number_format($a_amount / $inc_a_count, 2);
+            } elseif ($role === 'R' && $r['is_incentivised'] && $inc_r_count > 0) {
+                $reward = number_format($r_amount / $inc_r_count, 2);
             } else {
                 $reward = number_format(0, 2);
             }
