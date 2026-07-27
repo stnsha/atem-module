@@ -309,9 +309,7 @@
         (CFG.statuses || []).forEach(function (s) {
             if (String(s.id) === String(selId)) { selVal = s.value; }
         });
-        if (selVal === 'Extended') {
-            closureEl.value = ($('tl-ext1') && $('tl-ext1').value) ? $('tl-ext1').value : '';
-        } else if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
+        if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
             var _recStatusVal = '';
             (CFG.statuses || []).forEach(function (s) {
                 if (String(s.id) === String(REC.atem_status_id)) { _recStatusVal = s.value; }
@@ -354,22 +352,12 @@
         recalcFinalDue();
     }
 
+    // Start Date and End Date cannot be changed once the card has been created
+    // (i.e. once a value exists) - matches lockDateFields()'s Start Date rule.
     function syncEndDateLock() {
-        if (READ || !IS_ISSUER) { return; }
         var endEl = $('tl-end');
         if (!endEl || !endEl.value) { return; }
-        var selId  = $('tl-status') ? $('tl-status').value : '';
-        var selVal = '';
-        (CFG.statuses || []).forEach(function (s) {
-            if (String(s.id) === String(selId)) { selVal = s.value; }
-        });
-        var isActive = selVal === 'Active';
-        var extChecked = !!($('tl-extended') && $('tl-extended').checked);
-        if (isActive && !extChecked) {
-            endEl.removeAttribute('disabled');
-        } else {
-            endEl.setAttribute('disabled', 'disabled');
-        }
+        endEl.setAttribute('disabled', 'disabled');
     }
 
     function syncStatusOptions() {
@@ -385,8 +373,14 @@
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         (CFG.statuses || []).forEach(function (s) {
             if (CFG.superadminTerminalEdit) {
-                // SuperAdmin editing a terminal card: only offer Draft or the current status.
-                if (s.value !== 'Draft' && String(s.id) !== String(REC.atem_status_id)) { return; }
+                if (recStatusVal === 'Suspended') {
+                    // SuperAdmin editing a suspended card: only Active, Force
+                    // Terminate, or the current status (not the usual "-> Draft").
+                    if (['Active', 'Force Terminated'].indexOf(s.value) === -1 && String(s.id) !== String(REC.atem_status_id)) { return; }
+                } else if (s.value !== 'Draft' && String(s.id) !== String(REC.atem_status_id)) {
+                    // SuperAdmin editing another terminal card: only offer Draft or the current status.
+                    return;
+                }
             } else if (CFG.issuerCompletedEdit) {
                 if (recStatusVal === 'Completed with Extension') {
                     // Can only revert to Extended.
@@ -1313,6 +1307,16 @@
             var _arciErr = validateArciIncentive();
             if (_arciErr) { setError('arci-error', _arciErr); return false; }
         }
+        var COMPLETION_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension'];
+        if (COMPLETION_STATUSES.indexOf(_tlStatusVal) >= 0) {
+            var hasOutcomeAttachment = (reflinks || []).some(function (r) {
+                return (r.name || '').trim().toLowerCase() === 'outcome attachment';
+            });
+            if (!hasOutcomeAttachment) {
+                setError('reflink-section-error', 'A Reference Link titled "Outcome Attachment" is required before saving as ' + _tlStatusVal + '.');
+                return false;
+            }
+        }
         if (!reflinks || reflinks.length === 0) {
             setError('reflink-section-error', 'At least one Reference Link is required.');
             return false;
@@ -2203,6 +2207,54 @@
             }
             unsuspendBtn.addEventListener('click', function () {
                 var m = getUnsuspendModal();
+                if (m) { m.show(); }
+            });
+        }());
+
+        (function () {
+            var appealBtn = $('atem-appeal-btn');
+            if (!appealBtn) { return; }
+            var _modal = null;
+            function getAppealModal() {
+                if (!_modal && typeof bootstrap !== 'undefined') {
+                    _modal = new bootstrap.Modal($('atem-appeal-modal'));
+                    $('atem-appeal-confirm-btn').addEventListener('click', function () {
+                        var remarks = $('appeal-remarks') ? $('appeal-remarks').value.trim() : '';
+                        if (!remarks) {
+                            setError('appeal-remarks-error', 'Reason is required.');
+                            return;
+                        }
+                        setError('appeal-remarks-error', '');
+                        var confirmBtn = $('atem-appeal-confirm-btn');
+                        var originalHtml = confirmBtn ? confirmBtn.innerHTML : '';
+                        if (confirmBtn) {
+                            confirmBtn.disabled = true;
+                            confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
+                        }
+                        function resetBtn() {
+                            if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.innerHTML = originalHtml; }
+                        }
+                        apiCall('appeal-atem', { id: CFG.atemId, remarks: remarks }).then(function (res) {
+                            if (res && res.success) {
+                                window.location.reload();
+                            } else {
+                                resetBtn();
+                                if (_modal) { _modal.hide(); }
+                                setError('atem-save-error', res && res.message ? res.message : 'Failed to submit appeal.');
+                            }
+                        }).catch(function () {
+                            resetBtn();
+                            if (_modal) { _modal.hide(); }
+                            setError('atem-save-error', 'Network error while submitting appeal.');
+                        });
+                    });
+                }
+                return _modal;
+            }
+            appealBtn.addEventListener('click', function () {
+                if ($('appeal-remarks')) { $('appeal-remarks').value = ''; }
+                setError('appeal-remarks-error', '');
+                var m = getAppealModal();
                 if (m) { m.show(); }
             });
         }());

@@ -872,7 +872,39 @@ button {
 /* ---------------------------------------------------------------
    Dashboard stat cards
 --------------------------------------------------------------- */
+/* Card itself becomes a column flex container so the value always sits
+   right after the (fixed-height) title, and the label can be pinned to
+   the bottom via margin-top:auto - regardless of how many lines the
+   title or the label wrap to. Combined with Bootstrap's h-100 (stretch
+   in a row g-3), every card in a row ends up the same height too. */
+.atem-dash-stat,
+.atem-dash-stat-outlet {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Fixed to exactly 2 lines' worth of height (line-height 1.5 x 2, plus
+   the title's own padding-bottom/border) so a 1-line title ("Suspended")
+   and a 2-line title ("Complete + Excellence") reserve identical space -
+   the value below always starts at the same Y regardless of title length. */
+.atem-dash-stat .atem-card-title,
+.atem-dash-stat-outlet .atem-card-title {
+  min-height: calc(2 * 1.5em + 10px + 1px);
+  align-items: flex-start;
+  flex-shrink: 0;
+  /* Override Bootstrap's mb-1 (0.25rem) so the gap below the divider
+     matches the title's own 10px padding-bottom above it. */
+  margin-bottom: 10px;
+}
+
+.atem-dash-stat .atem-stat-label,
+.atem-dash-stat-outlet .atem-stat-label {
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
 .atem-stat-value {
+  padding-top: 10px;
   font-size: 2rem;
   font-weight: 700;
   line-height: 1.1;

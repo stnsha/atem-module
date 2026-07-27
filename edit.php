@@ -251,7 +251,8 @@ if ($record) {
 $record_is_suspended = ($record
     && isset($record['status']['value'])
     && $record['status']['value'] === 'Suspended');
-$record_is_deleted = ($record && !empty($record['deleted_at'])) || $record_is_suspended;
+$record_is_actually_deleted = ($record && !empty($record['deleted_at']));
+$record_is_deleted = $record_is_actually_deleted || $record_is_suspended;
 if ($record_is_deleted) {
     if (!$_is_superadmin && (int)$atem_permission < 4) {
         // Suspended cards: allow the issuer to view their own card in read-only.
@@ -264,14 +265,18 @@ if ($record_is_deleted) {
             exit;
         }
     }
-    // Force read-only — soft-deleted cards cannot be edited by anyone.
-    $mode        = 'read';
-    $is_read     = true;
-    $is_progress = false;
+    // Force read-only — soft-deleted cards cannot be edited by anyone. Exception:
+    // a real SuperAdmin may edit a merely-suspended (not actually soft-deleted)
+    // card, restricted to Level/Rule/Status only via $superadmin_terminal_edit below.
+    if (!($_is_superadmin && $record_is_suspended && !$record_is_actually_deleted)) {
+        $mode        = 'read';
+        $is_read     = true;
+        $is_progress = false;
+    }
 }
 
 // ATEMs with a terminal status cannot be edited.
-$terminal_statuses = array('Failed', 'Completed', 'Completed with Excellence', 'Completed with Extension', 'Deleted', 'Suspended');
+$terminal_statuses = array('Failed', 'Completed', 'Completed with Excellence', 'Completed with Extension', 'Deleted', 'Suspended', 'Force Terminated');
 $current_status_value = '';
 if ($record && isset($record['status']['value'])) {
     $current_status_value = $record['status']['value'];
@@ -289,11 +294,12 @@ $payout_is_closed    = ($payout_status_value === 'Closed');
 $can_manage_payout   = $show_payout_card && !$payout_is_closed && !$api_unavailable
     && ($_is_superadmin || (int)$atem_permission >= 4 || in_array(17, $requester_dept_ids, true));
 
-// SuperAdmin may edit Completed or Failed cards — but only Level, Rule, and Status (-> Draft).
-// Not available once payout has been marked Closed/Paid.
-$superadmin_terminal_statuses = array('Completed', 'Failed', 'Completed with Extension');
+// SuperAdmin may edit Completed, Failed, or Suspended cards — but only Level,
+// Rule, and Status (-> Draft). Not available once payout has been marked
+// Closed/Paid, or for a genuinely (soft-)deleted card.
+$superadmin_terminal_statuses = array('Completed', 'Failed', 'Completed with Extension', 'Suspended');
 $superadmin_terminal_edit = $_is_superadmin
-    && !$record_is_deleted
+    && !$record_is_actually_deleted
     && !$payout_is_closed
     && in_array($current_status_value, $superadmin_terminal_statuses);
 
@@ -330,17 +336,24 @@ $can_add_progress = ($is_issuer_now || $is_arci_member)
     && !in_array($current_status_value, $terminal_statuses);
 
 // Chat send: Issuer, ANY ARCI role (reuse $is_arci_member, not the stricter
-// Accountable-only $can_edit below), or a real SuperAdmin. Unlike progress,
-// chat stays open regardless of terminal status — it's a discussion thread,
-// not a card edit. Actual enforcement lives in api.php's chat-send case; this
-// only gates whether the composer is rendered.
-$can_send_chat = !$record_is_deleted && !$api_unavailable
+// Accountable-only $can_edit below), or a real SuperAdmin. Chat stays open
+// regardless of status - including Suspended/Force Terminated/Completed/etc,
+// since it's a discussion thread, not a card edit. Only a genuinely
+// (soft-)deleted card or a payout-closed card blocks it. Actual enforcement
+// lives in api.php's chat-send case; this only gates whether the composer
+// is rendered.
+$can_send_chat = !$record_is_actually_deleted && !$payout_is_closed && !$api_unavailable
     && ($_is_superadmin || $is_issuer_now || $is_arci_member);
 
 // While suspended, the Issuer may still edit Title, Description, Reference Links,
 // and Attachments. Everything else (level, rule, timeline, status, ARCI, incentive)
 // stays frozen until the card is unsuspended.
 $suspended_issuer_edit = $record_is_suspended && $is_issuer_now;
+
+// Appeal: Issuer only, only while suspended, one appeal per suspension cycle
+// (appeal fields are reset server-side when the card is later unsuspended).
+$can_appeal = $record_is_suspended && $is_issuer_now
+    && empty($record['appealed_at']);
 
 // Non-issuers cannot use progress mode — downgrade to read.
 if ($is_progress && !$is_issuer_now) {
@@ -410,7 +423,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         if ($deleted_by_id || $deleted_at_fmt):
         ?>
         <span class="ms-2 text-muted" style="font-size:12px;">
-            Deleted by <?php echo htmlspecialchars($deleted_by_name); ?><?php echo $deleted_at_fmt ? ' on ' . htmlspecialchars($deleted_at_fmt) : ''; ?>.
+            Deleted by
+            <?php echo htmlspecialchars($deleted_by_name); ?><?php echo $deleted_at_fmt ? ' on ' . htmlspecialchars($deleted_at_fmt) : ''; ?>.
         </span>
         <?php endif; ?>
     </div>
@@ -435,14 +449,16 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         if ($sb_id || $sb_at):
         ?>
         <span class="ms-2 text-muted" style="font-size:12px;">
-            Suspended by <?php echo htmlspecialchars($sb_name); ?><?php echo $sb_at ? ' on ' . htmlspecialchars($sb_at) : ''; ?>.
+            Suspended by
+            <?php echo htmlspecialchars($sb_name); ?><?php echo $sb_at ? ' on ' . htmlspecialchars($sb_at) : ''; ?>.
         </span>
         <?php endif; ?>
     </div>
 </div>
 <?php endif; ?>
 
-<div class="atem-bento atem-mode-<?php echo $mode; ?><?php echo $suspended_issuer_edit ? ' atem-suspended-desc-edit' : ''; ?>">
+<div
+    class="atem-bento atem-mode-<?php echo $mode; ?><?php echo $suspended_issuer_edit ? ' atem-suspended-desc-edit' : ''; ?>">
 
     <!-- ATEM Details -->
     <div class="atem-bento-item atem-span-8">
@@ -519,10 +535,12 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     <label class="form-label">Area Manager(s) <span class="atem-req">*</span></label>
                     <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
                     <div class="atem-outlet-picker" id="atem-am-picker-wrap">
-                        <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area manager(s)...</div>
+                        <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area
+                            manager(s)...</div>
                         <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
                             <div class="atem-outlet-picker-search-wrap">
-                                <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search" placeholder="Search area manager...">
+                                <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
+                                    placeholder="Search area manager...">
                             </div>
                             <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
                         </div>
@@ -540,7 +558,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                 <?php if ($suspended_issuer_edit): ?>
                 <div class="col-12 d-flex justify-content-end align-items-center gap-2">
                     <div class="atem-form-error flex-grow-1 mb-0" id="atem-suspended-save-error"></div>
-                    <button type="button" class="btn btn-primary btn-sm" id="atem-suspended-save-btn">Save Title &amp; Description</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="atem-suspended-save-btn">Save Title &amp;
+                        Description</button>
                 </div>
                 <?php endif; ?>
             </div>
@@ -605,13 +624,21 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         <!-- Reference Link -->
         <div class="atem-card">
             <div class="atem-card-title-row">
-                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link <span class="atem-req">*</span></h6>
+                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link <span
+                        class="atem-req">*</span></h6>
                 <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
                 <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference
                     Link</button>
                 <?php endif; ?>
             </div>
             <p class="atem-card-hint">Named links to related documents or resources.</p>
+            <?php if (!$is_read): ?>
+            <p class="atem-card-hint" style="color:#b45309;">
+                <i class="bi bi-exclamation-triangle"></i>
+                Before saving as Completed, Completed with Excellence, or Completed with Extension, you must add a
+                Reference Link titled exactly <strong>"Outcome Attachment"</strong> (case-insensitive).
+            </p>
+            <?php endif; ?>
             <div id="atem-reflink-list" class="atem-reflink-list">
                 <div class="atem-empty-state">No Reference Link added.</div>
             </div>
@@ -623,7 +650,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <div class="atem-bento-item atem-span-12">
         <div class="atem-card">
             <h6 class="atem-card-title"><i class="bi bi-people"></i> Project Team (ARCI)</h6>
-            <p class="atem-card-hint">A (Accountable) is mandatory; maximum 2 members. R (Responsible) supports up to 2 members. C and I are for visibility only and are not incentivised.</p>
+            <p class="atem-card-hint">A (Accountable) is mandatory; maximum 2 members. R (Responsible) supports up to 2
+                members. C and I are for visibility only and are not incentivised.</p>
             <div class="alert alert-warning atem-hidden" id="atem-arci-orphan-warning" role="alert">
                 <span id="atem-arci-orphan-warning-text"></span>
                 <button type="button" class="btn-close" id="atem-arci-orphan-warning-close" aria-label="Close"></button>
@@ -645,11 +673,13 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                         <label class="form-label" id="arci-dept-label">Department</label>
                         <div class="atem-outlet-only atem-hidden mb-1" id="arci-scope-toggle">
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="arci-scope" id="arci-scope-outlet" checked>
+                                <input class="form-check-input" type="radio" name="arci-scope" id="arci-scope-outlet"
+                                    checked>
                                 <label class="form-check-label" for="arci-scope-outlet">Outlet</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="arci-scope" id="arci-scope-department">
+                                <input class="form-check-input" type="radio" name="arci-scope"
+                                    id="arci-scope-department">
                                 <label class="form-check-label" for="arci-scope-department">Department</label>
                             </div>
                         </div>
@@ -739,7 +769,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                 <div class="col-12">
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" id="tl-extended">
-                        <label class="form-check-label" for="tl-extended">Extended? (once only — cannot be undone)</label>
+                        <label class="form-check-label" for="tl-extended">Extended? (once only — cannot be
+                            undone)</label>
                     </div>
                     <div class="row g-3">
                         <div class="col-md-4 atem-ext-field" id="tl-ext1-wrap" style="display:none;">
@@ -755,7 +786,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     <label class="form-label" style="font-weight:600;">Incentive Approval</label>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="tl-incentive-approval"
-                               id="tl-incentive-approve-yes" value="1">
+                            id="tl-incentive-approve-yes" value="1">
                         <label class="form-check-label" for="tl-incentive-approve-yes">
                             Approve — pay estimated incentive
                             (<span id="tl-approval-amount">RM 0.00</span>)
@@ -763,7 +794,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     </div>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="tl-incentive-approval"
-                               id="tl-incentive-approve-no" value="0" checked>
+                            id="tl-incentive-approve-no" value="0" checked>
                         <label class="form-check-label" for="tl-incentive-approve-no">
                             No incentive (RM 0.00)
                         </label>
@@ -822,9 +853,11 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <!-- Suspension Details -->
     <div class="atem-bento-item atem-span-12">
         <div class="atem-card" style="border-left:4px solid #ffc107;">
-            <h6 class="atem-card-title" style="color:#856404;"><i class="bi bi-slash-circle"></i> Suspension Details</h6>
+            <h6 class="atem-card-title" style="color:#856404;"><i class="bi bi-slash-circle"></i> Suspension Details
+            </h6>
             <?php if ($record_is_suspended): ?>
-            <p class="atem-card-hint">This card has been suspended. All estimated incentives have been reset to zero.</p>
+            <p class="atem-card-hint">This card has been suspended. All estimated incentives have been reset to zero.
+            </p>
             <?php else: ?>
             <p class="atem-card-hint">This card was previously suspended. Details are kept for reference.</p>
             <?php endif; ?>
@@ -850,6 +883,31 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                         echo htmlspecialchars(isset($record['suspended_remark']) && $record['suspended_remark'] !== '' ? $record['suspended_remark'] : '&mdash;');
                     ?></div>
                 </div>
+                <?php if (!empty($record['appealed_at'])): ?>
+                <div class="col-12">
+                    <hr class="my-2">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Appealed By</label>
+                    <div style="font-size:13px;"><?php
+                        $ap_id   = isset($record['appealed_by']) ? (int)$record['appealed_by'] : 0;
+                        $ap_name = ($ap_id && isset($staff_names[$ap_id])) ? $staff_names[$ap_id] : ($ap_id ? 'Staff #' . $ap_id : '&mdash;');
+                        echo htmlspecialchars($ap_name);
+                    ?></div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Appealed On</label>
+                    <div style="font-size:13px;"><?php
+                        echo htmlspecialchars(date('d-m-Y H:i', strtotime($record['appealed_at'])));
+                    ?></div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Appeal Reason</label>
+                    <div style="font-size:13px;white-space:pre-wrap;"><?php
+                        echo htmlspecialchars(isset($record['appeal_remark']) ? $record['appeal_remark'] : '&mdash;');
+                    ?></div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -872,6 +930,9 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <?php if ($can_unsuspend): ?>
     <button type="button" class="btn btn-success" id="atem-unsuspend-btn">Unsuspend ATEM</button>
     <?php endif; ?>
+    <?php if ($can_appeal): ?>
+    <button type="button" class="btn btn-outline-primary" id="atem-appeal-btn">Appeal</button>
+    <?php endif; ?>
     <?php if (!$is_read): ?>
     <button type="button" class="btn btn-primary" id="atem-save-btn"
         <?php echo $api_unavailable ? 'disabled' : ''; ?>>Save ATEM</button>
@@ -884,7 +945,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <div class="atem-card-title-row">
         <h6 class="atem-card-title"><i class="bi bi-cash-stack"></i> Payout Details</h6>
         <a class="btn btn-outline-secondary btn-sm" id="atem-payout-pdf-btn"
-           href="<?php echo ATEM_BASE; ?>payout_pdf.php?id=<?php echo (int) $atem_id; ?>" target="_blank" rel="noopener">
+            href="<?php echo ATEM_BASE; ?>payout_pdf.php?id=<?php echo (int) $atem_id; ?>" target="_blank"
+            rel="noopener">
             <i class="bi bi-file-earmark-pdf"></i> Download as PDF
         </a>
     </div>
@@ -899,9 +961,13 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <select class="form-select" id="payout-status"
                 <?php echo (!$can_manage_payout || $payout_is_closed) ? 'disabled' : ''; ?>>
                 <option value="" <?php echo !$payout_status_value ? 'selected' : ''; ?>>Select status</option>
-                <option value="Closed" <?php echo $payout_status_value === 'Closed' ? 'selected' : ''; ?>>Closed</option>
-                <option value="No Payout" <?php echo $payout_status_value === 'No Payout' ? 'selected' : ''; ?>>No Payout</option>
-                <option value="Payout In Progress" <?php echo $payout_status_value === 'Payout In Progress' ? 'selected' : ''; ?>>Payout In Progress</option>
+                <option value="Closed" <?php echo $payout_status_value === 'Closed' ? 'selected' : ''; ?>>Closed
+                </option>
+                <option value="No Payout" <?php echo $payout_status_value === 'No Payout' ? 'selected' : ''; ?>>No
+                    Payout</option>
+                <option value="Payout In Progress"
+                    <?php echo $payout_status_value === 'Payout In Progress' ? 'selected' : ''; ?>>Payout In Progress
+                </option>
             </select>
             <div class="atem-form-error" id="payout-status-error"></div>
         </div>
@@ -948,11 +1014,13 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 <!-- Chat -->
 <div class="atem-card mt-4" id="atem-chat-card">
     <h6 class="atem-card-title"><i class="bi bi-chat-dots"></i> Chat</h6>
-    <p class="atem-card-hint">Shared discussion thread for this ATEM card. Visible to everyone who can view this card.</p>
+    <p class="atem-card-hint">Shared discussion thread for this ATEM card. Visible to everyone who can view this card.
+    </p>
     <div id="atem-chat-wrap" class="atem-chat-wrap"></div>
     <?php if ($can_send_chat): ?>
     <div class="atem-chat-composer" id="atem-chat-composer">
-        <textarea class="form-control" id="atem-chat-input" rows="2" maxlength="4000" placeholder="Write a message..."></textarea>
+        <textarea class="form-control" id="atem-chat-input" rows="2" maxlength="4000"
+            placeholder="Write a message..."></textarea>
         <div class="atem-form-error" id="atem-chat-error"></div>
         <div class="atem-chat-composer-actions">
             <button type="button" class="btn btn-primary btn-sm" id="atem-chat-send-btn">Send</button>
@@ -1010,7 +1078,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     The card can be unsuspended later to restore it to its previous status.
                 </p>
                 <div class="mb-2">
-                    <label for="suspend-remarks" class="form-label">Reason for Suspension <span class="atem-req">*</span></label>
+                    <label for="suspend-remarks" class="form-label">Reason for Suspension <span
+                            class="atem-req">*</span></label>
                     <textarea class="form-control" id="suspend-remarks" rows="3"
                         placeholder="Enter reason for suspension"></textarea>
                     <div class="atem-form-error" id="suspend-remarks-error"></div>
@@ -1019,6 +1088,36 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-warning" id="atem-suspend-confirm-btn">Suspend Card</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Appeal modal -->
+<div class="modal fade" id="atem-appeal-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Appeal Suspension</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;" class="mb-3">
+                    Explain why you believe this suspension should be reconsidered. This will be emailed to the person
+                    who suspended the card.
+                    You can only submit one appeal per suspension.
+                </p>
+                <div class="mb-2">
+                    <label for="appeal-remarks" class="form-label">Reason for Appeal <span
+                            class="atem-req">*</span></label>
+                    <textarea class="form-control" id="appeal-remarks" rows="3"
+                        placeholder="Enter reason for appeal"></textarea>
+                    <div class="atem-form-error" id="appeal-remarks-error"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="atem-appeal-confirm-btn">Submit Appeal</button>
             </div>
         </div>
     </div>
