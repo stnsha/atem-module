@@ -1623,12 +1623,7 @@ function atem_matches_period_column($status, $start_date, $closure_date, $col, $
 }
 
 // The 6 exact ATEM statuses selectable on the Staff Performance status filter.
-// Draft/Suspended/Deleted are never relevant to performance tracking. okr_cards'
-// okr_statuses.value strings are byte-identical to these (verified against the
-// live DB), so this same whitelist is reused for OKR bucketing below - no
-// separate OKR status list needed. NOTE: okr/lib.php hardcodes a DIFFERENT,
-// stale set of strings ('Complete'/'Extend'/'Fail') that do not match the live
-// okr_statuses.value column - do not copy those, they silently match nothing.
+// Draft/Suspended/Deleted are never relevant to performance tracking.
 function atem_performance_status_options()
 {
     return array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
@@ -1674,7 +1669,7 @@ function isPayoutLockWindowOpen($conn)
 }
 
 // Records one export event per target staff, shown in the Logs section of
-// staff_performance/edit.php alongside ATEM/OKR lock events. $exportType is
+// staff_performance/edit.php alongside ATEM lock events. $exportType is
 // a free-form label (e.g. 'atem', 'performance') just for display context.
 function logAtemExport($conn, $targetStaffId, $actorStaffId, $exportType)
 {
@@ -1699,69 +1694,11 @@ function atem_status_bucket($status)
     return null;
 }
 
-// OKR equivalent of atem_status_bucket() - same live status strings (see
-// atem_performance_status_options() above), so the bucket mapping is identical.
-function okr_status_bucket($status)
-{
-    return atem_status_bucket($status);
-}
-
-// Normalizes okr_cards' raw status_value (Draft/Active/Complete/Complete with
-// Excellence/Extend/Fail) to the ATEM-style spelling this file's status
-// whitelist/bucket functions expect ('Completed'/'Completed with
-// Excellence'/'Extended'/'Failed'). OKR has no distinct "Complete with
-// Extension" status - extension is tracked via okr_cards.extended instead -
-// so a completed+extended row maps to that ATEM label here.
-function okr_normalize_status_value($rawStatus, $isExtended)
-{
-    switch ($rawStatus) {
-        case 'Complete':
-            return $isExtended ? 'Completed with Extension' : 'Completed';
-        case 'Complete with Excellence':
-            return 'Completed with Excellence';
-        case 'Extend':
-            return 'Extended';
-        case 'Fail':
-            return 'Failed';
-        default:
-            return $rawStatus; // 'Draft', 'Active', or unrecognized
-    }
-}
-
 // Mirrors CalculateBonusEligibility.php's date basis: completed-family/extended/
 // failed are matched by closure_date, active by start_date.
 function atem_status_period_field($status)
 {
     return ($status === 'Active') ? 'start_date' : 'closure_date';
-}
-
-// OKR equivalent of atem_matches_period_column() - identical bucket/date-basis
-// rules, substituting okr_cards.closed_at (a datetime, hence the substr) for
-// ATEM's closure_date.
-function okr_matches_period_column($status, $start_date, $closed_at, $col, $month, $year, $quarter)
-{
-    $closure_date = $closed_at ? substr($closed_at, 0, 10) : '';
-    $months = atem_period_months($month, $quarter);
-    switch ($col) {
-        case 'complete':
-            return in_array($status, array('Completed', 'Completed with Excellence', 'Completed with Extension'), true)
-                && atem_date_in_period($closure_date, $months, $year);
-        case 'active':
-            return $status === 'Active'
-                && atem_date_in_period($start_date, $months, $year);
-        case 'extend':
-            return $status === 'Extended'
-                && atem_date_in_period($closure_date, $months, $year);
-        case 'failed':
-            return $status === 'Failed'
-                && atem_date_in_period($closure_date, $months, $year);
-        case 'okr':
-        default:
-            return okr_matches_period_column($status, $start_date, $closed_at, 'complete', $month, $year, $quarter)
-                || okr_matches_period_column($status, $start_date, $closed_at, 'active', $month, $year, $quarter)
-                || okr_matches_period_column($status, $start_date, $closed_at, 'extend', $month, $year, $quarter)
-                || okr_matches_period_column($status, $start_date, $closed_at, 'failed', $month, $year, $quarter);
-    }
 }
 
 // Live, per-status equivalent of the old atem_bonus_eligibilities snapshot table.
@@ -1935,113 +1872,6 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
     return array('success' => true, 'data' => $aggregates);
 }
 
-// OKR equivalent of getStaffPerformanceLive(). Reads okr_cards/okr_statuses/
-// okr_levels directly (no require_once of okr/lib.php - avoids pulling in
-// nas_config.php and avoids re-copying okr/lib.php's stale status-string bug;
-// this page is a pure reader of okr_cards, never touching the OKR module's own
-// files). Reward attribution mirrors okr/lib.php's okrStaffPerformanceRows()
-// $shares logic exactly: RULE1 (single incentivised owner) pays that owner
-// 100% and the other owner 0%; RULE2 (incentivised_owner_staff_id left blank
-// by the OKR module's own create flow) splits 50/50 between both owners.
-function getStaffOkrPerformanceLive($conn, $month, $year, $quarter, $selectedStatuses)
-{
-    $months = atem_period_months($month, $quarter);
-    $aggregates = array();
-
-    $query = "SELECT c.id, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id, c.incentive_rule, c.incentivised_owner_staff_id,
-                     c.result_status, c.incentive_locked, c.start_date, c.closed_at, c.extended,
-                     os.value AS status_value, lv.base_rm AS level_rm
-              FROM okr_cards c
-              LEFT JOIN okr_statuses os ON c.result_status = os.id
-              LEFT JOIN okr_levels   lv ON c.difficulty_level = lv.level
-              WHERE c.deleted_at IS NULL";
-    $result = mysqli_query($conn, $query);
-    if (!$result) {
-        return array('success' => false, 'message' => 'Failed to load OKR data', 'data' => array());
-    }
-
-    while ($row = mysqli_fetch_assoc($result)) {
-        $statusVal = isset($row['status_value']) ? $row['status_value'] : '';
-        $statusVal = okr_normalize_status_value($statusVal, !empty($row['extended']));
-        $ownerId  = (int)$row['owner_staff_id'];
-        $owner2Id = ($row['owner2_staff_id'] !== null) ? (int)$row['owner2_staff_id'] : 0;
-        $issuerId = ($row['issuer_staff_id'] !== null) ? (int)$row['issuer_staff_id'] : 0;
-
-        // Raw "OKR" total (all statuses, Owner/Owner 2/Issuer involvement) -
-        // period-filtered only, mirrors getStaffPerformanceLive()'s "ATEM"
-        // raw total. Feeds the "OKR" summary column, which now links straight
-        // to edit.php's OKR tab instead of opening a modal.
-        $rawDateStr = ($statusVal === 'Active')
-            ? $row['start_date']
-            : (isset($row['closed_at']) && $row['closed_at'] ? substr($row['closed_at'], 0, 10) : '');
-        if (atem_date_in_period($rawDateStr, $months, $year)) {
-            foreach (array_unique(array($ownerId, $owner2Id, $issuerId)) as $rsid) {
-                if ($rsid <= 0) { continue; }
-                if (!isset($aggregates[$rsid])) {
-                    $aggregates[$rsid] = array(
-                        'total_all' => 0,
-                        'complete' => 0, 'active' => 0, 'extend' => 0, 'failed' => 0,
-                        'reward' => 0.0,
-                        'has_locked' => false, 'has_unlocked' => false,
-                    );
-                }
-                $aggregates[$rsid]['total_all']++;
-            }
-        }
-
-        if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
-
-        $bucket = okr_status_bucket($statusVal);
-        if ($bucket === null) { continue; }
-
-        $dateStr = $rawDateStr;
-        if (!atem_date_in_period($dateStr, $months, $year)) { continue; }
-
-        $levelRm  = (float)$row['level_rm'];
-
-        $shares = array();
-        if ($owner2Id > 0) {
-            if ((int)$row['incentive_rule'] === 1) {
-                $incentivisedId = (int)$row['incentivised_owner_staff_id'];
-                $otherId = ($incentivisedId === $ownerId) ? $owner2Id : $ownerId;
-                $shares[$incentivisedId] = $levelRm;
-                $shares[$otherId] = 0.0;
-            } else {
-                $shares[$ownerId]  = $levelRm / 2;
-                $shares[$owner2Id] = $levelRm / 2;
-            }
-        } else {
-            $shares[$ownerId] = $levelRm;
-        }
-
-        $itemIsPayoutTerminal = in_array($statusVal, array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed'), true);
-        $itemIsLocked = $itemIsPayoutTerminal && (int)$row['incentive_locked'] === 1;
-
-        foreach (array($ownerId, $owner2Id) as $sid) {
-            if ($sid <= 0) { continue; }
-            if (!isset($aggregates[$sid])) {
-                $aggregates[$sid] = array(
-                    'total_all' => 0,
-                    'complete' => 0, 'active' => 0, 'extend' => 0, 'failed' => 0,
-                    'reward' => 0.0,
-                    'has_locked' => false, 'has_unlocked' => false,
-                );
-            }
-            $aggregates[$sid][$bucket]++;
-            $aggregates[$sid]['reward'] += isset($shares[$sid]) ? $shares[$sid] : 0.0;
-            if ($itemIsPayoutTerminal) {
-                if ($itemIsLocked) {
-                    $aggregates[$sid]['has_locked'] = true;
-                } else {
-                    $aggregates[$sid]['has_unlocked'] = true;
-                }
-            }
-        }
-    }
-
-    return array('success' => true, 'data' => $aggregates);
-}
-
 /**
  * Resolves the ATEM ids eligible for a bulk payout lock/unlock action.
  *
@@ -2119,106 +1949,17 @@ function resolvePayoutAtemIds($month, $year, $quarter, $selectedStatuses, $staff
 }
 
 /**
- * OKR equivalent of resolvePayoutAtemIds(). $unlock selects incentive_locked=1
- * (reversible) vs =0 (lockable) as the base eligibility set. A card matches if
- * EITHER owner is in $targetStaffIds, mirroring getStaffOkrPerformanceLive()'s
- * both-owners attribution.
- */
-function resolvePayoutOkrIds($conn, $month, $year, $quarter, $selectedStatuses, $targetStaffIds, $unlock = false)
-{
-    if (empty($targetStaffIds)) {
-        return array('success' => true, 'ids' => array());
-    }
-
-    $months = atem_period_months($month, $quarter);
-    $payoutTerminalStatuses = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed');
-    $lockedFlag = $unlock ? 1 : 0;
-    $idsCsv = implode(',', array_map('intval', $targetStaffIds));
-
-    $query = "SELECT c.id, c.result_status, c.start_date, c.closed_at, c.extended, os.value AS status_value
-              FROM okr_cards c
-              LEFT JOIN okr_statuses os ON c.result_status = os.id
-              WHERE c.deleted_at IS NULL
-                AND c.incentive_locked = " . (int)$lockedFlag . "
-                AND (c.owner_staff_id IN ($idsCsv) OR c.owner2_staff_id IN ($idsCsv))";
-    $result = mysqli_query($conn, $query);
-    if (!$result) {
-        return array('success' => false, 'message' => 'Failed to load OKR data', 'ids' => array());
-    }
-
-    $ids = array();
-    while ($row = mysqli_fetch_assoc($result)) {
-        // Normalize okr_cards' raw status word ("Complete") to the ATEM
-        // spelling ("Completed") that $selectedStatuses/$payoutTerminalStatuses
-        // are expressed in - see okr_normalize_status_value() for the
-        // rationale. Without this, Lock/Unlock Payout would never match any
-        // OKR card.
-        $statusVal = okr_normalize_status_value(isset($row['status_value']) ? $row['status_value'] : '', !empty($row['extended']));
-        if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
-        if (!in_array($statusVal, $payoutTerminalStatuses, true)) { continue; }
-
-        $dateStr = isset($row['closed_at']) && $row['closed_at'] ? substr($row['closed_at'], 0, 10) : '';
-        if (!atem_date_in_period($dateStr, $months, $year)) { continue; }
-
-        $ids[] = (int)$row['id'];
-    }
-
-    return array('success' => true, 'ids' => array_values(array_unique($ids)));
-}
-
-/**
- * Bulk lock/unlock incentive_locked for a set of okr_cards ids. Column
- * semantics mirror okr/lib.php's okrLockPayoutCards()/okrUnlockPayoutCards()
- * (locked_by/locked_at/unlocked_by/unlocked_at/payout_remark), executed
- * directly against $conn rather than via require_once('okr/lib.php') - keeps
- * this page a pure reader/writer of okr_cards without depending on the OKR
- * module's own files (see getStaffOkrPerformanceLive() for the full rationale).
- * Every id passed in is assumed already-eligible (pre-filtered by
- * resolvePayoutOkrIds()), so nothing is ever skipped here.
- */
-function bulkUpdateOkrPayoutStatus($conn, $ids, $remarks, $actor_id, $unlock = false)
-{
-    $ids = array_values(array_unique(array_map('intval', $ids)));
-    if (empty($ids)) {
-        return array('success' => true, ($unlock ? 'unlocked' : 'locked') => 0, 'skipped' => 0);
-    }
-    $idsCsv = implode(',', $ids);
-    $remarksEsc = mysqli_real_escape_string($conn, $remarks);
-    $actorId = (int)$actor_id;
-
-    if ($unlock) {
-        $sql = "UPDATE okr_cards SET incentive_locked = 0, unlocked_by = $actorId, unlocked_at = NOW(),
-                       payout_remark = '$remarksEsc'
-                WHERE id IN ($idsCsv)";
-    } else {
-        $sql = "UPDATE okr_cards SET incentive_locked = 1, locked_by = $actorId, locked_at = NOW(),
-                       payout_remark = '$remarksEsc'
-                WHERE id IN ($idsCsv)";
-    }
-    mysqli_query($conn, $sql);
-
-    // One okr_audit_logs row per card, mirroring okr/lib.php's okrLogAudit() shape.
-    $event = $unlock ? 'incentive_unlocked' : 'incentive_locked';
-    $summaryEsc = mysqli_real_escape_string($conn, ($unlock ? 'Incentive unlocked' : 'Incentive locked') . ' for payout by People Management (via ATEM Staff Performance page). Remark: ' . $remarks);
-    foreach ($ids as $cid) {
-        mysqli_query($conn, "INSERT INTO okr_audit_logs (card_id, event, actor_staff_id, summary, created_at)
-                              VALUES ($cid, '$event', $actorId, '$summaryEsc', NOW())");
-    }
-
-    return array('success' => true, ($unlock ? 'unlocked' : 'locked') => count($ids), 'skipped' => 0);
-}
-
-/**
  * Resolves which staff a bulk payout lock/unlock action targets.
  *
  * If the request carries an explicit staff_ids array (row-level "Selected"
  * buttons — the row checkboxes' values, which on this page are staff ids, not
  * ATEM ids), that list is used directly. Otherwise (bar-level "all filtered"
  * buttons) the target staff are re-derived server-side from the same
- * dept/grade/struct/staff_id filtering get-performance-list applies to the
- * union of getStaffPerformanceLive() and getStaffOkrPerformanceLive()'s
- * aggregates, so "lock payout for everyone currently shown" means exactly
- * that - including an OKR-only struct-5 staff member with zero ATEM cards.
+ * dept/grade/struct/staff_id filtering get-performance-list applies to
+ * getStaffPerformanceLive()'s aggregates. Lock Payout is ATEM-only - OKR has
+ * no incentive/payout concept any more, so unlike get-performance-list's
+ * display aggregation, this discovery step doesn't need to know about OKR at
+ * all.
  */
 function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
 {
@@ -2254,7 +1995,6 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
     if (empty($live['success'])) {
         return array();
     }
-    $okrLive = getStaffOkrPerformanceLive($conn, $month, $year, $quarter, $statuses);
 
     $staffGrade  = array();
     $staffStruct = array();
@@ -2280,9 +2020,7 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
         }
     }
 
-    $unionSids = array_unique(array_merge(array_keys($live['data']), array_keys($okrLive['data'])));
-
-    foreach ($unionSids as $sid) {
+    foreach (array_keys($live['data']) as $sid) {
         $sid = (int)$sid;
         $rec = isset($live['data'][$sid]) ? $live['data'][$sid] : null;
         $deptId   = $rec && isset($rec['dept_id']) && $rec['dept_id']
@@ -3372,11 +3110,6 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;
                     }
-                    // OKR has no HQ/Outlet split at the card level, so it's always
-                    // fetched once, unfiltered, and its columns always shown - there's
-                    // no tab to hide them behind anymore.
-                    $pl_okr_live = getStaffOkrPerformanceLive($conn, $pl_month, $pl_year, $pl_quarter, $pl_statuses);
-                    if (empty($pl_okr_live['success'])) { $pl_okr_live = array('success' => true, 'data' => array()); }
 
                     // Resolve current staff details from ODB directly (live, not a
                     // point-in-time snapshot) — name, department, grade, struct,
@@ -3414,8 +3147,7 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                             $pl_staff_outlet_ids[$pl_id_] = $_pl_sids;
                             // First department id, used only as a fallback dept when a
-                            // staff has no ATEM aggregate row to inherit dept_id from
-                            // (i.e. an OKR-only staff member) - mirrors okrDeptIdsFromCsv().
+                            // staff has no ATEM aggregate row to inherit dept_id from.
                             $pl_staff_dept_first[$pl_id_] = 0;
                             foreach (explode(',', (string)$pl_r['department']) as $_pld2) {
                                 $_pld2 = (int)trim($_pld2);
@@ -3463,13 +3195,10 @@ if (!defined('API_JWT_INCLUDED')) {
                     // "single tier" access model (no narrower carve-out).
                     $pl_is_scoped_grade = ($pl_perm === 2 && !$pl_is_sa);
 
-                    // Union of HQ-ATEM-involved, Outlet-ATEM-involved, and OKR-involved
-                    // staff ids - a staff member with only OKR cards and no ATEM cards
-                    // (e.g. struct 5, "12 OKR") would otherwise never appear at all.
+                    // Union of HQ-ATEM-involved and Outlet-ATEM-involved staff ids.
                     $pl_union_sids = array_unique(array_merge(
                         array_keys($pl_live_hq['data']),
-                        array_keys($pl_live_outlet['data']),
-                        array_keys($pl_okr_live['data'])
+                        array_keys($pl_live_outlet['data'])
                     ));
 
                     $pl_out = array();
@@ -3477,7 +3206,6 @@ if (!defined('API_JWT_INCLUDED')) {
                         $pl_sid = (int)$pl_sid;
                         $pl_hq_rec  = isset($pl_live_hq['data'][$pl_sid])     ? $pl_live_hq['data'][$pl_sid]     : null;
                         $pl_out_rec = isset($pl_live_outlet['data'][$pl_sid]) ? $pl_live_outlet['data'][$pl_sid] : null;
-                        $pl_okr_rec = isset($pl_okr_live['data'][$pl_sid])    ? $pl_okr_live['data'][$pl_sid]    : null;
 
                         $pl_rec_dept = (!empty($pl_hq_rec['dept_id']))
                             ? (int)$pl_hq_rec['dept_id']
@@ -3509,34 +3237,26 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($pl_struct > 0 && $pl_struct_id !== $pl_struct) { continue; }
                         if ($pl_staff  > 0 && $pl_sid        !== $pl_staff)  { continue; }
 
-                        // "HQ ATEM"/"Outlet ATEM"/"OKR" totals are the raw, all-status/
+                        // "HQ ATEM"/"Outlet ATEM" totals are the raw, all-status/
                         // all-role, period-filtered counts (they link straight to
                         // edit.php rather than opening a modal) - not the status-
                         // selected bucket sums, which only drive Completed/Failed.
                         $pl_hq_total     = $pl_hq_rec  ? $pl_hq_rec['total_all']  : 0;
                         $pl_outlet_total = $pl_out_rec ? $pl_out_rec['total_all'] : 0;
-                        $pl_okr_total    = $pl_okr_rec ? $pl_okr_rec['total_all'] : 0;
-                        if ($pl_hq_total <= 0 && $pl_outlet_total <= 0 && $pl_okr_total <= 0) { continue; }
+                        if ($pl_hq_total <= 0 && $pl_outlet_total <= 0) { continue; }
 
-                        // Est. Reward composition: always HQ + Outlet ATEM + OKR summed
-                        // together, regardless of struct - a staff member is rewarded
-                        // for whatever they actually completed, even if their
-                        // Evaluation Structure normally wouldn't include that category
-                        // (e.g. a "12 OKR" staff who completed an ATEM card anyway).
+                        // Est. Reward composition: HQ + Outlet ATEM.
                         $pl_atem_reward = ($pl_hq_rec ? round($pl_hq_rec['total_incentive'], 2) : 0.0)
                             + ($pl_out_rec ? round($pl_out_rec['total_incentive'], 2) : 0.0);
-                        $pl_okr_reward  = $pl_okr_rec ? round($pl_okr_rec['reward'], 2) : 0.0;
-                        $pl_total_reward = $pl_atem_reward + $pl_okr_reward;
+                        $pl_total_reward = $pl_atem_reward;
 
                         $pl_complete_hq     = $pl_hq_rec  ? $pl_hq_rec['complete']  : 0;
                         $pl_complete_outlet = $pl_out_rec ? $pl_out_rec['complete'] : 0;
-                        $pl_complete_okr    = $pl_okr_rec ? $pl_okr_rec['complete'] : 0;
                         $pl_failed_hq       = $pl_hq_rec  ? $pl_hq_rec['failed']    : 0;
                         $pl_failed_outlet   = $pl_out_rec ? $pl_out_rec['failed']   : 0;
-                        $pl_failed_okr      = $pl_okr_rec ? $pl_okr_rec['failed']   : 0;
 
-                        $pl_has_locked   = !empty($pl_hq_rec['has_locked'])   || !empty($pl_out_rec['has_locked'])   || !empty($pl_okr_rec['has_locked']);
-                        $pl_has_unlocked = !empty($pl_hq_rec['has_unlocked']) || !empty($pl_out_rec['has_unlocked']) || !empty($pl_okr_rec['has_unlocked']);
+                        $pl_has_locked   = !empty($pl_hq_rec['has_locked'])   || !empty($pl_out_rec['has_locked']);
+                        $pl_has_unlocked = !empty($pl_hq_rec['has_unlocked']) || !empty($pl_out_rec['has_unlocked']);
                         // Once a staff member's payout is fully locked (nothing left
                         // unlocked), drop them from the on-screen list entirely - there's
                         // nothing actionable left for them here. They still appear in
@@ -3568,13 +3288,8 @@ if (!defined('API_JWT_INCLUDED')) {
                             'active_outlet_count'    => $pl_out_rec ? $pl_out_rec['active'] : 0,
                             'extend_outlet_count'    => $pl_out_rec ? $pl_out_rec['extend'] : 0,
                             'failed_outlet_count'    => $pl_failed_outlet,
-                            'total_okr'          => $pl_okr_total,
-                            'complete_okr_count' => $pl_complete_okr,
-                            'active_okr_count'   => $pl_okr_rec ? $pl_okr_rec['active'] : 0,
-                            'extend_okr_count'   => $pl_okr_rec ? $pl_okr_rec['extend'] : 0,
-                            'failed_okr_count'   => $pl_failed_okr,
-                            'complete_total'  => $pl_complete_hq + $pl_complete_outlet + $pl_complete_okr,
-                            'failed_total'    => $pl_failed_hq + $pl_failed_outlet + $pl_failed_okr,
+                            'complete_total'  => $pl_complete_hq + $pl_complete_outlet,
+                            'failed_total'    => $pl_failed_hq + $pl_failed_outlet,
                             'total_incentive' => round($pl_total_reward, 2),
                             'has_locked'      => $pl_has_locked,
                             'has_unlocked'    => $pl_has_unlocked,
@@ -3638,26 +3353,16 @@ if (!defined('API_JWT_INCLUDED')) {
                         ? array_values(array_intersect($jsonData['statuses'], $pyk_allowed_statuses))
                         : array('Completed', 'Completed with Excellence');
 
-                    $pyk_resolved     = resolvePayoutAtemIds($pyk_month, $pyk_year, $pyk_quarter, $pyk_statuses, $staff_id, $pyk_atem_type, $pyk_outlet_id, $pyk_staff_ids);
-                    $pyk_okr_resolved = resolvePayoutOkrIds($conn, $pyk_month, $pyk_year, $pyk_quarter, $pyk_statuses, $pyk_staff_ids, false);
+                    // Lock Payout is ATEM-only - OKR has no incentive/payout concept
+                    // any more, so this no longer resolves/updates any OKR cards.
+                    $pyk_resolved = resolvePayoutAtemIds($pyk_month, $pyk_year, $pyk_quarter, $pyk_statuses, $staff_id, $pyk_atem_type, $pyk_outlet_id, $pyk_staff_ids);
                     $pyk_atem_ids = (!empty($pyk_resolved['success'])) ? $pyk_resolved['ids'] : array();
-                    $pyk_okr_ids  = (!empty($pyk_okr_resolved['success'])) ? $pyk_okr_resolved['ids'] : array();
-                    // Only fail outright if NEITHER side has anything eligible - a
-                    // struct-3 ("8 ATEM") staff legitimately has zero OKR records and a
-                    // struct-5 ("12 OKR") staff legitimately has zero ATEM records, and
-                    // either alone is still a valid lock action.
-                    if (empty($pyk_atem_ids) && empty($pyk_okr_ids)) {
-                        $response = array('success' => false, 'message' => 'No eligible ATEM or OKR records matched.');
+                    if (empty($pyk_atem_ids)) {
+                        $response = array('success' => false, 'message' => 'No eligible ATEM records matched.');
                         break;
                     }
 
-                    // Skip the ATEM-side call entirely when there are no eligible ATEM
-                    // ids - the atem-api endpoint rejects an empty ids[] outright ("No
-                    // ATEM ids supplied."), which would otherwise fail an OKR-only lock.
-                    $pyk_atem_result = !empty($pyk_atem_ids)
-                        ? bulkUpdatePayoutStatus($pyk_atem_ids, $pyk_remarks, $staff_id, false, $pyk_is_sa)
-                        : array('success' => true, 'locked' => 0, 'skipped' => 0);
-                    $pyk_okr_result  = bulkUpdateOkrPayoutStatus($conn, $pyk_okr_ids, $pyk_remarks, $staff_id, false);
+                    $pyk_atem_result = bulkUpdatePayoutStatus($pyk_atem_ids, $pyk_remarks, $staff_id, false, $pyk_is_sa);
                     if (empty($pyk_atem_result['success'])) {
                         $response = $pyk_atem_result;
                         break;
@@ -3666,8 +3371,6 @@ if (!defined('API_JWT_INCLUDED')) {
                         'success'      => true,
                         'atem_locked'  => (int)(isset($pyk_atem_result['locked']) ? $pyk_atem_result['locked'] : 0),
                         'atem_skipped' => (int)(isset($pyk_atem_result['skipped']) ? $pyk_atem_result['skipped'] : 0),
-                        'okr_locked'   => (int)(isset($pyk_okr_result['locked']) ? $pyk_okr_result['locked'] : 0),
-                        'okr_skipped'  => (int)(isset($pyk_okr_result['skipped']) ? $pyk_okr_result['skipped'] : 0),
                     );
                     break;
 
@@ -3714,22 +3417,16 @@ if (!defined('API_JWT_INCLUDED')) {
                         ? array_values(array_intersect($jsonData['statuses'], $pyu_allowed_statuses))
                         : array('Completed', 'Completed with Excellence');
 
-                    $pyu_resolved     = resolvePayoutAtemIds($pyu_month, $pyu_year, $pyu_quarter, $pyu_statuses, $staff_id, $pyu_atem_type, $pyu_outlet_id, $pyu_staff_ids);
-                    $pyu_okr_resolved = resolvePayoutOkrIds($conn, $pyu_month, $pyu_year, $pyu_quarter, $pyu_statuses, $pyu_staff_ids, true);
+                    // Unlock Payout is ATEM-only - OKR has no incentive/payout concept
+                    // any more, so this no longer resolves/updates any OKR cards.
+                    $pyu_resolved = resolvePayoutAtemIds($pyu_month, $pyu_year, $pyu_quarter, $pyu_statuses, $staff_id, $pyu_atem_type, $pyu_outlet_id, $pyu_staff_ids);
                     $pyu_atem_ids = (!empty($pyu_resolved['success'])) ? $pyu_resolved['ids'] : array();
-                    $pyu_okr_ids  = (!empty($pyu_okr_resolved['success'])) ? $pyu_okr_resolved['ids'] : array();
-                    if (empty($pyu_atem_ids) && empty($pyu_okr_ids)) {
-                        $response = array('success' => false, 'message' => 'No locked ATEM or OKR records matched.');
+                    if (empty($pyu_atem_ids)) {
+                        $response = array('success' => false, 'message' => 'No locked ATEM records matched.');
                         break;
                     }
 
-                    // Skip the ATEM-side call entirely when there are no eligible ATEM
-                    // ids - the atem-api endpoint rejects an empty ids[] outright ("No
-                    // ATEM ids supplied."), which would otherwise fail an OKR-only unlock.
-                    $pyu_atem_result = !empty($pyu_atem_ids)
-                        ? bulkUpdatePayoutStatus($pyu_atem_ids, $pyu_remarks, $staff_id, true, $pyu_is_sa)
-                        : array('success' => true, 'unlocked' => 0, 'skipped' => 0);
-                    $pyu_okr_result  = bulkUpdateOkrPayoutStatus($conn, $pyu_okr_ids, $pyu_remarks, $staff_id, true);
+                    $pyu_atem_result = bulkUpdatePayoutStatus($pyu_atem_ids, $pyu_remarks, $staff_id, true, $pyu_is_sa);
                     if (empty($pyu_atem_result['success'])) {
                         $response = $pyu_atem_result;
                         break;
@@ -3738,8 +3435,6 @@ if (!defined('API_JWT_INCLUDED')) {
                         'success'        => true,
                         'atem_unlocked'  => (int)(isset($pyu_atem_result['unlocked']) ? $pyu_atem_result['unlocked'] : 0),
                         'atem_skipped'   => (int)(isset($pyu_atem_result['skipped']) ? $pyu_atem_result['skipped'] : 0),
-                        'okr_unlocked'   => (int)(isset($pyu_okr_result['unlocked']) ? $pyu_okr_result['unlocked'] : 0),
-                        'okr_skipped'    => (int)(isset($pyu_okr_result['skipped']) ? $pyu_okr_result['skipped'] : 0),
                     );
                     break;
 
@@ -3914,102 +3609,6 @@ if (!defined('API_JWT_INCLUDED')) {
                         );
                     }
                     $response = array('success' => true, 'data' => $_enriched);
-                    break;
-
-                case 'get-staff-okr-list':
-                    // Access: same tier as get-staff-atem-list (grade 3+ or SuperAdmin) -
-                    // no caller-side department scoping, mirroring that sibling's current
-                    // (unscoped) behavior; this is a known, pre-existing gap, not
-                    // something this task fixes.
-                    $okr_caller_perm  = 0;
-                    $okr_caller_is_sa = false;
-                    if (isset($atem_permission)) {
-                        $okr_caller_perm  = (int)$atem_permission;
-                        $okr_caller_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
-                    } elseif ($staff_id) {
-                        $_okr_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
-                        if ($_okr_perm_res && ($_okr_perm_row = mysqli_fetch_assoc($_okr_perm_res))) {
-                            $okr_caller_perm  = (int)$_okr_perm_row['grade'];
-                            $okr_caller_is_sa = ((int)$_okr_perm_row['atem'] === 1);
-                        }
-                    }
-                    if ($okr_caller_perm < 3 && !$okr_caller_is_sa) {
-                        $response = array('success' => false, 'message' => 'Insufficient permissions');
-                        break;
-                    }
-                    if (!isset($jsonData['target_staff_id'])) {
-                        $response = array('success' => false, 'message' => 'Missing target_staff_id');
-                        break;
-                    }
-                    $okr_target_sid = (int)$jsonData['target_staff_id'];
-
-                    $gol_has_period = isset($jsonData['year']);
-                    $gol_col        = isset($jsonData['col'])     ? $jsonData['col']         : 'okr';
-                    $gol_month      = isset($jsonData['month'])   ? (int)$jsonData['month']   : 0;
-                    $gol_year       = isset($jsonData['year'])    ? (int)$jsonData['year']    : 0;
-                    $gol_quarter    = isset($jsonData['quarter']) ? (int)$jsonData['quarter'] : 0;
-                    if ($gol_quarter < 1 || $gol_quarter > 4) { $gol_quarter = 0; }
-
-                    // Optional exact-status restriction, same convention as
-                    // get-staff-atem-list - lets the OKR modal's tabs mirror whichever
-                    // statuses are checked in the page's Status filter (a tab shows no
-                    // data if its status isn't currently selected there).
-                    $gol_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']) && !empty($jsonData['statuses']))
-                        ? array_values(array_intersect($jsonData['statuses'], atem_performance_status_options()))
-                        : null;
-
-                    $_ol_names = array();
-                    $_ol_res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1");
-                    if ($_ol_res) { while ($_r = mysqli_fetch_assoc($_ol_res)) { $_ol_names[(int)$_r['id']] = $_r['nama_staff']; } }
-
-                    $okr_query = "SELECT c.id, c.objective, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
-                                         c.incentivised_owner_staff_id, c.start_date, c.end_date, c.extended, c.extended_date,
-                                         c.closed_at, c.result_status, os.value AS status_value, lv.label AS level_label
-                                  FROM okr_cards c
-                                  LEFT JOIN okr_statuses os ON c.result_status = os.id
-                                  LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
-                                  WHERE c.deleted_at IS NULL
-                                    AND (c.owner_staff_id = " . (int)$okr_target_sid . " OR c.owner2_staff_id = " . (int)$okr_target_sid . ")";
-                    $okr_result = mysqli_query($conn, $okr_query);
-                    $_okr_enriched = array();
-                    if ($okr_result) {
-                        while ($_o = mysqli_fetch_assoc($okr_result)) {
-                            // Normalize okr_cards' raw status word ("Complete") to the
-                            // ATEM spelling ("Completed") that okr_matches_period_column()
-                            // and $gol_statuses are both expressed in - see
-                            // okr_normalize_status_value() for the full rationale.
-                            $_o_status  = okr_normalize_status_value(isset($_o['status_value']) ? $_o['status_value'] : '', !empty($_o['extended']));
-                            $_o_start   = isset($_o['start_date']) ? $_o['start_date'] : '';
-                            $_o_closed  = isset($_o['closed_at']) ? $_o['closed_at'] : '';
-                            $_o_closure = $_o_closed ? substr($_o_closed, 0, 10) : '';
-
-                            if ($gol_has_period && !okr_matches_period_column($_o_status, $_o_start, $_o_closed, $gol_col, $gol_month, $gol_year, $gol_quarter)) {
-                                continue;
-                            }
-                            if ($gol_statuses !== null && !in_array($_o_status, $gol_statuses, true)) {
-                                continue;
-                            }
-
-                            $_o_role_parts = array();
-                            $_o_incentivised_id = isset($_o['incentivised_owner_staff_id']) ? (int)$_o['incentivised_owner_staff_id'] : 0;
-                            if ((int)$_o['owner_staff_id'] === $okr_target_sid) { $_o_role_parts[] = 'Owner'; }
-                            if (!empty($_o['owner2_staff_id']) && (int)$_o['owner2_staff_id'] === $okr_target_sid) { $_o_role_parts[] = 'Owner 2'; }
-                            if (!empty($_o['issuer_staff_id']) && (int)$_o['issuer_staff_id'] === $okr_target_sid) { $_o_role_parts[] = 'Issuer'; }
-                            if ($_o_incentivised_id === $okr_target_sid) { $_o_role_parts[] = 'Incentivised'; }
-
-                            $_okr_enriched[] = array(
-                                'id'           => (int)$_o['id'],
-                                'title'        => isset($_o['objective']) ? $_o['objective'] : '',
-                                'level_label'  => isset($_o['level_label']) ? $_o['level_label'] : '',
-                                'start_date'   => $_o_start,
-                                'end_date'     => (!empty($_o['extended']) && !empty($_o['extended_date'])) ? $_o['extended_date'] : (isset($_o['end_date']) ? $_o['end_date'] : ''),
-                                'closure_date' => $_o_closure,
-                                'status'       => $_o_status,
-                                'my_role'      => !empty($_o_role_parts) ? $_o_role_parts : null,
-                            );
-                        }
-                    }
-                    $response = array('success' => true, 'data' => $_okr_enriched);
                     break;
 
                 case 'save-atem':

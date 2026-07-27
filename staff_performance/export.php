@@ -123,8 +123,6 @@ function ex_level_val($a) {
 // Emit one or more rows for one staff member's involvement in one ATEM.
 // One row per ARCI role; if issuer-only (no ARCI), one row with ARCI blank.
 // Reward per role: A -> a_incentive_amount; R -> r_incentive_amount / R-count; C/I/issuer-only -> 0.
-// 'Record Type' is always 'ATEM' here - shares the same column layout as
-// emit_okr_rows() below so ATEM and OKR rows can sit in one flat CSV.
 function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
     $atem_id   = '#AT' . (int)(isset($a['id']) ? $a['id'] : 0);
     $title     = isset($a['title']) ? $a['title'] : '';
@@ -189,58 +187,6 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
     }
 }
 
-// OKR equivalent of emit_atem_rows() - one row per staff involvement in one
-// okr_cards record. Role is 'Owner'/'Owner 2' (an okr_cards row is only ever
-// emitted for a staff who IS one of those two, see the call sites below).
-// Reward mirrors getStaffOkrPerformanceLive()'s RULE1 (single incentivised
-// owner gets 100%, other owner 0%) / RULE2 (50/50 split) attribution.
-function emit_okr_rows($out, $sid, $name, $dept, $grade, $struct, $o) {
-    $okr_id  = '#OK' . (int)(isset($o['id']) ? $o['id'] : 0);
-    $title   = isset($o['objective']) ? $o['objective'] : '';
-    $level   = isset($o['level_label']) ? $o['level_label'] : '';
-    $start   = fmt_ex_date(isset($o['start_date']) ? $o['start_date'] : '');
-    $end_raw = (!empty($o['extended']) && !empty($o['extended_date']))
-                  ? $o['extended_date']
-                  : (isset($o['end_date']) ? $o['end_date'] : '');
-    $end     = fmt_ex_date($end_raw);
-    $closure = fmt_ex_date(isset($o['closed_at']) ? $o['closed_at'] : '');
-    // Normalize okr_cards' raw status word ("Complete") to the ATEM spelling
-    // ("Completed") used everywhere else on this page - see api.php's
-    // okr_normalize_status_value() for the full rationale.
-    $status  = okr_normalize_status_value(isset($o['status_value']) ? $o['status_value'] : '', !empty($o['extended']));
-    $is_issuer = (isset($o['issuer_staff_id']) && (int)$o['issuer_staff_id'] === $sid);
-    $issuer_yn = $is_issuer ? 'Yes' : 'No';
-    $payout_yn = (!empty($o['incentive_locked'])) ? 'Yes' : '';
-
-    $start_raw = isset($o['start_date']) ? $o['start_date'] : '';
-    $ex_year   = ($start_raw && strlen($start_raw) >= 7) ? (int)substr($start_raw, 0, 4) : '';
-    $ex_month  = ($start_raw && strlen($start_raw) >= 7) ? (int)substr($start_raw, 5, 2) : '';
-
-    $owner_id  = (int)(isset($o['owner_staff_id'])  ? $o['owner_staff_id']  : 0);
-    $owner2_id = (int)(isset($o['owner2_staff_id']) ? $o['owner2_staff_id'] : 0);
-    $level_rm  = (float)(isset($o['level_rm']) ? $o['level_rm'] : 0);
-
-    $role   = ($sid === $owner_id) ? 'Owner' : 'Owner 2';
-    $reward = 0.0;
-    if ($owner2_id > 0) {
-        if ((int)(isset($o['incentive_rule']) ? $o['incentive_rule'] : 1) === 1) {
-            $incentivised_id = (int)(isset($o['incentivised_owner_staff_id']) ? $o['incentivised_owner_staff_id'] : 0);
-            $reward = ($sid === $incentivised_id) ? $level_rm : 0.0;
-        } else {
-            $reward = $level_rm / 2;
-        }
-    } else {
-        $reward = $level_rm;
-    }
-
-    fputcsv($out, array(
-        'OKR', $ex_year, $ex_month,
-        $name, $dept, $grade, $struct,
-        $okr_id, $title, $level, $start, $end, $closure,
-        $issuer_yn, $role, $status, number_format($reward, 2), $payout_yn
-    ));
-}
-
 $csv_headers = array(
     'Record Type', 'Year', 'Month',
     'Name', 'Department', 'Grade', 'Evaluation Structure',
@@ -298,24 +244,6 @@ if ($type === 'staff-atem') {
         emit_atem_rows($out, $target_staff, $t_name, $t_dept, $t_grade, $t_struct, $a);
     }
 
-    // Same "every record this staff was ever involved in, no period/status
-    // filter" convention as the ATEM loop above - dumps the target's full OKR
-    // history alongside their ATEM history in one file (Requirement 10).
-    $okr_q = mysqli_query($conn, "SELECT c.id, c.objective, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
-                                          c.incentive_rule, c.incentivised_owner_staff_id, c.start_date, c.end_date,
-                                          c.extended, c.extended_date, c.closed_at, c.incentive_locked, os.value AS status_value,
-                                          lv.label AS level_label, lv.base_rm AS level_rm
-                                   FROM okr_cards c
-                                   LEFT JOIN okr_statuses os ON c.result_status = os.id
-                                   LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
-                                   WHERE c.deleted_at IS NULL
-                                     AND (c.owner_staff_id = " . (int)$target_staff . " OR c.owner2_staff_id = " . (int)$target_staff . ")");
-    if ($okr_q) {
-        while ($o = mysqli_fetch_assoc($okr_q)) {
-            emit_okr_rows($out, $target_staff, $t_name, $t_dept, $t_grade, $t_struct, $o);
-        }
-    }
-
     fclose($out);
     exit;
 }
@@ -329,14 +257,9 @@ if ($type === 'performance') {
         http_response_code(502);
         exit('Unable to reach the ATEM API. Please try again later.');
     }
-    // OKR has no HQ/Outlet split (see api.php's get-performance-list handler for
-    // the same convention) - always fetched regardless of $filter_atem_type.
-    $okr_live = getStaffOkrPerformanceLive($conn, $filter_month, $filter_year, $filter_quarter, $filter_statuses);
-    if (empty($okr_live['success'])) { $okr_live = array('success' => true, 'data' => array()); }
 
     // Resolve current grade/struct live from ODB (dept comes from each aggregate's
-    // own ATEM-card context, same as the main performance list, falling back to
-    // the staff's own department for an OKR-only staff with no ATEM aggregate).
+    // own ATEM-card context, same as the main performance list).
     $staff_grade      = array();
     $staff_struct     = array();
     $staff_dept_first = array();
@@ -361,16 +284,11 @@ if ($type === 'performance') {
         }
     }
 
-    // Union of ATEM-involved and OKR-involved staff ids - a staff member with
-    // only OKR cards (e.g. struct 5, "12 OKR") would otherwise never be exported.
-    $union_sids = array_unique(array_merge(array_keys($live['data']), array_keys($okr_live['data'])));
-
     // Apply filters
     $out_records = array();
-    foreach ($union_sids as $sid) {
+    foreach (array_keys($live['data']) as $sid) {
         $sid       = (int)$sid;
         $rec       = isset($live['data'][$sid]) ? $live['data'][$sid] : null;
-        $okr_rec   = isset($okr_live['data'][$sid]) ? $okr_live['data'][$sid] : null;
         $dept_id   = ($rec && !empty($rec['dept_id'])) ? (int)$rec['dept_id'] : (isset($staff_dept_first[$sid]) ? $staff_dept_first[$sid] : 0);
         $grade_id  = isset($staff_grade[$sid])  ? $staff_grade[$sid]  : null;
         $struct_id = isset($staff_struct[$sid]) ? $staff_struct[$sid] : null;
@@ -389,15 +307,12 @@ if ($type === 'performance') {
         if ($filter_staff_id > 0 && $sid !== $filter_staff_id)     { continue; }
 
         $total     = $rec ? ($rec['complete'] + $rec['active'] + $rec['extend'] + $rec['failed']) : 0;
-        $okr_total = $okr_rec ? ($okr_rec['complete'] + $okr_rec['active'] + $okr_rec['extend'] + $okr_rec['failed']) : 0;
-        if ($total <= 0 && $okr_total <= 0) { continue; }
+        if ($total <= 0) { continue; }
 
-        // Est. Reward composition mirrors api.php's get-performance-list - always
-        // ATEM + OKR summed regardless of struct - used only for export sort
-        // order here, matching the on-screen table's default sort.
+        // Est. Reward used only for export sort order, matching the on-screen
+        // table's default sort.
         $atem_reward = $rec ? (float)$rec['total_incentive'] : 0.0;
-        $okr_reward  = $okr_rec ? (float)$okr_rec['reward'] : 0.0;
-        $total_reward = $atem_reward + $okr_reward;
+        $total_reward = $atem_reward;
 
         $out_records[] = array(
             'staff_id' => $sid, 'dept_id' => $dept_id, 'grade_id' => $grade_id, 'struct_id' => $struct_id,
@@ -422,18 +337,6 @@ if ($type === 'performance') {
         $_atem_dec = json_decode($_atem_res['response'], true);
         $all_atems = (isset($_atem_dec['data']) && is_array($_atem_dec['data'])) ? $_atem_dec['data'] : array();
     }
-    // Fetch all OKRs once, same shape as api.php's get-staff-okr-list handler.
-    $all_okrs = array();
-    $_okr_res = mysqli_query($conn, "SELECT c.id, c.objective, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
-                                             c.incentive_rule, c.incentivised_owner_staff_id, c.start_date, c.end_date,
-                                             c.extended, c.extended_date, c.closed_at, c.incentive_locked, os.value AS status_value,
-                                             lv.label AS level_label, lv.base_rm AS level_rm
-                                      FROM okr_cards c
-                                      LEFT JOIN okr_statuses os ON c.result_status = os.id
-                                      LEFT JOIN okr_levels lv ON c.difficulty_level = lv.level
-                                      WHERE c.deleted_at IS NULL");
-    if ($_okr_res) { while ($_or = mysqli_fetch_assoc($_okr_res)) { $all_okrs[] = $_or; } }
-
     $filename = 'staff_performance_' . date('Y-m-d') . '.csv';
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -476,25 +379,6 @@ if ($type === 'performance') {
             if (!atem_date_in_period($_dateStr, $period_months, $filter_year)) { continue; }
 
             emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a);
-        }
-
-        foreach ($all_okrs as $_o) {
-            $_o_owner  = (int)$_o['owner_staff_id'];
-            $_o_owner2 = !empty($_o['owner2_staff_id']) ? (int)$_o['owner2_staff_id'] : 0;
-            if ($sid !== $_o_owner && $sid !== $_o_owner2) { continue; }
-
-            // Normalize okr_cards' raw status word ("Complete") to the ATEM
-            // spelling ("Completed") that $filter_statuses is expressed in -
-            // see api.php's okr_normalize_status_value() for the rationale.
-            $_o_status = okr_normalize_status_value(isset($_o['status_value']) ? $_o['status_value'] : '', !empty($_o['extended']));
-            if (!in_array($_o_status, $filter_statuses, true)) { continue; }
-
-            $_o_date = ($_o_status === 'Active')
-                ? $_o['start_date']
-                : (isset($_o['closed_at']) && $_o['closed_at'] ? substr($_o['closed_at'], 0, 10) : '');
-            if (!atem_date_in_period($_o_date, $period_months, $filter_year)) { continue; }
-
-            emit_okr_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_o);
         }
     }
 

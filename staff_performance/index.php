@@ -325,7 +325,6 @@ if ($_pso_res) {
                     <th>Evaluation Structure</th>
                     <th class="text-center" title="Click to view details">HQ ATEM</th>
                     <th class="text-center" title="Click to view details">Outlet ATEM</th>
-                    <th class="text-center" title="Click to view details">OKR</th>
                     <th class="text-center" title="Click to view details">Completed</th>
                     <th class="text-center" title="Click to view details">Failed</th>
                     <th class="text-end">Est. Reward</th>
@@ -334,7 +333,7 @@ if ($_pso_res) {
             </thead>
             <tbody id="perf-tbody">
                 <tr>
-                    <td colspan="11" class="text-center text-muted py-4">Loading...</td>
+                    <td colspan="10" class="text-center text-muted py-4">Loading...</td>
                 </tr>
             </tbody>
         </table>
@@ -851,7 +850,7 @@ function renderTable(data, payload) {
 
     if (!data || !data.length) {
         tbody.innerHTML =
-            '<tr><td colspan="11" class="text-center text-muted py-4">No records found for this period.</td></tr>';
+            '<tr><td colspan="10" class="text-center text-muted py-4">No records found for this period.</td></tr>';
         renderPerfPager(0);
         return;
     }
@@ -884,18 +883,16 @@ function renderTable(data, payload) {
     for (var i = 0; i < pageData.length; i++) {
         var rec = pageData[i];
 
-        // HQ ATEM / OKR columns show the Completed(+Excellence) count only -
-        // Outlet ATEM shows Completed + Failed together, since outlet cards
-        // close out fast and a failed one is just as relevant there.
+        // HQ ATEM shows the Completed(+Excellence) count only - Outlet ATEM
+        // shows Completed + Failed together, since outlet cards close out
+        // fast and a failed one is just as relevant there.
         var hqCount     = rec.complete_hq_count;
         var outletCount = rec.complete_outlet_count + rec.failed_outlet_count;
-        var okrCount    = rec.complete_okr_count;
 
         var editUrl = window.ATEM_MODULE_BASE + 'staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter + '&statuses=' + statusesQs;
         var hqEditUrl     = editUrl + '&tab=atem&atem_type=1';
         var outletEditUrl = editUrl + '&tab=atem&atem_type=2';
-        var okrEditUrl    = editUrl + '&tab=okr';
         var exportUrl = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance&ids=' + rec.id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
@@ -914,7 +911,6 @@ function renderTable(data, payload) {
             '</td>' +
             '<td class="text-center">' + (hqCount > 0 ? '<a class="perf-count-link" href="' + escHtml(hqEditUrl) + '">' + hqCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
             '<td class="text-center">' + (outletCount > 0 ? '<a class="perf-count-link" href="' + escHtml(outletEditUrl) + '">' + outletCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
-            '<td class="text-center">' + (okrCount > 0 ? '<a class="perf-count-link" href="' + escHtml(okrEditUrl) + '">' + okrCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
             '<td class="text-center">' + countCell(rec.complete_total) + '</td>' +
             '<td class="text-center">' + countCell(rec.failed_total) + '</td>' +
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
@@ -941,7 +937,7 @@ function loadPerformance(payload) {
     var periodEl = document.getElementById('perf-period-label');
     var label = buildLabel(payload);
 
-    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Loading...</td></tr>';
     if (labelEl) {
         labelEl.textContent = label;
     }
@@ -972,7 +968,7 @@ function loadPerformance(payload) {
         })
         .then(function(res) {
             if (!res.success) {
-                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-3">' +
+                tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger py-3">' +
                     escHtml(res.message || 'Failed to load records.') + '</td></tr>';
                 return;
             }
@@ -982,7 +978,7 @@ function loadPerformance(payload) {
         })
         .catch(function() {
             tbody.innerHTML =
-                '<tr><td colspan="11" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
+                '<tr><td colspan="10" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
         });
 }
 
@@ -1219,7 +1215,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     if (bsPayoutLockModal) { bsPayoutLockModal.hide(); }
                     var labelEl = document.getElementById(action.labelElId);
-                    if (labelEl) { labelEl.textContent = 'Locked ' + res.atem_locked + ' ATEM / ' + res.okr_locked + ' OKR, skipped ' + (res.atem_skipped + res.okr_skipped) + '.'; }
+                    if (labelEl) { labelEl.textContent = 'Locked ' + res.atem_locked + ' ATEM, skipped ' + res.atem_skipped + '.'; }
                     _pendingLockAction = null;
                     if (action.reloadFn) { action.reloadFn(); }
                 })

@@ -10,6 +10,7 @@
  * so the partial works regardless of the including page's depth
  * (for example atem/index.php and atem/admin/index.php).
  */
+ob_start();
 $page_title = isset($page_title) ? $page_title : 'ATEM';
 
 // Absolute base URL for this module's own pages/assets, e.g. "/odb/atem/" or
@@ -92,6 +93,7 @@ if (isset($id_user)) {
 $_is_superadmin = (!isset($_SESSION['atem_dev_role_override']) && ((isset($atem) && (int)$atem === 1) || $_atem_okr_flag === 1));
 
 if ((int)$atem_permission === 0 && !$_is_superadmin) {
+    ob_end_clean();
     if (isset($_SESSION['atem_dev_role_override'])) {
         unset($_SESSION['atem_dev_role_override']);
         header('Location: ' . ATEM_BASE . 'index.php');
