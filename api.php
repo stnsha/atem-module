@@ -1987,6 +1987,66 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
 }
 
 /**
+ * Live per-staff OKR counts for Staff Performance, reading okr_cards directly
+ * (OKR is plain mysqli against the same database, not a separate API - see
+ * okr/CLAUDE.md - so no getAtemList()-style HTTP round trip is needed here).
+ * OKR has no incentive/payout concept any more (okr/CLAUDE.md's "Retired
+ * incentive columns"), so this only ever returns a 'complete' count and a
+ * 'total_all' raw count used solely to decide whether a staff member with no
+ * HQ/Outlet ATEM activity should still show up on the page - 'total_all' is
+ * never itself displayed.
+ *
+ * The 'complete' bucket only credits the card's owner(s) (owner_staff_id/
+ * owner2_staff_id) - not the issuer - matching OKR's own "my cards" scoping
+ * (okrScopeWhere() in okr/lib.php) rather than ATEM's issuer+ARCI model.
+ * 'total_all' additionally counts the issuer, mirroring getStaffPerformanceLive()'s
+ * broader "involved" set for its own raw total.
+ */
+function getOkrPerformanceLive($conn, $month, $year, $quarter, $selectedStatuses)
+{
+    $months = atem_period_months($month, $quarter);
+    $aggregates = array();
+    $completeStatuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
+
+    $result = mysqli_query($conn, "SELECT c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
+                                           c.start_date, c.closed_at, os.value AS status_value
+                                    FROM okr_cards c
+                                    LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                    WHERE c.deleted_at IS NULL");
+    if (!$result) {
+        return array('success' => true, 'data' => array());
+    }
+
+    while ($row = mysqli_fetch_assoc($result)) {
+        $statusVal = isset($row['status_value']) ? $row['status_value'] : '';
+        $ownerId  = (int)$row['owner_staff_id'];
+        $owner2Id = ($row['owner2_staff_id'] !== null) ? (int)$row['owner2_staff_id'] : 0;
+        $issuerId = ($row['issuer_staff_id'] !== null) ? (int)$row['issuer_staff_id'] : 0;
+
+        $rawDateStr = ($statusVal === 'Active') ? $row['start_date'] : $row['closed_at'];
+        if (atem_date_in_period($rawDateStr, $months, $year)) {
+            foreach (array_unique(array($ownerId, $owner2Id, $issuerId)) as $rsid) {
+                if ($rsid <= 0) { continue; }
+                if (!isset($aggregates[$rsid])) { $aggregates[$rsid] = array('total_all' => 0, 'complete' => 0); }
+                $aggregates[$rsid]['total_all']++;
+            }
+        }
+
+        if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
+        if (!in_array($statusVal, $completeStatuses, true)) { continue; }
+        if (!atem_date_in_period($row['closed_at'], $months, $year)) { continue; }
+
+        foreach (array_unique(array($ownerId, $owner2Id)) as $sid) {
+            if ($sid <= 0) { continue; }
+            if (!isset($aggregates[$sid])) { $aggregates[$sid] = array('total_all' => 0, 'complete' => 0); }
+            $aggregates[$sid]['complete']++;
+        }
+    }
+
+    return array('success' => true, 'data' => $aggregates);
+}
+
+/**
  * Resolves the ATEM ids eligible for a bulk payout lock/unlock action.
  *
  * Applies the exact same period/status/type/outlet matching as
@@ -3472,12 +3532,23 @@ if (!defined('API_JWT_INCLUDED')) {
                         ? array_values(array_intersect($jsonData['statuses'], $pl_allowed_statuses))
                         : array('Completed', 'Completed with Excellence');
 
-                    // Staff Performance is HQ ATEM only (Outlet ATEM removed).
+                    // The page shows HQ ATEM, Outlet ATEM, and OKR Completed counts as
+                    // separate columns on the same row - getStaffPerformanceLive() only
+                    // ever returns one atem_type's bucket per call, so it's called once
+                    // per type and merged below. Reward/incentive and Lock Payout stay
+                    // HQ-only - Outlet ATEM and OKR no longer carry any incentive concept
+                    // (see staff_performance/index.php's column comment).
                     $pl_live_hq = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 1, 0);
                     if (empty($pl_live_hq['success'])) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;
                     }
+                    $pl_live_outlet = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 2, 0);
+                    if (empty($pl_live_outlet['success'])) {
+                        $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
+                        break;
+                    }
+                    $pl_okr_live = getOkrPerformanceLive($conn, $pl_month, $pl_year, $pl_quarter, $pl_statuses);
 
                     // Resolve current staff details from ODB directly (live, not a
                     // point-in-time snapshot) — name, department, grade, struct.
@@ -3546,14 +3617,27 @@ if (!defined('API_JWT_INCLUDED')) {
                     // (no narrower carve-out).
                     $pl_is_scoped_grade = ($pl_perm === 2 && !$pl_is_sa);
 
+                    // Union of HQ-ATEM-involved, Outlet-ATEM-involved, and OKR-involved
+                    // staff ids - a staff member with only Outlet ATEM or OKR activity
+                    // and no HQ ATEM cards would otherwise never appear at all.
+                    $pl_union_sids = array_unique(array_merge(
+                        array_keys($pl_live_hq['data']),
+                        array_keys($pl_live_outlet['data']),
+                        array_keys($pl_okr_live['data'])
+                    ));
+
                     $pl_out = array();
-                    foreach (array_keys($pl_live_hq['data']) as $pl_sid) {
+                    foreach ($pl_union_sids as $pl_sid) {
                         $pl_sid = (int)$pl_sid;
-                        $pl_hq_rec = isset($pl_live_hq['data'][$pl_sid]) ? $pl_live_hq['data'][$pl_sid] : null;
+                        $pl_hq_rec      = isset($pl_live_hq['data'][$pl_sid])      ? $pl_live_hq['data'][$pl_sid]      : null;
+                        $pl_outlet_rec  = isset($pl_live_outlet['data'][$pl_sid])  ? $pl_live_outlet['data'][$pl_sid]  : null;
+                        $pl_okr_rec     = isset($pl_okr_live['data'][$pl_sid])     ? $pl_okr_live['data'][$pl_sid]     : null;
 
                         $pl_rec_dept = (!empty($pl_hq_rec['dept_id']))
                             ? (int)$pl_hq_rec['dept_id']
-                            : (isset($pl_staff_dept_first[$pl_sid]) ? $pl_staff_dept_first[$pl_sid] : 0);
+                            : ((!empty($pl_outlet_rec['dept_id']))
+                                ? (int)$pl_outlet_rec['dept_id']
+                                : (isset($pl_staff_dept_first[$pl_sid]) ? $pl_staff_dept_first[$pl_sid] : 0));
                         $pl_grade_id   = isset($pl_staff_grade[$pl_sid])  ? $pl_staff_grade[$pl_sid]  : null;
                         $pl_struct_id  = isset($pl_staff_struct[$pl_sid]) ? $pl_staff_struct[$pl_sid] : null;
 
@@ -3564,18 +3648,22 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($pl_struct > 0 && $pl_struct_id !== $pl_struct) { continue; }
                         if ($pl_staff  > 0 && $pl_sid        !== $pl_staff)  { continue; }
 
-                        // "HQ ATEM" total is the raw, all-status/all-role, period-
-                        // filtered count (it links straight to edit.php rather than
-                        // opening a modal) - not the status-selected bucket sums,
-                        // which only drive Completed/Active/Extended/Failed.
-                        $pl_hq_total = $pl_hq_rec ? $pl_hq_rec['total_all'] : 0;
-                        if ($pl_hq_total <= 0) { continue; }
+                        // "HQ ATEM"/"Outlet ATEM"/"OKR" totals are the raw, all-status/
+                        // all-role, period-filtered counts - used only to decide whether
+                        // this staff member has any activity at all this period, never
+                        // displayed themselves (only each type's Completed count is).
+                        $pl_hq_total     = $pl_hq_rec     ? $pl_hq_rec['total_all']     : 0;
+                        $pl_outlet_total = $pl_outlet_rec ? $pl_outlet_rec['total_all'] : 0;
+                        $pl_okr_total    = $pl_okr_rec    ? $pl_okr_rec['total_all']    : 0;
+                        if ($pl_hq_total <= 0 && $pl_outlet_total <= 0 && $pl_okr_total <= 0) { continue; }
 
+                        // Est. Reward stays HQ ATEM only - Outlet ATEM and OKR no longer
+                        // carry any incentive concept.
                         $pl_total_reward = $pl_hq_rec ? round($pl_hq_rec['total_incentive'], 2) : 0.0;
 
                         $pl_has_locked   = !empty($pl_hq_rec['has_locked']);
                         $pl_has_unlocked = !empty($pl_hq_rec['has_unlocked']);
-                        // Once a staff member's payout is fully locked (nothing left
+                        // Once a staff member's HQ payout is fully locked (nothing left
                         // unlocked), drop them from the on-screen list entirely - there's
                         // nothing actionable left for them here. They still appear in
                         // the Export CSV (with a "Payout" column), which is the actual
@@ -3595,11 +3683,9 @@ if (!defined('API_JWT_INCLUDED')) {
                             'struct_id'    => $pl_struct_id,
                             'struct_label' => ($pl_struct_id !== null && isset($pl_struct_labels[$pl_struct_id])) ? $pl_struct_labels[$pl_struct_id] : '-',
                             'struct_period' => isset($pl_struct_period[$pl_sid]) ? $pl_struct_period[$pl_sid] : '',
-                            'total_atem'      => $pl_hq_total,
-                            'complete_count'  => $pl_hq_rec ? $pl_hq_rec['complete'] : 0,
-                            'active_count'    => $pl_hq_rec ? $pl_hq_rec['active']   : 0,
-                            'extend_count'    => $pl_hq_rec ? $pl_hq_rec['extend']   : 0,
-                            'failed_count'    => $pl_hq_rec ? $pl_hq_rec['failed']   : 0,
+                            'complete_hq_count'     => $pl_hq_rec     ? $pl_hq_rec['complete']     : 0,
+                            'complete_outlet_count' => $pl_outlet_rec ? $pl_outlet_rec['complete'] : 0,
+                            'complete_okr_count'    => $pl_okr_rec    ? $pl_okr_rec['complete']    : 0,
                             'total_incentive' => round($pl_total_reward, 2),
                             'has_locked'      => $pl_has_locked,
                             'has_unlocked'    => $pl_has_unlocked,

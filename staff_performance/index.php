@@ -135,12 +135,21 @@ if ($_pso_res) {
     font-size: 12px;
 }
 
-#export-progress-wrap span { font-size: 12px; color: #6c757d; }
+#export-progress-wrap span {
+    font-size: 12px;
+    color: #6c757d;
+}
 
 @keyframes atem-export-slide {
-    0%   { transform: translateX(-150%); }
-    100% { transform: translateX(400%); }
+    0% {
+        transform: translateX(-150%);
+    }
+
+    100% {
+        transform: translateX(400%);
+    }
 }
+
 .atem-export-bar-anim {
     background: #198754;
     height: 100%;
@@ -181,7 +190,8 @@ if ($_pso_res) {
                         <?php foreach (array(1 => 'Q1 (Jan-Mar)', 2 => 'Q2 (Apr-Jun)', 3 => 'Q3 (Jul-Sep)', 4 => 'Q4 (Oct-Dec)') as $_qn => $_ql): ?>
                         <li class="vf-s2-list-item" style="cursor:default;">
                             <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
-                                <input type="checkbox" class="perf-quarter-cb" value="<?php echo $_qn; ?>"<?php echo ($init_quarter === $_qn) ? ' checked' : ''; ?>>
+                                <input type="checkbox" class="perf-quarter-cb" value="<?php echo $_qn; ?>"
+                                    <?php echo ($init_quarter === $_qn) ? ' checked' : ''; ?>>
                                 <?php echo htmlspecialchars($_ql); ?>
                             </label>
                         </li>
@@ -228,7 +238,9 @@ if ($_pso_res) {
                         <?php foreach ($perf_status_options as $_pso): ?>
                         <li class="vf-s2-list-item" style="cursor:default;">
                             <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
-                                <input type="checkbox" class="perf-status-cb" value="<?php echo htmlspecialchars($_pso); ?>"<?php echo in_array($_pso, $perf_default_statuses, true) ? ' checked' : ''; ?>>
+                                <input type="checkbox" class="perf-status-cb"
+                                    value="<?php echo htmlspecialchars($_pso); ?>"
+                                    <?php echo in_array($_pso, $perf_default_statuses, true) ? ' checked' : ''; ?>>
                                 <?php echo htmlspecialchars($_pso); ?>
                             </label>
                         </li>
@@ -260,7 +272,8 @@ if ($_pso_res) {
     </div>
     <div class="mt-2 text-end">
         <?php if ($_next_lock_window_label !== ''): ?>
-        <span class="text-muted" style="font-size:12px;">Lock Payout opens <?php echo htmlspecialchars($_next_lock_window_label); ?></span>
+        <span class="text-muted" style="font-size:12px;">Lock Payout opens
+            <?php echo htmlspecialchars($_next_lock_window_label); ?></span>
         <?php endif; ?>
         <span class="text-muted" id="perf-filter-label" style="font-size:12px;"></span>
     </div>
@@ -290,18 +303,16 @@ if ($_pso_res) {
                     <th>Staff Details</th>
                     <th>Grade</th>
                     <th>Evaluation Structure</th>
-                    <th class="text-center" title="Click to view details">HQ ATEM</th>
-                    <th class="text-center" title="Click to view details">Completed</th>
-                    <th class="text-center" title="Click to view details">Active</th>
-                    <th class="text-center" title="Click to view details">Extended</th>
-                    <th class="text-center" title="Click to view details">Failed</th>
+                    <th class="text-center">HQ ATEM</th>
+                    <th class="text-center">Outlet ATEM</th>
+                    <th class="text-center">OKR</th>
                     <th class="text-end">Est. Reward</th>
                     <th>Action</th>
                 </tr>
             </thead>
             <tbody id="perf-tbody">
                 <tr>
-                    <td colspan="11" class="text-center text-muted py-4">Loading...</td>
+                    <td colspan="9" class="text-center text-muted py-4">Loading...</td>
                 </tr>
             </tbody>
         </table>
@@ -324,9 +335,11 @@ if ($_pso_res) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p id="payout-lock-modal-msg">This will close payout for the matched ATEM records. This cannot be undone by non-SuperAdmin users.</p>
+                <p id="payout-lock-modal-msg">This will close payout for the matched ATEM records. This cannot be undone
+                    by non-SuperAdmin users.</p>
                 <label for="payout-lock-remark" class="form-label">Remark <span class="text-danger">*</span></label>
-                <textarea id="payout-lock-remark" class="form-control" rows="3" placeholder="Reason for locking payout..."></textarea>
+                <textarea id="payout-lock-remark" class="form-control" rows="3"
+                    placeholder="Reason for locking payout..."></textarea>
                 <div class="atem-form-error" id="payout-lock-remark-error"></div>
             </div>
             <div class="modal-footer">
@@ -397,13 +410,15 @@ function escHtml(s) {
 // element exactly. Must be re-run once a tab-pane leaves display:none (its
 // offsetHeight reads 0 while hidden), see the shown.bs.tab listeners below.
 function syncS2ButtonSize(btnEl, refEl) {
-    if (!btnEl || !refEl) { return; }
+    if (!btnEl || !refEl) {
+        return;
+    }
     var refStyle = window.getComputedStyle(refEl);
-    btnEl.style.height       = refEl.offsetHeight + 'px';
-    btnEl.style.border       = refStyle.border;
+    btnEl.style.height = refEl.offsetHeight + 'px';
+    btnEl.style.border = refStyle.border;
     btnEl.style.borderRadius = refStyle.borderRadius;
-    btnEl.style.fontSize     = refStyle.fontSize;
-    btnEl.style.color        = refStyle.color;
+    btnEl.style.fontSize = refStyle.fontSize;
+    btnEl.style.color = refStyle.color;
 }
 
 function formatDate(s) {
@@ -425,24 +440,36 @@ function formatNumber(n) {
 // payout_updated_at/payout_closed_at are datetimes (unlike the plain YYYY-MM-DD
 // dates formatDate() handles) — parsed via Date() rather than string-split.
 function formatDateTime(s) {
-    if (!s) { return '-'; }
+    if (!s) {
+        return '-';
+    }
     var d = new Date(s);
-    if (isNaN(d.getTime())) { return '-'; }
-    function pad(n) { return (n < 10 ? '0' : '') + n; }
-    return pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    if (isNaN(d.getTime())) {
+        return '-';
+    }
+
+    function pad(n) {
+        return (n < 10 ? '0' : '') + n;
+    }
+    return pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(
+        d.getMinutes());
 }
 
 // ----------------------------------------------------------- status filter
 function getSelectedStatuses(prefix) {
     var boxes = document.querySelectorAll('.' + prefix + '-status-cb:checked');
     var out = [];
-    for (var i = 0; i < boxes.length; i++) { out.push(boxes[i].value); }
+    for (var i = 0; i < boxes.length; i++) {
+        out.push(boxes[i].value);
+    }
     return out;
 }
 
 function updateStatusButtonLabel(prefix) {
     var btn = document.getElementById(prefix + '-status-btn');
-    if (!btn) { return; }
+    if (!btn) {
+        return;
+    }
     var selected = getSelectedStatuses(prefix);
     var allBoxes = document.querySelectorAll('.' + prefix + '-status-cb');
     if (selected.length === 0) {
@@ -464,20 +491,26 @@ function updateStatusButtonLabel(prefix) {
 function getSelectedQuarters(prefix) {
     var boxes = document.querySelectorAll('.' + prefix + '-quarter-cb:checked');
     var out = [];
-    for (var i = 0; i < boxes.length; i++) { out.push(parseInt(boxes[i].value, 10)); }
+    for (var i = 0; i < boxes.length; i++) {
+        out.push(parseInt(boxes[i].value, 10));
+    }
     return out;
 }
 
 function updateQuarterButtonLabel(prefix) {
     var btn = document.getElementById(prefix + '-quarter-btn');
-    if (!btn) { return; }
+    if (!btn) {
+        return;
+    }
     var selected = getSelectedQuarters(prefix);
     var allBoxes = document.querySelectorAll('.' + prefix + '-quarter-cb');
     if (selected.length === 0 || selected.length === allBoxes.length) {
         btn.textContent = 'All Quarter';
     } else {
         var labels = [];
-        for (var i = 0; i < selected.length; i++) { labels.push('Q' + selected[i]); }
+        for (var i = 0; i < selected.length; i++) {
+            labels.push('Q' + selected[i]);
+        }
         btn.textContent = labels.join(', ');
     }
 }
@@ -489,19 +522,23 @@ function resetQuarterDropdown(prefix, checkedValue) {
     }
     updateQuarterButtonLabel(prefix);
     var dropEl = document.getElementById(prefix + '-quarter-dropdown');
-    if (dropEl) { dropEl.classList.remove('open'); }
+    if (dropEl) {
+        dropEl.classList.remove('open');
+    }
 }
 
 // ------------------------------------------------- staff searchable dropdown
 // Mirrors the Staff dropdown on index.php (js/index.js buildStaffDropdown).
 // Options narrow to the selected department, if any.
 function buildStaffDropdown() {
-    var listEl   = document.getElementById('perf-staff-list');
+    var listEl = document.getElementById('perf-staff-list');
     var searchEl = document.getElementById('perf-staff-search');
-    var btnEl    = document.getElementById('perf-staff-btn');
-    var dropEl   = document.getElementById('perf-staff-dropdown');
-    var valEl    = document.getElementById('perf-staff-value');
-    if (!listEl || !btnEl || !dropEl) { return; }
+    var btnEl = document.getElementById('perf-staff-btn');
+    var dropEl = document.getElementById('perf-staff-dropdown');
+    var valEl = document.getElementById('perf-staff-value');
+    if (!listEl || !btnEl || !dropEl) {
+        return;
+    }
 
     syncS2ButtonSize(btnEl, document.getElementById('perf-filter-year'));
 
@@ -513,7 +550,9 @@ function buildStaffDropdown() {
     function visibleStaff() {
         var all = PERF_CFG.staff || [];
         var deptId = currentDeptId();
-        if (!deptId) { return all; }
+        if (!deptId) {
+            return all;
+        }
         return all.filter(function(s) {
             return s.dept_ids && s.dept_ids.indexOf(deptId) !== -1;
         });
@@ -531,9 +570,16 @@ function buildStaffDropdown() {
     function openDropdown() {
         renderList();
         dropEl.classList.add('open');
-        if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
+        if (searchEl) {
+            searchEl.value = '';
+            filterList('');
+            searchEl.focus();
+        }
     }
-    function closeDropdown() { dropEl.classList.remove('open'); }
+
+    function closeDropdown() {
+        dropEl.classList.remove('open');
+    }
 
     function filterList(term) {
         var items = listEl.querySelectorAll('li');
@@ -545,31 +591,50 @@ function buildStaffDropdown() {
     }
 
     function selectStaff(id, name) {
-        if (valEl) { valEl.value = id; }
-        if (btnEl) { btnEl.textContent = name; }
+        if (valEl) {
+            valEl.value = id;
+        }
+        if (btnEl) {
+            btnEl.textContent = name;
+        }
         closeDropdown();
         loadPerformance(buildPayload());
     }
 
     btnEl.addEventListener('click', function(e) {
         e.stopPropagation();
-        if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
+        if (dropEl.classList.contains('open')) {
+            closeDropdown();
+        } else {
+            openDropdown();
+        }
     });
     btnEl.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openDropdown();
+        }
     });
     if (searchEl) {
-        searchEl.addEventListener('input', function() { filterList(this.value); });
-        searchEl.addEventListener('click', function(e) { e.stopPropagation(); });
+        searchEl.addEventListener('input', function() {
+            filterList(this.value);
+        });
+        searchEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
     }
     listEl.addEventListener('click', function(e) {
         var li = e.target.closest ? e.target.closest('li') : null;
-        if (!li) { return; }
+        if (!li) {
+            return;
+        }
         selectStaff(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
     });
     document.addEventListener('click', function(e) {
         var wrap = document.getElementById('perf-staff-wrap');
-        if (wrap && !wrap.contains(e.target)) { closeDropdown(); }
+        if (wrap && !wrap.contains(e.target)) {
+            closeDropdown();
+        }
     });
 
     // If the selected staff member falls outside the newly chosen department,
@@ -583,7 +648,9 @@ function buildStaffDropdown() {
                 var match = (PERF_CFG.staff || []).some(function(s) {
                     return s.id === selectedId && s.dept_ids && s.dept_ids.indexOf(deptId) !== -1;
                 });
-                if (!match) { resetStaffDropdown(); }
+                if (!match) {
+                    resetStaffDropdown();
+                }
             }
         });
     }
@@ -593,9 +660,15 @@ function resetStaffDropdown() {
     var valEl = document.getElementById('perf-staff-value');
     var btnEl = document.getElementById('perf-staff-btn');
     var dropEl = document.getElementById('perf-staff-dropdown');
-    if (valEl)  { valEl.value = '0'; }
-    if (btnEl)  { btnEl.textContent = 'All staff'; }
-    if (dropEl) { dropEl.classList.remove('open'); }
+    if (valEl) {
+        valEl.value = '0';
+    }
+    if (btnEl) {
+        btnEl.textContent = 'All staff';
+    }
+    if (dropEl) {
+        dropEl.classList.remove('open');
+    }
 }
 
 function buildPayload() {
@@ -649,7 +722,9 @@ function updateExportSelected(prefix) {
     var btnIds = _selectionButtonIds[prefix] || [];
     for (var i = 0; i < btnIds.length; i++) {
         var btn = document.getElementById(btnIds[i]);
-        if (btn) { btn.disabled = !hasSelection; }
+        if (btn) {
+            btn.disabled = !hasSelection;
+        }
     }
 
     // Lock Selected additionally requires at least one selected staff member
@@ -659,7 +734,9 @@ function updateExportSelected(prefix) {
     if (lockBtn) {
         var ids = selectedStaffIds(prefix);
         var idSet = {};
-        for (var j = 0; j < ids.length; j++) { idSet[ids[j]] = true; }
+        for (var j = 0; j < ids.length; j++) {
+            idSet[ids[j]] = true;
+        }
         var anyLockable = (_perfAllData || []).some(function(rec) {
             return idSet[rec.staff_id] && rec.has_unlocked;
         });
@@ -673,7 +750,9 @@ function updateExportSelected(prefix) {
 function selectedStaffIds(prefix) {
     var checked = document.querySelectorAll('.' + prefix + '-row-cb:checked');
     var ids = [];
-    for (var i = 0; i < checked.length; i++) { ids.push(parseInt(checked[i].value, 10)); }
+    for (var i = 0; i < checked.length; i++) {
+        ids.push(parseInt(checked[i].value, 10));
+    }
     return ids;
 }
 
@@ -684,7 +763,8 @@ function perfExportUrl(payload, ids) {
     var statuses = (payload.statuses || []).join(',');
     var qs = 'type=performance' +
         (ids && ids.length ? '&ids=' + ids.join(',') : '') +
-        '&month=' + (payload.month || 0) + '&year=' + (payload.year || PERF_CFG.initYear) + '&quarter=' + (payload.quarter || []).join(',') +
+        '&month=' + (payload.month || 0) + '&year=' + (payload.year || PERF_CFG.initYear) + '&quarter=' + (payload
+            .quarter || []).join(',') +
         '&dept=' + (payload.dept || 0) + '&grade=' + (payload.grade || 0) + '&struct=' + (payload.struct || 0) +
         '&staff_filter_id=' + (payload.staff_id || 0) +
         '&statuses=' + encodeURIComponent(statuses);
@@ -773,7 +853,7 @@ function renderTable(data, payload) {
 
     if (!data || !data.length) {
         tbody.innerHTML =
-            '<tr><td colspan="11" class="text-center text-muted py-4">No records found for this period.</td></tr>';
+            '<tr><td colspan="9" class="text-center text-muted py-4">No records found for this period.</td></tr>';
         renderPerfPager(0);
         return;
     }
@@ -806,14 +886,8 @@ function renderTable(data, payload) {
     for (var i = 0; i < pageData.length; i++) {
         var rec = pageData[i];
 
-        // HQ ATEM shows the raw, all-status/all-role total count (links straight
-        // to edit.php) - Completed/Active/Extended/Failed are the status-selected
-        // bucket counts.
-        var hqCount = rec.total_atem;
-
         var editUrl = window.ATEM_MODULE_BASE + 'staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter + '&statuses=' + statusesQs;
-        var hqEditUrl = editUrl + '&tab=atem&atem_type=1';
         var exportUrl = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance&ids=' + rec.id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
@@ -828,22 +902,26 @@ function renderTable(data, payload) {
             '<td>' + escHtml(rec.grade_label) + '</td>' +
             '<td>' +
             '<div style="font-size:13px;">' + escHtml(rec.struct_label) + '</div>' +
-            (rec.struct_period ? '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.struct_period) + '</div>' : '') +
+            (rec.struct_period ? '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.struct_period) +
+                '</div>' : '') +
             '</td>' +
-            '<td class="text-center">' + (hqCount > 0 ? '<a class="perf-count-link" href="' + escHtml(hqEditUrl) + '">' + hqCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
-            '<td class="text-center">' + countCell(rec.complete_count) + '</td>' +
-            '<td class="text-center">' + countCell(rec.active_count) + '</td>' +
-            '<td class="text-center">' + countCell(rec.extend_count) + '</td>' +
-            '<td class="text-center">' + countCell(rec.failed_count) + '</td>' +
+            '<td class="text-center">' + countCell(rec.complete_hq_count) + '</td>' +
+            '<td class="text-center">' + countCell(rec.complete_outlet_count) + '</td>' +
+            '<td class="text-center">' + countCell(rec.complete_okr_count) + '</td>' +
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
             '<td style="white-space:nowrap;">' +
-            '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '" title="View"><i class="bi bi-eye"></i></a>' +
-            '<a class="btn btn-sm btn-outline-success me-1 perf-row-export" href="' + escHtml(exportUrl) + '" title="Export"><i class="bi bi-download"></i></a>' +
-            (PERF_CFG.canLockPayout
-                ? (rec.has_unlocked
-                    ? '<button type="button" class="btn btn-sm btn-outline-danger me-1 perf-row-lock" data-staff-id="' + rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>'
-                    : (rec.has_locked ? '<button type="button" class="btn btn-sm btn-danger me-1" disabled title="Payout Locked"><i class="bi bi-lock-fill"></i></button>' : ''))
-                : '') +
+            '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) +
+            '" title="View"><i class="bi bi-eye"></i></a>' +
+            '<a class="btn btn-sm btn-outline-success me-1 perf-row-export" href="' + escHtml(exportUrl) +
+            '" title="Export"><i class="bi bi-download"></i></a>' +
+            (PERF_CFG.canLockPayout ?
+                (rec.has_unlocked ?
+                    '<button type="button" class="btn btn-sm btn-outline-danger me-1 perf-row-lock" data-staff-id="' +
+                    rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>' :
+                    (rec.has_locked ?
+                        '<button type="button" class="btn btn-sm btn-danger me-1" disabled title="Payout Locked"><i class="bi bi-lock-fill"></i></button>' :
+                        '')) :
+                '') +
             '</td>' +
             '</tr>';
     }
@@ -859,7 +937,7 @@ function loadPerformance(payload) {
     var periodEl = document.getElementById('perf-period-label');
     var label = buildLabel(payload);
 
-    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Loading...</td></tr>';
     if (labelEl) {
         labelEl.textContent = label;
     }
@@ -890,7 +968,7 @@ function loadPerformance(payload) {
         })
         .then(function(res) {
             if (!res.success) {
-                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-3">' +
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-3">' +
                     escHtml(res.message || 'Failed to load records.') + '</td></tr>';
                 return;
             }
@@ -900,7 +978,7 @@ function loadPerformance(payload) {
         })
         .catch(function() {
             tbody.innerHTML =
-                '<tr><td colspan="11" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
+                '<tr><td colspan="9" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
         });
 }
 
@@ -996,7 +1074,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         var statusBoxes = document.querySelectorAll('.perf-status-cb');
         for (var _si = 0; _si < statusBoxes.length; _si++) {
-            statusBoxes[_si].checked = (PERF_CFG.defaultStatuses || []).indexOf(statusBoxes[_si].value) !== -1;
+            statusBoxes[_si].checked = (PERF_CFG.defaultStatuses || []).indexOf(statusBoxes[_si]
+                .value) !== -1;
         }
         updateStatusButtonLabel('perf');
         resetStaffDropdown();
@@ -1014,7 +1093,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Auto-apply on every other filter change
-    var _perfAutoFilterIds = ['perf-filter-year', 'perf-filter-dept', 'perf-filter-grade', 'perf-filter-struct'];
+    var _perfAutoFilterIds = ['perf-filter-year', 'perf-filter-dept', 'perf-filter-grade',
+    'perf-filter-struct'];
     for (var _pfi = 0; _pfi < _perfAutoFilterIds.length; _pfi++) {
         var _pfEl = document.getElementById(_perfAutoFilterIds[_pfi]);
         if (_pfEl) {
@@ -1058,7 +1138,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (exportSelectedBtn) {
         exportSelectedBtn.addEventListener('click', function() {
             var ids = selectedStaffIds('perf');
-            if (!ids.length) { return; }
+            if (!ids.length) {
+                return;
+            }
             triggerExport(perfExportUrl(_currentPayload, ids));
         });
     }
@@ -1099,15 +1181,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function openLockModal(filterPayload, staffIds, progressWrapId, progressMsgId, labelElId, reloadFn) {
         _pendingLockAction = {
-            filterPayload: filterPayload, staffIds: staffIds || null,
-            progressWrapId: progressWrapId, progressMsgId: progressMsgId,
-            labelElId: labelElId, reloadFn: reloadFn
+            filterPayload: filterPayload,
+            staffIds: staffIds || null,
+            progressWrapId: progressWrapId,
+            progressMsgId: progressMsgId,
+            labelElId: labelElId,
+            reloadFn: reloadFn
         };
         var remarkEl = document.getElementById('payout-lock-remark');
-        if (remarkEl) { remarkEl.value = ''; }
+        if (remarkEl) {
+            remarkEl.value = '';
+        }
         var errEl = document.getElementById('payout-lock-remark-error');
-        if (errEl) { errEl.textContent = ''; }
-        if (bsPayoutLockModal) { bsPayoutLockModal.show(); }
+        if (errEl) {
+            errEl.textContent = '';
+        }
+        if (bsPayoutLockModal) {
+            bsPayoutLockModal.show();
+        }
     }
 
     function wireLockButtons(prefix, buildPayloadFn, reloadFn, progressWrapId, progressMsgId) {
@@ -1115,64 +1206,98 @@ document.addEventListener('DOMContentLoaded', function() {
         if (barLockBtn) {
             barLockBtn.addEventListener('click', function() {
                 var payload = buildPayloadFn();
-                openLockModal(payload, null, progressWrapId, progressMsgId, prefix + '-filter-label', reloadFn);
+                openLockModal(payload, null, progressWrapId, progressMsgId, prefix + '-filter-label',
+                    reloadFn);
             });
         }
         var selLockBtn = document.getElementById(prefix + '-lock-selected-btn');
         if (selLockBtn) {
             selLockBtn.addEventListener('click', function() {
                 var staffIds = selectedStaffIds(prefix);
-                if (!staffIds.length) { return; }
-                openLockModal(buildPayloadFn(), staffIds, progressWrapId, progressMsgId, prefix + '-filter-label', reloadFn);
+                if (!staffIds.length) {
+                    return;
+                }
+                openLockModal(buildPayloadFn(), staffIds, progressWrapId, progressMsgId, prefix +
+                    '-filter-label', reloadFn);
             });
         }
     }
 
-    wireLockButtons('perf', buildPayload, function() { loadPerformance(buildPayload()); },
+    wireLockButtons('perf', buildPayload, function() {
+            loadPerformance(buildPayload());
+        },
         'export-progress-wrap', 'export-progress-msg');
 
     var payoutLockConfirmBtn = document.getElementById('payout-lock-confirm-btn');
     if (payoutLockConfirmBtn) {
         payoutLockConfirmBtn.addEventListener('click', function() {
-            if (!_pendingLockAction) { return; }
+            if (!_pendingLockAction) {
+                return;
+            }
             var remarkEl = document.getElementById('payout-lock-remark');
             var errEl = document.getElementById('payout-lock-remark-error');
             var remark = remarkEl ? remarkEl.value.trim() : '';
             if (!remark) {
-                if (errEl) { errEl.textContent = 'Remark is required.'; }
+                if (errEl) {
+                    errEl.textContent = 'Remark is required.';
+                }
                 return;
             }
-            if (errEl) { errEl.textContent = ''; }
+            if (errEl) {
+                errEl.textContent = '';
+            }
 
             var action = _pendingLockAction;
-            var body = { action: 'bulk-lock-payout', remarks: remark };
+            var body = {
+                action: 'bulk-lock-payout',
+                remarks: remark
+            };
             for (var k in action.filterPayload) {
-                if (action.filterPayload.hasOwnProperty(k)) { body[k] = action.filterPayload[k]; }
+                if (action.filterPayload.hasOwnProperty(k)) {
+                    body[k] = action.filterPayload[k];
+                }
             }
-            if (action.staffIds) { body.staff_ids = action.staffIds; }
+            if (action.staffIds) {
+                body.staff_ids = action.staffIds;
+            }
 
             payoutLockConfirmBtn.disabled = true;
             fetch(PERF_API_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify(body)
                 })
-                .then(function(r) { return r.json(); })
+                .then(function(r) {
+                    return r.json();
+                })
                 .then(function(res) {
                     payoutLockConfirmBtn.disabled = false;
                     if (!res.success) {
-                        if (errEl) { errEl.textContent = res.message || 'Failed to lock payout.'; }
+                        if (errEl) {
+                            errEl.textContent = res.message || 'Failed to lock payout.';
+                        }
                         return;
                     }
-                    if (bsPayoutLockModal) { bsPayoutLockModal.hide(); }
+                    if (bsPayoutLockModal) {
+                        bsPayoutLockModal.hide();
+                    }
                     var labelEl = document.getElementById(action.labelElId);
-                    if (labelEl) { labelEl.textContent = 'Locked ' + res.atem_locked + ' ATEM, skipped ' + res.atem_skipped + '.'; }
+                    if (labelEl) {
+                        labelEl.textContent = 'Locked ' + res.atem_locked + ' ATEM, skipped ' + res
+                            .atem_skipped + '.';
+                    }
                     _pendingLockAction = null;
-                    if (action.reloadFn) { action.reloadFn(); }
+                    if (action.reloadFn) {
+                        action.reloadFn();
+                    }
                 })
                 .catch(function() {
                     payoutLockConfirmBtn.disabled = false;
-                    if (errEl) { errEl.textContent = 'Request failed. Please try again.'; }
+                    if (errEl) {
+                        errEl.textContent = 'Request failed. Please try again.';
+                    }
                 });
         });
     }
@@ -1180,26 +1305,41 @@ document.addEventListener('DOMContentLoaded', function() {
     // Export progress helper — wrapId/msgId default to the page's progress bar.
     function triggerExport(url, wrapId, msgId) {
         wrapId = wrapId || 'export-progress-wrap';
-        msgId  = msgId  || 'export-progress-msg';
+        msgId = msgId || 'export-progress-msg';
         var token = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
-        var sep   = url.indexOf('?') >= 0 ? '&' : '?';
-        var wrap  = document.getElementById(wrapId);
-        var msg   = document.getElementById(msgId);
-        if (wrap) { wrap.style.display = 'block'; }
-        if (msg)  { msg.textContent = 'Preparing export...'; }
+        var sep = url.indexOf('?') >= 0 ? '&' : '?';
+        var wrap = document.getElementById(wrapId);
+        var msg = document.getElementById(msgId);
+        if (wrap) {
+            wrap.style.display = 'block';
+        }
+        if (msg) {
+            msg.textContent = 'Preparing export...';
+        }
 
         window.location.href = url + sep + 'dl_token=' + token;
 
         var cookieName = 'export_done_' + token;
-        var pollTimer  = setInterval(function() {
+        var pollTimer = setInterval(function() {
             if (document.cookie.indexOf(cookieName) >= 0) {
                 clearInterval(pollTimer);
                 document.cookie = cookieName + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
-                if (msg) { msg.textContent = 'Done.'; }
-                setTimeout(function() { if (wrap) { wrap.style.display = 'none'; } }, 1500);
+                if (msg) {
+                    msg.textContent = 'Done.';
+                }
+                setTimeout(function() {
+                    if (wrap) {
+                        wrap.style.display = 'none';
+                    }
+                }, 1500);
             }
         }, 500);
-        setTimeout(function() { clearInterval(pollTimer); if (wrap) { wrap.style.display = 'none'; } }, 60000);
+        setTimeout(function() {
+            clearInterval(pollTimer);
+            if (wrap) {
+                wrap.style.display = 'none';
+            }
+        }, 60000);
     }
 
     var exportAllBtn = document.getElementById('perf-export-all-btn');
@@ -1212,19 +1352,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.addEventListener('click', function(e) {
         var a = e.target.closest ? e.target.closest('.perf-row-export') : null;
-        if (a) { e.preventDefault(); triggerExport(a.href); return; }
+        if (a) {
+            e.preventDefault();
+            triggerExport(a.href);
+            return;
+        }
 
         // Per-row Lock — same shared modal as the bar-level/Selected button.
         var lockBtn = e.target.closest ? e.target.closest('.perf-row-lock') : null;
         if (lockBtn) {
             var lockSid = parseInt(lockBtn.getAttribute('data-staff-id'), 10);
             openLockModal(buildPayload(), [lockSid], 'export-progress-wrap', 'export-progress-msg',
-                'perf-filter-label', function() { loadPerformance(buildPayload()); });
+                'perf-filter-label',
+                function() {
+                    loadPerformance(buildPayload());
+                });
         }
     });
 
 });
-
 </script>
 
 <?php include('../footer.php'); ?>

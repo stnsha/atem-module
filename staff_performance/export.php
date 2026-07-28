@@ -124,9 +124,12 @@ function ex_level_val($a) {
 // R -> r_incentive_amount split among incentivised R members; a non-incentivised
 // A/R member (or C/I/issuer-only) gets 0 - mirrors api.php's
 // getStaffPerformanceLive() exactly, so this matches the on-screen table.
+// $blank_reward is used for Outlet ATEM rows (atem_type=2) - Outlet ATEM no
+// longer carries any incentive concept (Est. Reward on the on-screen table
+// stays HQ-only), so the Est. Reward column is left blank instead of 0.00.
 // 'Record Type' is always 'ATEM' here - shares the same column layout as
 // emit_okr_rows() below so ATEM and OKR rows can sit in one flat CSV.
-function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
+function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a, $blank_reward = false) {
     $atem_id   = '#AT' . (int)(isset($a['id']) ? $a['id'] : 0);
     $title     = isset($a['title']) ? $a['title'] : '';
     $level     = ex_level_val($a);
@@ -174,7 +177,9 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
     if (!empty($roles)) {
         foreach ($roles as $r) {
             $role = $r['role'];
-            if ($role === 'A' && $r['is_incentivised'] && $inc_a_count > 0) {
+            if ($blank_reward) {
+                $reward = '';
+            } elseif ($role === 'A' && $r['is_incentivised'] && $inc_a_count > 0) {
                 $reward = number_format($a_amount / $inc_a_count, 2);
             } elseif ($role === 'R' && $r['is_incentivised'] && $inc_r_count > 0) {
                 $reward = number_format($r_amount / $inc_r_count, 2);
@@ -193,9 +198,45 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a) {
             'ATEM', $ex_year, $ex_month,
             $name, $dept, $grade, $struct,
             $atem_id, $title, $level, $start, $end, $closure,
-            $issuer_yn, '', $status, number_format(0, 2), $payout_yn
+            $issuer_yn, '', $status, ($blank_reward ? '' : number_format(0, 2)), $payout_yn
         ));
     }
+}
+
+// Emit one row for one staff member's involvement in one OKR card - always
+// Owner or Owner 2 (OKR row emission is only ever called for a card's actual
+// owner(s), never the issuer - mirrors getOkrPerformanceLive()'s "my cards"
+// scoping in api.php). OKR no longer carries any incentive/payout concept
+// (see okr/CLAUDE.md's "Retired incentive columns"), so Est. Reward and
+// Payout are always blank - unlike ATEM rows, there is no reward to compute.
+// 'Level / Complexity' is likewise always blank - okr_cards.difficulty_level
+// is a retired column, not read here.
+function emit_okr_rows($out, $sid, $name, $dept, $grade, $struct, $o) {
+    $okr_id  = '#OK' . (int)(isset($o['id']) ? $o['id'] : 0);
+    $title   = isset($o['objective']) ? $o['objective'] : '';
+    $start   = fmt_ex_date(isset($o['start_date']) ? $o['start_date'] : '');
+    $end_raw = (!empty($o['extended']) && !empty($o['extended_date']))
+                  ? $o['extended_date']
+                  : (isset($o['end_date']) ? $o['end_date'] : '');
+    $end       = fmt_ex_date($end_raw);
+    $closure   = fmt_ex_date(isset($o['closed_at']) ? $o['closed_at'] : '');
+    $status    = isset($o['status_value']) ? $o['status_value'] : '';
+    $is_issuer = (isset($o['issuer_staff_id']) && (int)$o['issuer_staff_id'] === $sid);
+    $issuer_yn = $is_issuer ? 'Yes' : 'No';
+
+    $start_raw = isset($o['start_date']) ? $o['start_date'] : '';
+    $ex_year   = ($start_raw && strlen($start_raw) >= 7) ? (int)substr($start_raw, 0, 4) : '';
+    $ex_month  = ($start_raw && strlen($start_raw) >= 7) ? (int)substr($start_raw, 5, 2) : '';
+
+    $owner_id = (int)(isset($o['owner_staff_id']) ? $o['owner_staff_id'] : 0);
+    $role     = ($sid === $owner_id) ? 'Owner' : 'Owner 2';
+
+    fputcsv($out, array(
+        'OKR', $ex_year, $ex_month,
+        $name, $dept, $grade, $struct,
+        $okr_id, $title, '', $start, $end, $closure,
+        $issuer_yn, $role, $status, '', ''
+    ));
 }
 
 $csv_headers = array(
@@ -263,12 +304,18 @@ if ($type === 'staff-atem') {
 // Export: performance records (bulk)
 // ----------------------------------------
 if ($type === 'performance') {
-    // Staff Performance is HQ ATEM only (Outlet ATEM removed).
+    // Mirrors api.php's get-performance-list: HQ ATEM, Outlet ATEM, and OKR
+    // are fetched separately then merged on their union of staff ids, so
+    // anyone visible on the on-screen table (which does the same union) is
+    // exportable too. Est. Reward stays HQ ATEM only - Outlet ATEM and OKR
+    // rows are emitted further below with a blank Est. Reward.
     $live = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 1, 0);
-    if (empty($live['success'])) {
+    $live_outlet = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 2, 0);
+    if (empty($live['success']) || empty($live_outlet['success'])) {
         http_response_code(502);
         exit('Unable to reach the ATEM API. Please try again later.');
     }
+    $okr_live = getOkrPerformanceLive($conn, $filter_month, $filter_year, $filter_quarter, $filter_statuses);
 
     // Resolve current grade/struct live from ODB (dept comes from each aggregate's
     // own ATEM-card context, same as the main performance list).
@@ -289,12 +336,27 @@ if ($type === 'performance') {
         }
     }
 
+    // Union of HQ-ATEM-involved, Outlet-ATEM-involved, and OKR-involved staff
+    // ids - a staff member with only Outlet ATEM or OKR activity and no HQ
+    // ATEM cards would otherwise never be exported.
+    $union_sids = array_unique(array_merge(
+        array_keys($live['data']),
+        array_keys($live_outlet['data']),
+        array_keys($okr_live['data'])
+    ));
+
     // Apply filters
     $out_records = array();
-    foreach (array_keys($live['data']) as $sid) {
-        $sid       = (int)$sid;
-        $rec       = isset($live['data'][$sid]) ? $live['data'][$sid] : null;
-        $dept_id   = ($rec && !empty($rec['dept_id'])) ? (int)$rec['dept_id'] : (isset($staff_dept_first[$sid]) ? $staff_dept_first[$sid] : 0);
+    foreach ($union_sids as $sid) {
+        $sid          = (int)$sid;
+        $rec          = isset($live['data'][$sid])         ? $live['data'][$sid]         : null;
+        $rec_outlet   = isset($live_outlet['data'][$sid])  ? $live_outlet['data'][$sid]  : null;
+        $rec_okr      = isset($okr_live['data'][$sid])     ? $okr_live['data'][$sid]     : null;
+        $dept_id      = ($rec && !empty($rec['dept_id']))
+            ? (int)$rec['dept_id']
+            : ((!empty($rec_outlet['dept_id']))
+                ? (int)$rec_outlet['dept_id']
+                : (isset($staff_dept_first[$sid]) ? $staff_dept_first[$sid] : 0));
         $grade_id  = isset($staff_grade[$sid])  ? $staff_grade[$sid]  : null;
         $struct_id = isset($staff_struct[$sid]) ? $staff_struct[$sid] : null;
 
@@ -304,13 +366,15 @@ if ($type === 'performance') {
         if ($filter_struct   > 0 && $struct_id !== $filter_struct) { continue; }
         if ($filter_staff_id > 0 && $sid !== $filter_staff_id)     { continue; }
 
-        $total     = $rec ? ($rec['complete'] + $rec['active'] + $rec['extend'] + $rec['failed']) : 0;
-        if ($total <= 0) { continue; }
+        $hq_total     = $rec        ? $rec['total_all']        : 0;
+        $outlet_total = $rec_outlet ? $rec_outlet['total_all'] : 0;
+        $okr_total    = $rec_okr    ? $rec_okr['total_all']    : 0;
+        if ($hq_total <= 0 && $outlet_total <= 0 && $okr_total <= 0) { continue; }
 
         // Est. Reward used only for export sort order, matching the on-screen
-        // table's default sort.
-        $atem_reward = $rec ? (float)$rec['total_incentive'] : 0.0;
-        $total_reward = $atem_reward;
+        // table's default sort - HQ ATEM only, same as the on-screen Est.
+        // Reward column.
+        $total_reward = $rec ? (float)$rec['total_incentive'] : 0.0;
 
         $out_records[] = array(
             'staff_id' => $sid, 'dept_id' => $dept_id, 'grade_id' => $grade_id, 'struct_id' => $struct_id,
@@ -328,13 +392,33 @@ if ($type === 'performance') {
         logAtemExport($conn, $_rec['staff_id'], $staff_id, 'performance');
     }
 
-    // Fetch all ATEMs once
+    // Fetch all ATEMs once (both HQ and Outlet cards - unfiltered by type,
+    // the loop below filters HQ vs Outlet itself)
     $all_atems = array();
     $_atem_res = getApiDataWithJWT('atem', null, 'GET', $staff_id);
     if (isset($_atem_res['httpCode']) && $_atem_res['httpCode'] === 200) {
         $_atem_dec = json_decode($_atem_res['response'], true);
         $all_atems = (isset($_atem_dec['data']) && is_array($_atem_dec['data'])) ? $_atem_dec['data'] : array();
     }
+    // Fetch all OKR cards once (plain mysqli against the same database - OKR
+    // has no separate API, see okr/CLAUDE.md).
+    $all_okrs = array();
+    $_okr_res = mysqli_query($conn, "SELECT c.id, c.objective, c.owner_staff_id, c.owner2_staff_id, c.issuer_staff_id,
+                                             c.start_date, c.end_date, c.extended, c.extended_date, c.closed_at,
+                                             os.value AS status_value
+                                      FROM okr_cards c
+                                      LEFT JOIN okr_statuses os ON c.result_status = os.id
+                                      WHERE c.deleted_at IS NULL");
+    if ($_okr_res) { while ($_or = mysqli_fetch_assoc($_okr_res)) { $all_okrs[] = $_or; } }
+
+    // Outlet ATEM and OKR rows only ever include Completed-family statuses,
+    // regardless of what else is checked in the Status filter - mirrors the
+    // on-screen table's Outlet ATEM Completed/OKR Completed columns, which
+    // likewise only ever count the 'complete' bucket. HQ ATEM rows below keep
+    // respecting the full $filter_statuses, unchanged.
+    $complete_family = array('Completed', 'Completed with Excellence', 'Completed with Extension');
+    $outlet_okr_statuses = array_values(array_intersect($filter_statuses, $complete_family));
+
     $filename = 'staff_performance_' . date('Y-m-d') . '.csv';
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -357,8 +441,9 @@ if ($type === 'performance') {
         $p_struct = ($struct_id !== null && isset($struct_labels[$struct_id])) ? $struct_labels[$struct_id] : '-';
 
         foreach ($all_atems as $_a) {
-            // Staff Performance is HQ ATEM only (Outlet ATEM removed) - $all_atems
-            // is unfiltered by type, so this loop must exclude Outlet cards itself.
+            // HQ ATEM rows only - $all_atems is unfiltered by type (fetched
+            // once, reused for the Outlet ATEM loop below), so this loop must
+            // exclude Outlet cards itself.
             $_atemType = isset($_a['atem_type']) ? (int)$_a['atem_type'] : 1;
             if ($_atemType !== 1) { continue; }
 
@@ -382,6 +467,48 @@ if ($type === 'performance') {
             if (!atem_date_in_period($_dateStr, $period_months, $filter_year)) { continue; }
 
             emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a);
+        }
+
+        if (!empty($outlet_okr_statuses)) {
+            foreach ($all_atems as $_a) {
+                $_atemType = isset($_a['atem_type']) ? (int)$_a['atem_type'] : 1;
+                if ($_atemType !== 2) { continue; }
+
+                $iid = isset($_a['issuer_staff_id']) ? (int)$_a['issuer_staff_id'] : 0;
+                $inv = ($iid === $sid);
+                if (!$inv && !empty($_a['arci']) && is_array($_a['arci'])) {
+                    foreach ($_a['arci'] as $_m) {
+                        if (!empty($_m['staff_id']) && (int)$_m['staff_id'] === $sid) {
+                            $inv = true;
+                            break;
+                        }
+                    }
+                }
+                if (!$inv) { continue; }
+
+                $_status = ex_status_val($_a);
+                if (!in_array($_status, $outlet_okr_statuses, true)) { continue; }
+
+                $_dateField = atem_status_period_field($_status);
+                $_dateStr   = isset($_a[$_dateField]) ? $_a[$_dateField] : null;
+                if (!atem_date_in_period($_dateStr, $period_months, $filter_year)) { continue; }
+
+                emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a, true);
+            }
+
+            foreach ($all_okrs as $_o) {
+                $_o_owner  = isset($_o['owner_staff_id'])  ? (int)$_o['owner_staff_id']  : 0;
+                $_o_owner2 = !empty($_o['owner2_staff_id']) ? (int)$_o['owner2_staff_id'] : 0;
+                if ($sid !== $_o_owner && $sid !== $_o_owner2) { continue; }
+
+                $_o_status = isset($_o['status_value']) ? $_o['status_value'] : '';
+                if (!in_array($_o_status, $outlet_okr_statuses, true)) { continue; }
+
+                $_o_date = isset($_o['closed_at']) ? $_o['closed_at'] : null;
+                if (!atem_date_in_period($_o_date, $period_months, $filter_year)) { continue; }
+
+                emit_okr_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_o);
+            }
         }
     }
 
