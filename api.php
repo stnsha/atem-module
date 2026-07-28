@@ -2321,6 +2321,100 @@ if (!defined('API_JWT_INCLUDED')) {
                     $response = getAtemList($staff_id);
                     break;
 
+                case 'list-atems-scoped':
+                    // Same raw fetch as 'list-atems', but filtered to what the
+                    // current viewer could actually open in ATEM itself -
+                    // mirrors view.php's grade-based visibility (and the
+                    // identical inline filtering already done for
+                    // 'dashboard-stats' below). Used by callers that let a user
+                    // search/pick an ATEM card (e.g. OKR's Link ATEM picker) so
+                    // a grade-1/2/3 user can't browse cards outside what
+                    // they're actually allowed to see.
+                    $scopedListResult = getAtemList($staff_id);
+                    if (!$scopedListResult['success']) {
+                        $response = array('success' => false, 'message' => 'Failed to load ATEM data', 'data' => array());
+                        break;
+                    }
+                    $scopedItems = $scopedListResult['data'];
+
+                    $_scopedPerm = 0;
+                    if (isset($atem_permission)) {
+                        $_scopedPerm = (int)$atem_permission;
+                    } elseif (isset($_SESSION['atem_dev_role_override'])) {
+                        $_scopedPerm = (int)$_SESSION['atem_dev_role_override'];
+                    } elseif ($staff_id) {
+                        $_scopedPermRes = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        if ($_scopedPermRes && ($_scopedPermRow = mysqli_fetch_assoc($_scopedPermRes))) {
+                            $_scopedPerm = ((int)$_scopedPermRow['atem'] === 1) ? 6 : (int)$_scopedPermRow['grade'];
+                        }
+                    }
+
+                    $_scopedUserDeptIds = array();
+                    if (isset($department) && $department !== '') {
+                        foreach (explode(',', (string)$department) as $_sdpart) {
+                            $_sdpart = (int)trim($_sdpart);
+                            if ($_sdpart > 0) { $_scopedUserDeptIds[] = $_sdpart; }
+                        }
+                    }
+                    $_scopedUserOutletIds = array();
+                    if (isset($outlet) && $outlet !== '') {
+                        foreach (explode(',', (string)$outlet) as $_sopart) {
+                            $_sopart = (int)trim($_sopart);
+                            if ($_sopart > 0) { $_scopedUserOutletIds[] = $_sopart; }
+                        }
+                    }
+                    $_scopedUserStaff = (int)$staff_id;
+
+                    if ($_scopedPerm === 1) {
+                        $_scopedFiltered = array();
+                        foreach ($scopedItems as $_sItem) {
+                            $_sIssuerId = isset($_sItem['issuer_staff_id']) ? (int)$_sItem['issuer_staff_id'] : 0;
+                            $_sArciIds  = array();
+                            if (isset($_sItem['arci']) && is_array($_sItem['arci'])) {
+                                foreach ($_sItem['arci'] as $_sm) {
+                                    if (!empty($_sm['staff_id'])) { $_sArciIds[] = (int)$_sm['staff_id']; }
+                                }
+                            }
+                            if ($_sIssuerId === $_scopedUserStaff || in_array($_scopedUserStaff, $_sArciIds)) {
+                                $_scopedFiltered[] = $_sItem;
+                            }
+                        }
+                        $scopedItems = $_scopedFiltered;
+                    } elseif ($_scopedPerm === 2 && in_array(1, $_scopedUserDeptIds, true)) {
+                        $_scopedFiltered = array();
+                        foreach ($scopedItems as $_sItem) {
+                            $_sItemOutletIds = array();
+                            if (isset($_sItem['outlets']) && is_array($_sItem['outlets'])) {
+                                foreach ($_sItem['outlets'] as $_so) {
+                                    if (!empty($_so['outlet_id'])) { $_sItemOutletIds[] = (int)$_so['outlet_id']; }
+                                }
+                            }
+                            if (array_intersect($_scopedUserOutletIds, $_sItemOutletIds)) {
+                                $_scopedFiltered[] = $_sItem;
+                            }
+                        }
+                        $scopedItems = $_scopedFiltered;
+                    } elseif ($_scopedPerm === 2 || $_scopedPerm === 3) {
+                        $_scopedFiltered = array();
+                        foreach ($scopedItems as $_sItem) {
+                            $_sItemDept  = isset($_sItem['staff_dept_id']) ? (int)$_sItem['staff_dept_id'] : 0;
+                            $_sArciDepts = array();
+                            if (isset($_sItem['arci']) && is_array($_sItem['arci'])) {
+                                foreach ($_sItem['arci'] as $_sm) {
+                                    if (!empty($_sm['staff_dept_id'])) { $_sArciDepts[] = (int)$_sm['staff_dept_id']; }
+                                }
+                            }
+                            if (in_array($_sItemDept, $_scopedUserDeptIds) || array_intersect($_scopedUserDeptIds, $_sArciDepts)) {
+                                $_scopedFiltered[] = $_sItem;
+                            }
+                        }
+                        $scopedItems = $_scopedFiltered;
+                    }
+                    // Grades 4-6 (superadmin resolves to 6): no role-based filtering.
+
+                    $response = array('success' => true, 'data' => array_values($scopedItems));
+                    break;
+
                 case 'dashboard-stats':
                     $listResult = getAtemList($staff_id, true);
                     if (!$listResult['success']) {

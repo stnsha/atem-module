@@ -114,6 +114,7 @@ On localhost, a toolbar appears at the top of every ATEM page for users with `$_
 |---|---|
 | `lookups` | GET /atem/lookups |
 | `list-atems` | GET /atem |
+| `list-atems-scoped` | GET /atem (filtered client-side to the requester's grade/department/ARCI visibility, same rule view.php applies) |
 | `dashboard-stats` | GET /atem (aggregated client-side) |
 | `get-atem` | GET /atem/{id} |
 | `create-draft` | POST /atem |
