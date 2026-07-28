@@ -60,13 +60,14 @@ if ($outlet_res) {
     }
 }
 
-// Area Managers for the Area Manager(s) picker (outlet-type ATEMs only).
-// status_rym = 134 identifies the "Area Manager" position in position_rymnet.
+// Outlet Staff(s) picker (outlet-type ATEMs only): department 1 (Outlet) and
+// grade 3 and above. LEFT JOIN so a staff member without a matching
+// position_rymnet row is still included (just with a null position label).
 $area_managers_list = [];
 $am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
            FROM staff s
-           JOIN position_rymnet p ON p.id = s.status_rym
-           WHERE s.status_rym = 134 AND s.recycle != 1
+           LEFT JOIN position_rymnet p ON p.id = s.status_rym
+           WHERE FIND_IN_SET('1', s.department) AND s.grade >= 3 AND s.recycle != 1
            ORDER BY s.nama_staff";
 $am_res = mysqli_query($conn, $am_sql);
 if ($am_res) {
@@ -81,7 +82,7 @@ if ($am_res) {
         $area_managers_list[] = [
             'id'         => (int) $arow['id'],
             'name'       => $arow['nama_staff'],
-            'position'   => $arow['position_name'],
+            'position'   => $arow['position_name'] ?? '',
             'outlet_ids' => $am_outlet_ids,
         ];
     }
@@ -133,7 +134,7 @@ if (isset($department) && $department !== '') {
     }
 }
 
-$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => []];
+$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => [], 'reward_masterlist' => []];
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
@@ -331,6 +332,23 @@ $can_unsuspend = $record_is_suspended
 $show_suspension_history = ($record && !empty($record['suspended_by']))
     && ($is_issuer_now || $_is_superadmin || (int)$atem_permission >= 4);
 
+// suspend() explicitly nulls closure_date (a suspend is a pause, not a
+// closure) and never sets deleted_at, so neither field can be used to know
+// when a suspension actually happened - the audit log's 'suspended' event is
+// the only accurate record, and stays correct even if the issuer edits the
+// title/description afterward (which updated_at would not). Computed once
+// here and reused by both the top banner and the Suspension Details card.
+$suspended_at_raw = '';
+if (!empty($record['audit_logs']) && is_array($record['audit_logs'])) {
+    foreach ($record['audit_logs'] as $_sal) {
+        if (isset($_sal['event']) && $_sal['event'] === 'suspended') {
+            $suspended_at_raw = isset($_sal['created_at']) ? $_sal['created_at'] : '';
+            break;
+        }
+    }
+}
+$suspended_at_fmt = $suspended_at_raw ? date('d-m-Y H:i', strtotime($suspended_at_raw)) : '';
+
 $can_add_progress = ($is_issuer_now || $is_arci_member)
     && !$record_is_deleted
     && !in_array($current_status_value, $terminal_statuses);
@@ -444,13 +462,11 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         <?php
         $sb_id   = isset($record['suspended_by']) ? (int)$record['suspended_by'] : 0;
         $sb_name = ($sb_id && isset($staff_names[$sb_id])) ? $staff_names[$sb_id] : ('Staff #' . $sb_id);
-        $sb_ts   = !empty($record['deleted_at']) ? $record['deleted_at'] : (isset($record['closure_date']) ? $record['closure_date'] : '');
-        $sb_at   = $sb_ts ? date('d-m-Y H:i', strtotime($sb_ts)) : '';
-        if ($sb_id || $sb_at):
+        if ($sb_id || $suspended_at_fmt):
         ?>
         <span class="ms-2 text-muted" style="font-size:12px;">
             Suspended by
-            <?php echo htmlspecialchars($sb_name); ?><?php echo $sb_at ? ' on ' . htmlspecialchars($sb_at) : ''; ?>.
+            <?php echo htmlspecialchars($sb_name); ?><?php echo $suspended_at_fmt ? ' on ' . htmlspecialchars($suspended_at_fmt) : ''; ?>.
         </span>
         <?php endif; ?>
     </div>
@@ -488,25 +504,17 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     <input type="text" class="form-control" id="atem-department"
                         value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
-                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-amount-group">
-                    <label for="atem-reward-amount" class="form-label">Reward Amount</label>
-                    <select class="form-select" id="atem-reward-amount">
-                        <option value="0" selected>RM0</option>
-                        <option value="50">+ RM50</option>
-                        <option value="100">+ RM100</option>
-                        <option value="200">+ RM200</option>
+                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-label-group">
+                    <label for="atem-reward-label" class="form-label">Reward</label>
+                    <select class="form-select" id="atem-reward-label">
+                        <option value="" selected>None</option>
+                        <?php foreach ($lookups['reward_masterlist'] as $_rm): ?>
+                        <option value="<?php echo htmlspecialchars((string)$_rm['reward_value']); ?>">
+                            <?php echo htmlspecialchars((string)$_rm['reward_value']); ?>
+                        </option>
+                        <?php endforeach; ?>
                     </select>
-                    <div class="atem-form-error" id="atem-reward-amount-error"></div>
-                </div>
-                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-deduction-amount-group">
-                    <label for="atem-deduction-amount" class="form-label">Deduction Amount</label>
-                    <select class="form-select" id="atem-deduction-amount">
-                        <option value="0" selected>RM0</option>
-                        <option value="50">- RM50</option>
-                        <option value="100">- RM100</option>
-                        <option value="200">- RM200</option>
-                    </select>
-                    <div class="atem-form-error" id="atem-deduction-amount-error"></div>
+                    <div class="atem-form-error" id="atem-reward-label-error"></div>
                 </div>
                 <div class="col-md-6 atem-hq-only" id="atem-level-group">
                     <label for="atem-level" class="form-label">ATEM Complexity Level <span
@@ -531,25 +539,31 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     </select>
                     <div class="atem-form-error" id="atem-pillars-error"></div>
                 </div>
-                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-am-tag-group">
-                    <label class="form-label">Area Manager(s) <span class="atem-req">*</span></label>
-                    <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
-                    <div class="atem-outlet-picker" id="atem-am-picker-wrap">
-                        <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area
-                            manager(s)...</div>
-                        <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
-                            <div class="atem-outlet-picker-search-wrap">
-                                <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
-                                    placeholder="Search area manager...">
+                <div class="col-12 atem-outlet-only atem-hidden" id="atem-am-tag-group">
+                    <label class="form-label">Outlet Staff(s) <span class="atem-req">*</span></label>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
+                            <div class="atem-outlet-picker" id="atem-am-picker-wrap">
+                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select outlet
+                                    staff(s)...</div>
+                                <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
+                                    <div class="atem-outlet-picker-search-wrap">
+                                        <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
+                                            placeholder="Search outlet staff...">
+                                    </div>
+                                    <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
+                                </div>
                             </div>
-                            <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
+                            <?php endif; ?>
+                            <div class="atem-form-error" id="atem-am-error"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <div id="atem-am-tags" class="atem-outlet-tags">
+                                <span class="atem-empty-state">No outlet staff tagged.</span>
+                            </div>
                         </div>
                     </div>
-                    <?php endif; ?>
-                    <div id="atem-am-tags" class="atem-outlet-tags mt-2">
-                        <span class="atem-empty-state">No area manager tagged.</span>
-                    </div>
-                    <div class="atem-form-error" id="atem-am-error"></div>
                 </div>
                 <div class="col-12 mt-2">
                     <label class="form-label">ATEM Description</label>
@@ -587,18 +601,6 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                             Responsible</span><span class="atem-incentive-stat-value" id="inc-r">RM0.00</span></div>
                 </div>
                 <div class="atem-incentive-note" id="inc-note">Incentive is computed from the level and rule.</div>
-            </div>
-        </div>
-
-        <div class="atem-card mb-3 atem-hidden" id="atem-reward-section">
-            <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Reward</h6>
-            <p class="atem-card-hint">This shows an estimated reward based on the selected pillar and reward
-                mechanism. The company reserves the right to determine the final payout under its incentive scheme.</p>
-            <div class="atem-incentive">
-                <div class="atem-incentive-total-block">
-                    <div class="atem-incentive-total-label">Total Reward</div>
-                    <div class="atem-incentive-total-amount" id="reward-total">RM0.00</div>
-                </div>
             </div>
         </div>
 
@@ -836,7 +838,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 
                 <!-- Row 4: Remarks -->
                 <div class="col-12">
-                    <label for="tl-remarks" class="form-label">Remarks</label>
+                    <label for="tl-remarks" class="form-label">Remarks <span class="atem-req" id="tl-remarks-req"
+                            style="display:none;">*</span></label>
                     <textarea class="form-control" id="tl-remarks" rows="4"
                         placeholder="Notes, failure reason or excellence remark"></textarea>
                     <div class="atem-form-error" id="tl-remarks-error"></div>
@@ -851,8 +854,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 
     <?php if ($show_suspension_history): ?>
     <!-- Suspension Details -->
-    <div class="atem-bento-item atem-span-12">
-        <div class="atem-card" style="border-left:4px solid #ffc107;">
+    <div class="atem-bento-item atem-span-6">
+        <div class="atem-card h-100" style="border-left:4px solid #ffc107;">
             <h6 class="atem-card-title" style="color:#856404;"><i class="bi bi-slash-circle"></i> Suspension Details
             </h6>
             <?php if ($record_is_suspended): ?>
@@ -862,40 +865,54 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <p class="atem-card-hint">This card was previously suspended. Details are kept for reference.</p>
             <?php endif; ?>
             <div class="row g-3 mt-1">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label class="form-label">Suspended By</label>
                     <div style="font-size:13px;"><?php
                         $sb_id   = isset($record['suspended_by']) ? (int)$record['suspended_by'] : 0;
-                        $sb_name = ($sb_id && isset($staff_names[$sb_id])) ? $staff_names[$sb_id] : ($sb_id ? 'Staff #' . $sb_id : '&mdash;');
-                        echo htmlspecialchars($sb_name);
+                        $sb_name = ($sb_id && isset($staff_names[$sb_id])) ? $staff_names[$sb_id] : ($sb_id ? 'Staff #' . $sb_id : '');
+                        // htmlspecialchars() must wrap only the real value - applying it to
+                        // the '&mdash;' fallback double-encodes the entity into literal text.
+                        echo ($sb_name !== '') ? htmlspecialchars($sb_name) : '&mdash;';
                     ?></div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label class="form-label">Suspended On</label>
                     <div style="font-size:13px;"><?php
-                        $sb_ts = !empty($record['deleted_at']) ? $record['deleted_at'] : (isset($record['closure_date']) ? $record['closure_date'] : '');
-                        echo htmlspecialchars($sb_ts ? date('d-m-Y', strtotime($sb_ts)) : '&mdash;');
+                        echo $suspended_at_fmt ? htmlspecialchars($suspended_at_fmt) : '&mdash;';
                     ?></div>
                 </div>
                 <div class="col-12">
                     <label class="form-label">Reason</label>
                     <div style="font-size:13px;white-space:pre-wrap;"><?php
-                        echo htmlspecialchars(isset($record['suspended_remark']) && $record['suspended_remark'] !== '' ? $record['suspended_remark'] : '&mdash;');
+                        $sb_remark = isset($record['suspended_remark']) ? (string)$record['suspended_remark'] : '';
+                        echo ($sb_remark !== '') ? htmlspecialchars($sb_remark) : '&mdash;';
                     ?></div>
                 </div>
-                <?php if (!empty($record['appealed_at'])): ?>
-                <div class="col-12">
-                    <hr class="my-2">
-                </div>
-                <div class="col-md-4">
+            </div>
+            <?php if ($can_unsuspend): ?>
+            <div class="mt-3">
+                <button type="button" class="btn btn-success btn-sm" id="atem-unsuspend-btn">Unsuspend ATEM</button>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Appeal Details -->
+    <div class="atem-bento-item atem-span-6">
+        <div class="atem-card h-100" style="border-left:4px solid #0d6efd;">
+            <h6 class="atem-card-title" style="color:#0d6efd;"><i class="bi bi-megaphone"></i> Appeal Details</h6>
+            <?php if (!empty($record['appealed_at'])): ?>
+            <p class="atem-card-hint">The issuer has appealed this suspension.</p>
+            <div class="row g-3 mt-1">
+                <div class="col-md-6">
                     <label class="form-label">Appealed By</label>
                     <div style="font-size:13px;"><?php
                         $ap_id   = isset($record['appealed_by']) ? (int)$record['appealed_by'] : 0;
-                        $ap_name = ($ap_id && isset($staff_names[$ap_id])) ? $staff_names[$ap_id] : ($ap_id ? 'Staff #' . $ap_id : '&mdash;');
-                        echo htmlspecialchars($ap_name);
+                        $ap_name = ($ap_id && isset($staff_names[$ap_id])) ? $staff_names[$ap_id] : ($ap_id ? 'Staff #' . $ap_id : '');
+                        echo ($ap_name !== '') ? htmlspecialchars($ap_name) : '&mdash;';
                     ?></div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label class="form-label">Appealed On</label>
                     <div style="font-size:13px;"><?php
                         echo htmlspecialchars(date('d-m-Y H:i', strtotime($record['appealed_at'])));
@@ -904,11 +921,20 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                 <div class="col-12">
                     <label class="form-label">Appeal Reason</label>
                     <div style="font-size:13px;white-space:pre-wrap;"><?php
-                        echo htmlspecialchars(isset($record['appeal_remark']) ? $record['appeal_remark'] : '&mdash;');
+                        $ap_remark = isset($record['appeal_remark']) ? (string)$record['appeal_remark'] : '';
+                        echo ($ap_remark !== '') ? htmlspecialchars($ap_remark) : '&mdash;';
                     ?></div>
                 </div>
-                <?php endif; ?>
             </div>
+            <?php elseif ($can_appeal): ?>
+            <p class="atem-card-hint">If you believe this suspension should be reconsidered, you may submit one
+                appeal explaining why.</p>
+            <div class="mt-3">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="atem-appeal-btn">Appeal</button>
+            </div>
+            <?php else: ?>
+            <p class="atem-card-hint">No appeal has been submitted for this suspension.</p>
+            <?php endif; ?>
         </div>
     </div>
     <?php endif; ?>
@@ -927,12 +953,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <?php if ($can_suspend): ?>
     <button type="button" class="btn btn-warning" id="atem-suspend-btn">Suspend ATEM</button>
     <?php endif; ?>
-    <?php if ($can_unsuspend): ?>
-    <button type="button" class="btn btn-success" id="atem-unsuspend-btn">Unsuspend ATEM</button>
-    <?php endif; ?>
-    <?php if ($can_appeal): ?>
-    <button type="button" class="btn btn-outline-primary" id="atem-appeal-btn">Appeal</button>
-    <?php endif; ?>
+    <!-- Unsuspend/Appeal buttons now live on the Suspension Details / Appeal
+         Details cards above (see $show_suspension_history block), not here. -->
     <?php if (!$is_read): ?>
     <button type="button" class="btn btn-primary" id="atem-save-btn"
         <?php echo $api_unavailable ? 'disabled' : ''; ?>>Save ATEM</button>

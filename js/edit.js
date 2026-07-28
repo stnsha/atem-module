@@ -309,7 +309,11 @@
         (CFG.statuses || []).forEach(function (s) {
             if (String(s.id) === String(selId)) { selVal = s.value; }
         });
-        if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
+        // Force Terminated also closes the card (mirrors AtemController::update()'s
+        // $closesCard) but is deliberately kept out of the shared TERMINAL_STATUSES
+        // list itself, since that list also gates the Reward Decision UI elsewhere.
+        var closesCard = TERMINAL_STATUSES.indexOf(selVal) >= 0 || selVal === 'Force Terminated';
+        if (closesCard) {
             var _recStatusVal = '';
             (CFG.statuses || []).forEach(function (s) {
                 if (String(s.id) === String(REC.atem_status_id)) { _recStatusVal = s.value; }
@@ -350,6 +354,20 @@
         syncIncentiveApproval();
         recalcClosureDate();
         recalcFinalDue();
+    }
+
+    // Force Terminated must always carry a remark explaining why - mirrors the
+    // Extended Date required-asterisk toggle pattern (tl-ext1-req above).
+    // Enforced for real in validateFinal(); this only keeps the label in sync.
+    function syncRemarksRequired() {
+        var reqEl = $('tl-remarks-req');
+        if (!reqEl) { return; }
+        var statusEl = $('tl-status');
+        var selVal = '';
+        if (statusEl) {
+            (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(statusEl.value)) { selVal = s.value; } });
+        }
+        reqEl.style.display = (!READ && selVal === 'Force Terminated') ? '' : 'none';
     }
 
     // Start Date and End Date cannot be changed once the card has been created
@@ -441,10 +459,10 @@
     }
 
     // HQ cards show Complexity Level / Incentive Rule and the Estimated
-    // Incentive breakdown. Outlet cards show 5 Pillars / Reward Mechanism
-    // (lookups left empty for now) and a simple Estimated Reward total. The
-    // type is fixed at creation, so this is a one-time toggle from REC, not a
-    // live user choice like on create.php.
+    // Incentive breakdown. Outlet cards show 5 Pillars / Reward (a descriptive
+    // label, not a monetary breakdown - see js/create.js). The type is fixed
+    // at creation, so this is a one-time toggle from REC, not a live user
+    // choice like on create.php.
     function applyAtemTypeView() {
         var isHq = (parseInt(REC.atem_type, 10) || 1) === 1;
         var hqOnly = document.querySelectorAll('.atem-hq-only');
@@ -453,47 +471,27 @@
         for (var j = 0; j < outletOnly.length; j++) { outletOnly[j].classList.toggle('atem-hidden', isHq); }
 
         var incentiveSection = $('atem-incentive-section');
-        var rewardSection = $('atem-reward-section');
         if (incentiveSection) { incentiveSection.classList.toggle('atem-hidden', !isHq); }
-        if (rewardSection) { rewardSection.classList.toggle('atem-hidden', isHq); }
-    }
-
-    // Outlet flow: the "Total Reward" card mirrors the selected Reward Amount
-    // (the upside scenario). The actual signed final_amount is decided
-    // server-side once the card reaches a closing status.
-    var DEDUCT_REWARD_STATUSES = ['Extended', 'Completed with Extension', 'Failed'];
-
-    function recalcReward() {
-        var rewardEl = $('atem-reward-amount');
-        var totalEl = $('reward-total');
-        if (!rewardEl || !totalEl) { return; }
-
-        var statusEl = $('tl-status');
-        var statusVal = '';
-        if (statusEl) {
-            (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(statusEl.value)) { statusVal = s.value; } });
-        }
-
-        if (DEDUCT_REWARD_STATUSES.indexOf(statusVal) >= 0) {
-            var deductionEl = $('atem-deduction-amount');
-            var deductionVal = deductionEl ? Number(deductionEl.value || 0) : 0;
-            totalEl.textContent = '-' + money(deductionVal);
-        } else {
-            totalEl.textContent = money(rewardEl.value ? Number(rewardEl.value) : 0);
-        }
     }
 
     // --------------------------------------------------- area manager tagging
+    // Outlet Staff(s) are sourced by department/grade, not a single fixed
+    // position, so a match may have no position_rymnet row - omit the
+    // parenthetical entirely rather than showing "(...)" empty.
+    function amLabel(am) {
+        return am.position ? (am.name + ' (' + am.position + ')') : am.name;
+    }
+
     function renderAreaManagerTags() {
         var wrap = $('atem-am-tags');
         if (!wrap) { return; }
         if (!areaManagerTags.length) {
-            wrap.innerHTML = '<span class="atem-empty-state">No area manager tagged.</span>';
+            wrap.innerHTML = '<span class="atem-empty-state">No outlet staff tagged.</span>';
             return;
         }
         var html = '';
         for (var i = 0; i < areaManagerTags.length; i++) {
-            var label = areaManagerTags[i].name + ' (' + areaManagerTags[i].position + ')';
+            var label = amLabel(areaManagerTags[i]);
             html += '<span class="atem-outlet-tag">' + escapeHtml(label)
                 + (READ ? '' : '<span class="atem-outlet-tag-remove" data-id="' + areaManagerTags[i].id + '">&times;</span>')
                 + '</span>';
@@ -536,10 +534,10 @@
             if (res && res.success) {
                 setArciState(res.data);
             } else {
-                setError('arci-error', res && res.message ? res.message : 'Failed to auto-add Area Manager to Accountable.');
+                setError('arci-error', res && res.message ? res.message : 'Failed to auto-add Outlet Staff to Accountable.');
             }
         }).catch(function () {
-            setError('arci-error', 'Network error while adding Area Manager to Accountable.');
+            setError('arci-error', 'Network error while adding Outlet Staff to Accountable.');
         });
     }
 
@@ -562,10 +560,10 @@
         var managers = CFG.areaManagers || [];
         var html = '';
         for (var i = 0; i < managers.length; i++) {
-            var label = managers[i].name + ' (' + managers[i].position + ')';
+            var label = amLabel(managers[i]);
             html += '<li data-id="' + managers[i].id + '">' + escapeHtml(label) + '</li>';
         }
-        listEl.innerHTML = html || '<div class="atem-outlet-picker-empty">No area managers available</div>';
+        listEl.innerHTML = html || '<div class="atem-outlet-picker-empty">No outlet staff available</div>';
         syncAreaManagerPickerSelection();
 
         function openDropdown() {
@@ -663,7 +661,7 @@
         });
 
         if (orphanNames.length) {
-            textEl.textContent = 'The following Project Team member(s) are tagged to an outlet no longer covered by the selected Area Manager(s) - please recheck: ' + orphanNames.join(', ');
+            textEl.textContent = 'The following Project Team member(s) are tagged to an outlet no longer covered by the selected Outlet Staff(s) - please recheck: ' + orphanNames.join(', ');
             warnEl.classList.remove('atem-hidden');
         } else {
             warnEl.classList.add('atem-hidden');
@@ -1253,11 +1251,11 @@
         setError('tl-start-error', ''); setError('tl-end-error', ''); setError('tl-status-error', '');
         setError('tl-remarks-error', '');
         setError('reflink-section-error', ''); setError('atem-save-error', ''); setError('tl-reward-decision-error', '');
-        setError('atem-am-error', ''); setError('atem-reward-amount-error', ''); setError('atem-deduction-amount-error', '');
+        setError('atem-am-error', ''); setError('atem-reward-label-error', '');
         var isOutletType = (parseInt(REC.atem_type, 10) || 1) === 2;
         if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return false; }
         if (isOutletType) {
-            if (!areaManagerTags.length) { setError('atem-am-error', 'At least one Area Manager is required.'); return false; }
+            if (!areaManagerTags.length) { setError('atem-am-error', 'At least one Outlet Staff is required.'); return false; }
         } else if (!$('atem-level').value) {
             setError('atem-level-error', 'ATEM Complexity Levelis required.'); return false;
         }
@@ -1271,6 +1269,10 @@
         (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String($('tl-status').value)) { _tlStatusVal = s.value; } });
         if (_tlStatusVal === 'Extended' && !($('tl-ext1') && $('tl-ext1').value)) {
             setError('tl-status-error', 'Extended status requires an extended date. Please enter the extended date below.');
+            return false;
+        }
+        if (_tlStatusVal === 'Force Terminated' && !$('tl-remarks').value.trim()) {
+            setError('tl-remarks-error', 'A remark is required when force terminating an ATEM.');
             return false;
         }
         var originalStatusValue = (REC.status && REC.status.value) ? REC.status.value : '';
@@ -1338,8 +1340,7 @@
         }
         var levelId = $('atem-level').value, ruleId = $('atem-rule').value;
         var pillarId = $('atem-pillars') ? $('atem-pillars').value : '';
-        var rewardAmount = $('atem-reward-amount') ? $('atem-reward-amount').value : '';
-        var deductionAmount = $('atem-deduction-amount') ? $('atem-deduction-amount').value : '';
+        var rewardLabel = $('atem-reward-label') ? $('atem-reward-label').value : '';
         var description = quillEditor ? ((quillEditor.getText().trim() === '') ? '' : quillEditor.root.innerHTML) : '';
         var data = {
             title: $('atem-title').value.trim(),
@@ -1347,8 +1348,7 @@
             level_structure_id: levelId ? parseInt(levelId, 10) : null,
             incentive_rule_id: ruleId ? parseInt(ruleId, 10) : null,
             pillar_id: pillarId ? parseInt(pillarId, 10) : null,
-            reward_amount: rewardAmount ? parseInt(rewardAmount, 10) : null,
-            deduction_amount: deductionAmount ? parseInt(deductionAmount, 10) : null,
+            reward_label: rewardLabel || null,
             outlet_ids: outletTags.map(function (o) { return o.id; }),
             area_manager_ids: areaManagerTags.map(function (m) { return m.id; }),
             start_date: $('tl-start').value || null,
@@ -1369,8 +1369,7 @@
         if (!validateFinal()) { scrollToFirstError(); return; }
         var levelId = $('atem-level').value, ruleId = $('atem-rule').value;
         var pillarId = $('atem-pillars') ? $('atem-pillars').value : '';
-        var rewardAmount = $('atem-reward-amount') ? $('atem-reward-amount').value : '';
-        var deductionAmount = $('atem-deduction-amount') ? $('atem-deduction-amount').value : '';
+        var rewardLabel = $('atem-reward-label') ? $('atem-reward-label').value : '';
         var description = quillEditor ? ((quillEditor.getText().trim() === '') ? '' : quillEditor.root.innerHTML) : '';
         var data = {
             title: $('atem-title').value.trim(),
@@ -1378,8 +1377,7 @@
             level_structure_id: levelId ? parseInt(levelId, 10) : null,
             incentive_rule_id: ruleId ? parseInt(ruleId, 10) : null,
             pillar_id: pillarId ? parseInt(pillarId, 10) : null,
-            reward_amount: rewardAmount ? parseInt(rewardAmount, 10) : null,
-            deduction_amount: deductionAmount ? parseInt(deductionAmount, 10) : null,
+            reward_label: rewardLabel || null,
             outlet_ids: outletTags.map(function (o) { return o.id; }),
             area_manager_ids: areaManagerTags.map(function (m) { return m.id; }),
             start_date: $('tl-start').value || null,
@@ -1709,9 +1707,7 @@
             rewardedEl.checked = !wasDeducted;
         }
         if (REC.pillar_id && $('atem-pillars')) { $('atem-pillars').value = REC.pillar_id; }
-        if (REC.reward_amount && $('atem-reward-amount')) { $('atem-reward-amount').value = REC.reward_amount; }
-        if (REC.deduction_amount && $('atem-deduction-amount')) { $('atem-deduction-amount').value = REC.deduction_amount; }
-        recalcReward();
+        if ($('atem-reward-label')) { $('atem-reward-label').value = REC.reward_label || ''; }
         var amById = {};
         (CFG.areaManagers || []).forEach(function (a) { amById[a.id] = a; });
         areaManagerTags = (REC.area_managers || [])
@@ -1729,6 +1725,7 @@
         syncIncentiveApproval();
         syncRewardDecision();
         syncEndDateLock();
+        syncRemarksRequired();
         if (quillEditor && REC.description) { quillEditor.clipboard.dangerouslyPasteHTML(REC.description); }
 
         var grouped = { A: [], R: [], C: [], I: [] };
@@ -1835,7 +1832,7 @@
         if (!READ) { return; }
         if (quillEditor) { quillEditor.disable(); }
         ['atem-title', 'atem-issuer', 'atem-department', 'atem-level', 'atem-rule',
-            'atem-pillars', 'atem-reward-amount', 'atem-deduction-amount', 'tl-start', 'tl-end',
+            'atem-pillars', 'atem-reward-label', 'tl-start', 'tl-end',
             'tl-status', 'tl-final-due', 'tl-closure', 'tl-remarks', 'tl-extended', 'tl-ext1',
             'tl-incentive-approve-yes', 'tl-incentive-approve-no',
             'tl-reward-decision-rewarded', 'tl-reward-decision-deducted'].forEach(function (id) {
@@ -1910,8 +1907,7 @@
     // --------------------------------------------------------------- wiring
     function bind() {
         $('atem-level').addEventListener('change', function () { recalcIncentive(); saveInline(); });
-        if ($('atem-reward-amount')) { $('atem-reward-amount').addEventListener('change', function () { recalcReward(); saveInline(); }); }
-        if ($('atem-deduction-amount')) { $('atem-deduction-amount').addEventListener('change', function () { recalcReward(); saveInline(); }); }
+        if ($('atem-reward-label')) { $('atem-reward-label').addEventListener('change', function () { saveInline(); }); }
         $('atem-rule').addEventListener('change', function () {
             var _newLimits = getRuleLimits(selectedRule());
             var aInc = 0;
@@ -1981,7 +1977,7 @@
             $('tl-status').addEventListener('change', function () {
                 recalcClosureDate(); syncExtendedByStatus(); syncEndDateLock(); applyExtMins();
                 syncRewardDecision();
-                recalcReward();
+                syncRemarksRequired();
                 showTimelineReminder();
                 if (CFG.issuerCompletedEdit) {
                     if (String(this.value) === String(REC.atem_status_id)) {
@@ -2329,7 +2325,16 @@
 
         if (!levelVal)  { setError('atem-save-error', 'Please select a complexity level.'); return; }
         if (!statusVal) { setError('atem-save-error', 'Please select a status.'); return; }
+
+        var statusStrVal = '';
+        (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(statusVal)) { statusStrVal = s.value; } });
+        var remarksVal = $('tl-remarks') ? $('tl-remarks').value.trim() : '';
+        if (statusStrVal === 'Force Terminated' && !remarksVal) {
+            setError('tl-remarks-error', 'A remark is required when force terminating an ATEM.');
+            return;
+        }
         setError('atem-save-error', '');
+        setError('tl-remarks-error', '');
 
         var btn = $('atem-save-btn');
         if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
@@ -2346,7 +2351,10 @@
                 is_extended:        REC.is_extended          || false,
                 extended_date_1:    REC.extended_date_1      ? dateOnly(REC.extended_date_1) : null,
                 atem_status_id:     statusVal,
-                remarks:            REC.remarks             || null,
+                // Was previously REC.remarks (the stale pre-edit value) - the
+                // typed-in Remarks box was silently discarded on every save
+                // through this SuperAdmin-terminal-edit path.
+                remarks:            remarksVal || null,
                 incentive_approved: false
             }
         }).then(function (res) {

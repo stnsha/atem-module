@@ -58,13 +58,14 @@ if ($outlet_res) {
     }
 }
 
-// Area Managers for the Area Manager(s) picker (outlet staff flow only).
-// status_rym = 134 identifies the "Area Manager" position in position_rymnet.
+// Outlet Staff(s) picker (outlet staff flow only): department 1 (Outlet) and
+// grade 3 and above. LEFT JOIN so a staff member without a matching
+// position_rymnet row is still included (just with a null position label).
 $area_managers_list = [];
 $am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
            FROM staff s
-           JOIN position_rymnet p ON p.id = s.status_rym
-           WHERE s.status_rym = 134 AND s.recycle != 1
+           LEFT JOIN position_rymnet p ON p.id = s.status_rym
+           WHERE FIND_IN_SET('1', s.department) AND s.grade >= 3 AND s.recycle != 1
            ORDER BY s.nama_staff";
 $am_res = mysqli_query($conn, $am_sql);
 if ($am_res) {
@@ -79,7 +80,7 @@ if ($am_res) {
         $area_managers_list[] = [
             'id'         => (int) $arow['id'],
             'name'       => $arow['nama_staff'],
-            'position'   => $arow['position_name'],
+            'position'   => $arow['position_name'] ?? '',
             'outlet_ids' => $am_outlet_ids,
         ];
     }
@@ -121,7 +122,7 @@ if ($all_staff_res) {
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
 
-$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => []];
+$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => [], 'reward_masterlist' => []];
 $lookup_result = getAtemLookups($staff_id);
 if (!empty($lookup_result['success']) && isset($lookup_result['data'])) {
     $lookups = $lookup_result['data'];
@@ -222,25 +223,17 @@ $api_unavailable = empty($lookup_result['success']);
                     <input type="text" class="form-control" id="atem-department"
                         value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
-                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-amount-group">
-                    <label for="atem-reward-amount" class="form-label">Reward Amount</label>
-                    <select class="form-select" id="atem-reward-amount">
-                        <option value="0" selected>RM0</option>
-                        <option value="50">+ RM50</option>
-                        <option value="100">+ RM100</option>
-                        <option value="200">+ RM200</option>
+                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-label-group">
+                    <label for="atem-reward-label" class="form-label">Reward</label>
+                    <select class="form-select" id="atem-reward-label">
+                        <option value="" selected>None</option>
+                        <?php foreach ($lookups['reward_masterlist'] as $_rm): ?>
+                        <option value="<?php echo htmlspecialchars((string)$_rm['reward_value']); ?>">
+                            <?php echo htmlspecialchars((string)$_rm['reward_value']); ?>
+                        </option>
+                        <?php endforeach; ?>
                     </select>
-                    <div class="atem-form-error" id="atem-reward-amount-error"></div>
-                </div>
-                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-deduction-amount-group">
-                    <label for="atem-deduction-amount" class="form-label">Deduction Amount</label>
-                    <select class="form-select" id="atem-deduction-amount">
-                        <option value="0" selected>RM0</option>
-                        <option value="50">- RM50</option>
-                        <option value="100">- RM100</option>
-                        <option value="200">- RM200</option>
-                    </select>
-                    <div class="atem-form-error" id="atem-deduction-amount-error"></div>
+                    <div class="atem-form-error" id="atem-reward-label-error"></div>
                 </div>
                 <div class="col-md-6 atem-hq-only" id="atem-level-group">
                     <label for="atem-level" class="form-label">ATEM Complexity Level<span
@@ -265,23 +258,29 @@ $api_unavailable = empty($lookup_result['success']);
                     </select>
                     <div class="atem-form-error" id="atem-pillars-error"></div>
                 </div>
-                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-am-tag-group">
-                    <label class="form-label">Area Manager(s) <span class="atem-req">*</span></label>
-                    <div class="atem-outlet-picker" id="atem-am-picker-wrap">
-                        <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area manager(s)...
-                        </div>
-                        <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
-                            <div class="atem-outlet-picker-search-wrap">
-                                <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
-                                    placeholder="Search area manager...">
+                <div class="col-12 atem-outlet-only atem-hidden" id="atem-am-tag-group">
+                    <label class="form-label">Outlet Staff(s) <span class="atem-req">*</span></label>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <div class="atem-outlet-picker" id="atem-am-picker-wrap">
+                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select outlet
+                                    staff(s)...</div>
+                                <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
+                                    <div class="atem-outlet-picker-search-wrap">
+                                        <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
+                                            placeholder="Search outlet staff...">
+                                    </div>
+                                    <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
+                                </div>
                             </div>
-                            <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
+                            <div class="atem-form-error" id="atem-am-error"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <div id="atem-am-tags" class="atem-outlet-tags">
+                                <span class="atem-empty-state">No outlet staff tagged.</span>
+                            </div>
                         </div>
                     </div>
-                    <div id="atem-am-tags" class="atem-outlet-tags mt-2">
-                        <span class="atem-empty-state">No area manager tagged.</span>
-                    </div>
-                    <div class="atem-form-error" id="atem-am-error"></div>
                 </div>
                 <div class="col-md-6">
                     <label for="tl-start" class="form-label">Start Date <span class="atem-req">*</span></label>
@@ -329,18 +328,6 @@ $api_unavailable = empty($lookup_result['success']);
                 </div>
                 <div class="atem-incentive-note" id="inc-note">
                     Select an ATEM Complexity Leveland rule to calculate incentive. C and I are not incentivised.
-                </div>
-            </div>
-        </div>
-
-        <div class="atem-card mb-3 atem-hidden" id="atem-reward-section">
-            <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Reward</h6>
-            <p class="atem-card-hint">This shows an estimated reward based on the selected pillar and reward mechanism.
-                The company reserves the right to determine the final payout under its incentive scheme.</p>
-            <div class="atem-incentive">
-                <div class="atem-incentive-total-block">
-                    <div class="atem-incentive-total-label">Total Reward</div>
-                    <div class="atem-incentive-total-amount" id="reward-total">RM0.00</div>
                 </div>
             </div>
         </div>

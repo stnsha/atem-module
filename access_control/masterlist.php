@@ -29,25 +29,32 @@ ob_end_flush();
     width: 100%;
 }
 
-.lib-row.editing .lib-label-text {
+.lib-row.editing .lib-label-text,
+.reward-row.editing .lib-label-text {
     display: none;
 }
 
-.lib-row.editing .lib-label-input {
+.lib-row.editing .lib-label-input,
+.reward-row.editing .lib-label-input {
     display: inline-block;
 }
 
-.lib-row.editing .btn-edit {
+.lib-row.editing .btn-edit,
+.reward-row.editing .btn-reward-edit {
     display: none;
 }
 
 .lib-row.editing .btn-save,
-.lib-row.editing .btn-cancel {
+.lib-row.editing .btn-cancel,
+.reward-row.editing .btn-reward-save,
+.reward-row.editing .btn-reward-cancel {
     display: inline-block;
 }
 
 .btn-save,
-.btn-cancel {
+.btn-cancel,
+.btn-reward-save,
+.btn-reward-cancel {
     display: none;
 }
 
@@ -140,6 +147,46 @@ ob_end_flush();
 
 </div>
 
+<div class="row g-4 mt-1">
+
+    <!-- Reward Masterlist (Outlet ATEM) -->
+    <div class="col-md-6">
+        <div class="bento-card">
+            <p class="mb-3 text-muted"
+                style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Outlet ATEM
+                Reward Masterlist</p>
+            <div id="reward-alert" class="alert alert-dismissible fade show mb-3" role="alert"
+                style="display:none !important;font-size:13px;">
+                <span id="reward-alert-msg"></span>
+                <button type="button" class="btn-close" onclick="dismissRewardAlert()"></button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 lib-table">
+                    <thead>
+                        <tr>
+                            <th style="width:48px;">ID</th>
+                            <th>Reward Value</th>
+                            <th style="width:70px;">Active</th>
+                            <th style="width:120px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="reward-tbody">
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <?php if ($_is_superadmin): ?>
+            <div class="mt-3 pt-3" style="border-top:1px solid #e9ecef;">
+                <button class="btn btn-sm btn-outline-primary btn-reward-add-new">+ Add Reward Value</button>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+</div>
+
 </div><!-- /.atem-container -->
 
 <!-- Active status change confirmation modal -->
@@ -165,7 +212,21 @@ ob_end_flush();
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 var BACKEND_URL = <?php echo json_encode(ATEM_BASE . 'access_control/backend.php'); ?>;
+// Reward Masterlist is atem-api-backed data (not an ODB table like Grade/
+// Struct), so it goes through api.php's JWT bridge instead of backend.php's
+// direct mysqli - a separate URL and JSON-body request helper, kept isolated
+// from the grade/struct handlers below rather than forced into their shape.
+var API_URL = <?php echo json_encode(ATEM_BASE . 'api.php'); ?>;
 var IS_SUPERADMIN = <?php echo json_encode((bool) $_is_superadmin); ?>;
+
+function apiCall(action, payload) {
+    var body = Object.assign({ action: action }, payload || {});
+    return fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+}
 
 function buildRow(type, item) {
     var actionsHtml = IS_SUPERADMIN
@@ -419,7 +480,196 @@ function dismissAlert(type) {
 }
 window.dismissAlert = dismissAlert;
 
+// --------------------------------------------------- Reward Masterlist
+function buildRewardRow(item) {
+    var actionsHtml = IS_SUPERADMIN
+        ? '<button class="btn btn-sm btn-outline-secondary btn-reward-edit">Edit</button>' +
+          '<button class="btn btn-sm btn-primary btn-reward-save me-1">Save</button>' +
+          '<button class="btn btn-sm btn-outline-secondary btn-reward-cancel">Cancel</button>'
+        : '';
+    return '<tr class="reward-row" data-id="' + item.id + '">' +
+        '<td><strong>' + item.id + '</strong></td>' +
+        '<td>' +
+        '<span class="lib-label-text">' + $('<span>').text(item.reward_value).html() + '</span>' +
+        '<input type="text" class="form-control form-control-sm lib-label-input" value="' + $('<span>').text(item.reward_value).html() + '">' +
+        '</td>' +
+        '<td class="text-center">' +
+        '<input type="checkbox" class="form-check-input reward-active-toggle"' +
+        (item.is_active ? ' checked' : '') + (IS_SUPERADMIN ? '' : ' disabled') + '>' +
+        '</td>' +
+        '<td>' + actionsHtml + '</td>' +
+        '</tr>';
+}
+
+function showRewardAlert(msg, success) {
+    $('#reward-alert').removeClass('alert-success alert-danger')
+        .addClass(success ? 'alert-success' : 'alert-danger')
+        .css('display', 'block');
+    $('#reward-alert-msg').text(msg);
+}
+
+function dismissRewardAlert() { $('#reward-alert').css('display', 'none'); }
+window.dismissRewardAlert = dismissRewardAlert;
+
+function loadRewardMasterlist() {
+    apiCall('get-reward-masterlist').then(function(response) {
+        if (!response || !response.success) {
+            $('#reward-tbody').html('<tr><td colspan="4" class="text-center text-danger py-3">' +
+                $('<span>').text((response && response.message) || 'Failed to load.').html() + '</td></tr>');
+            return;
+        }
+        var html = '';
+        (response.data || []).forEach(function(item) { html += buildRewardRow(item); });
+        $('#reward-tbody').html(html || '<tr><td colspan="4" class="text-center text-muted py-3">No records.</td></tr>');
+    }).catch(function() {
+        $('#reward-tbody').html('<tr><td colspan="4" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>');
+    });
+}
+
+$(document).on('click', '.btn-reward-edit', function() {
+    $(this).closest('.reward-row').addClass('editing');
+});
+
+$(document).on('click', '.btn-reward-cancel', function() {
+    var $row = $(this).closest('.reward-row');
+    $row.find('.lib-label-input').val($row.find('.lib-label-text').text());
+    $row.removeClass('editing');
+});
+
+$(document).on('click', '.btn-reward-save', function() {
+    var $row = $(this).closest('.reward-row');
+    var id = $row.data('id');
+    var val = $row.find('.lib-label-input').val().trim();
+    var $btn = $(this);
+
+    if (val === '') { return; }
+
+    $btn.prop('disabled', true).text('Saving...');
+
+    apiCall('update-reward-masterlist', { id: id, reward_value: val }).then(function(response) {
+        if (response.success) {
+            $row.find('.lib-label-text').text(val);
+            $row.removeClass('editing');
+            showRewardAlert('Reward value updated.', true);
+        } else {
+            showRewardAlert(response.message || 'Update failed.', false);
+        }
+    }).catch(function() {
+        showRewardAlert('Request failed. Please try again.', false);
+    }).finally(function() {
+        $btn.prop('disabled', false).text('Save');
+    });
+});
+
+var _rewardActiveModal = null;
+function getRewardActiveModal() {
+    if (!_rewardActiveModal && typeof bootstrap !== 'undefined') {
+        _rewardActiveModal = new bootstrap.Modal(document.getElementById('lib-active-confirm-modal'));
+    }
+    return _rewardActiveModal;
+}
+
+function submitRewardActiveChange($chk, targetActive) {
+    var $row = $chk.closest('.reward-row');
+    var id = $row.data('id');
+
+    $chk.prop('checked', targetActive).prop('disabled', true);
+
+    apiCall('update-reward-masterlist', { id: id, is_active: targetActive ? 1 : 0 }).then(function(response) {
+        if (response.success) {
+            showRewardAlert(response.message || 'Updated.', true);
+        } else {
+            $chk.prop('checked', !targetActive);
+            showRewardAlert(response.message || 'Update failed.', false);
+        }
+    }).catch(function() {
+        $chk.prop('checked', !targetActive);
+        showRewardAlert('Request failed. Please try again.', false);
+    }).finally(function() {
+        $chk.prop('disabled', false);
+    });
+}
+
+$(document).on('click', '.reward-active-toggle', function(e) {
+    e.preventDefault();
+    if (!IS_SUPERADMIN) { return; }
+
+    var $chk = $(this);
+    var $row = $chk.closest('.reward-row');
+    var label = $row.find('.lib-label-text').text();
+    var targetActive = $chk.prop('checked');
+
+    var message = targetActive
+        ? 'Reactivate the "' + label + '" reward value? It will become selectable again on the Outlet ATEM create form.'
+        : 'Deactivate the "' + label + '" reward value? Existing cards keep it, but it will no longer be selectable for new Outlet ATEM cards.';
+
+    $('#lib-active-confirm-message').text(message);
+
+    // Reuses the same shared confirm modal as Grade/Struct (#lib-active-confirm-modal) -
+    // only one such modal exists per page, and only one toggle can be pending at a time.
+    var modal = getRewardActiveModal();
+    if (!modal) {
+        submitRewardActiveChange($chk, targetActive);
+        return;
+    }
+
+    $('#lib-active-confirm-ok').off('click').on('click', function() {
+        modal.hide();
+        submitRewardActiveChange($chk, targetActive);
+    });
+    modal.show();
+});
+
+$(document).on('click', '.btn-reward-add-new', function() {
+    if ($('#reward-tbody').find('.lib-add-row').length) { return; }
+
+    var row = '<tr class="lib-add-row">' +
+        '<td><em class="text-muted" style="font-size:12px;">auto</em></td>' +
+        '<td><input type="text" class="form-control form-control-sm reward-new-value" placeholder="e.g. Free Ticket"></td>' +
+        '<td></td>' +
+        '<td>' +
+        '<button class="btn btn-sm btn-primary btn-reward-add-save me-1">Save</button>' +
+        '<button class="btn btn-sm btn-outline-secondary btn-reward-add-cancel">Cancel</button>' +
+        '</td>' +
+        '</tr>';
+    $('#reward-tbody').append(row);
+    $('#reward-tbody').find('.reward-new-value').focus();
+});
+
+$(document).on('click', '.btn-reward-add-cancel', function() {
+    $(this).closest('.lib-add-row').remove();
+});
+
+$(document).on('click', '.btn-reward-add-save', function() {
+    var $row = $(this).closest('.lib-add-row');
+    var $input = $row.find('.reward-new-value');
+    var val = $input.val().trim();
+    var $btn = $(this);
+
+    if (val === '') {
+        $input.focus();
+        return;
+    }
+
+    $btn.prop('disabled', true).text('Saving...');
+
+    apiCall('add-reward-masterlist', { reward_value: val }).then(function(response) {
+        if (response.success) {
+            $row.remove();
+            showRewardAlert('Reward value added.', true);
+            loadRewardMasterlist();
+        } else {
+            showRewardAlert(response.message || 'Add failed.', false);
+            $btn.prop('disabled', false).text('Save');
+        }
+    }).catch(function() {
+        showRewardAlert('Request failed. Please try again.', false);
+        $btn.prop('disabled', false).text('Save');
+    });
+});
+
 loadLibrary();
+loadRewardMasterlist();
 </script>
 </body>
 

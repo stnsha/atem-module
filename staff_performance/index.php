@@ -16,17 +16,6 @@ if (isset($department) && $department !== '') {
     }
 }
 
-// staff.outlet is comma-separated too - used to narrow a grade-2 Outlet-
-// department viewer down to their own specific outlet(s) in the Staff
-// dropdown below, mirroring api.php's get-performance-list scoping.
-$_perf_outlet_ids = array();
-if (isset($outlet) && $outlet !== '') {
-    foreach (explode(',', (string)$outlet) as $_perf_o) {
-        $_perf_o = (int)trim($_perf_o);
-        if ($_perf_o > 0) { $_perf_outlet_ids[] = $_perf_o; }
-    }
-}
-
 if ($atem_permission < 3 && !$_is_superadmin) {
     ob_end_clean();
     header('Location: ' . ATEM_BASE . 'index.php');
@@ -81,11 +70,6 @@ if ($gr) { while ($row = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$row['id'
 $str_r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
 if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$row['id']] = $row['struct_name']; } }
 
-// Outlet filter options, shown alongside Department in the merged filter panel.
-$outlet_filter_options = array();
-$outlet_r = mysqli_query($conn, "SELECT id, code FROM outlet ORDER BY code ASC");
-if ($outlet_r) { while ($row = mysqli_fetch_assoc($outlet_r)) { $outlet_filter_options[] = array('id' => (int)$row['id'], 'name' => $row['code']); } }
-
 // Build department options respecting grade — SuperAdmin always sees all departments
 // regardless of their real grade (mirrors $_is_superadmin, never a bumped $atem_permission).
 $dept_filter_options = array();
@@ -114,19 +98,16 @@ $perf_default_statuses = array('Completed', 'Completed with Excellence');
 
 // Staff filter dropdown (searchable, like the one on index.php). Only grade 2
 // (non-SA) is narrowed to their own department overlap here, mirroring
-// api.php's get-performance-list mandatory scoping - a grade-2 Outlet-
-// department viewer is narrowed further to their own specific outlet(s),
-// since department=1 alone is shared by every outlet company-wide. Grade 3+
-// and SuperAdmin see every staff member company-wide, same as grade 4/5 -
-// matches the Department filter dropdown above, which already shows every
-// department starting at grade 3. Dept-17 grade-1 users see every staff
-// member too, matching the same "no narrower carve-out" access model as the
-// table itself. dept_ids lets the frontend narrow options further when a
-// specific Department filter is also selected.
-$_perf_is_grade2_outlet = ((int)$atem_permission === 2 && !$_is_superadmin && in_array(1, $_perf_dept_ids, true));
-$_perf_is_scoped_grade  = ((int)$atem_permission === 2 && !$_is_superadmin);
+// api.php's get-performance-list mandatory scoping. Grade 3+ and SuperAdmin
+// see every staff member company-wide, same as grade 4/5 - matches the
+// Department filter dropdown above, which already shows every department
+// starting at grade 3. Dept-17 grade-1 users see every staff member too,
+// matching the same "no narrower carve-out" access model as the table
+// itself. dept_ids lets the frontend narrow options further when a specific
+// Department filter is also selected.
+$_perf_is_scoped_grade = ((int)$atem_permission === 2 && !$_is_superadmin);
 $perf_staff_options = array();
-$_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+$_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
 if ($_pso_res) {
     while ($_pso_row = mysqli_fetch_assoc($_pso_res)) {
         $_deptIds = array();
@@ -134,17 +115,8 @@ if ($_pso_res) {
             $_p = (int)trim($_p);
             if ($_p > 0) { $_deptIds[] = $_p; }
         }
-        if ($_perf_is_scoped_grade) {
-            if ($_perf_is_grade2_outlet) {
-                $_outletIds = array();
-                foreach (explode(',', (string)$_pso_row['outlet']) as $_po) {
-                    $_po = (int)trim($_po);
-                    if ($_po > 0) { $_outletIds[] = $_po; }
-                }
-                if (!array_intersect($_perf_outlet_ids, $_outletIds)) { continue; }
-            } elseif (!array_intersect($_deptIds, $_perf_dept_ids)) {
-                continue;
-            }
+        if ($_perf_is_scoped_grade && !array_intersect($_deptIds, $_perf_dept_ids)) {
+            continue;
         }
         $perf_staff_options[] = array('id' => (int)$_pso_row['id'], 'name' => $_pso_row['nama_staff'], 'dept_ids' => $_deptIds);
     }
@@ -202,13 +174,21 @@ if ($_pso_res) {
         </div>
         <div class="col-md-3 col-sm-6">
             <label class="form-label">Quarter</label>
-            <select id="perf-filter-quarter" class="form-select form-select-sm">
-                <option value="0"<?php echo ($init_quarter === 0) ? ' selected' : ''; ?>>All Quarter</option>
-                <option value="1"<?php echo ($init_quarter === 1) ? ' selected' : ''; ?>>Q1 (Jan-Mar)</option>
-                <option value="2"<?php echo ($init_quarter === 2) ? ' selected' : ''; ?>>Q2 (Apr-Jun)</option>
-                <option value="3"<?php echo ($init_quarter === 3) ? ' selected' : ''; ?>>Q3 (Jul-Sep)</option>
-                <option value="4"<?php echo ($init_quarter === 4) ? ' selected' : ''; ?>>Q4 (Oct-Dec)</option>
-            </select>
+            <div class="vf-issuer-wrap" id="perf-quarter-wrap">
+                <div class="vf-s2-selection" id="perf-quarter-btn" tabindex="0">All Quarter</div>
+                <div class="vf-s2-dropdown" id="perf-quarter-dropdown">
+                    <ul class="vf-s2-list" style="padding:4px 0;">
+                        <?php foreach (array(1 => 'Q1 (Jan-Mar)', 2 => 'Q2 (Apr-Jun)', 3 => 'Q3 (Jul-Sep)', 4 => 'Q4 (Oct-Dec)') as $_qn => $_ql): ?>
+                        <li class="vf-s2-list-item" style="cursor:default;">
+                            <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                <input type="checkbox" class="perf-quarter-cb" value="<?php echo $_qn; ?>"<?php echo ($init_quarter === $_qn) ? ' checked' : ''; ?>>
+                                <?php echo htmlspecialchars($_ql); ?>
+                            </label>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            </div>
         </div>
         <?php if (!empty($dept_filter_options)): ?>
         <div class="col-md-3 col-sm-6">
@@ -221,19 +201,6 @@ if ($_pso_res) {
             </select>
         </div>
         <?php endif; ?>
-        <div class="col-md-3 col-sm-6">
-            <label class="form-label">Outlet</label>
-            <div class="vf-issuer-wrap" id="perf-outlet-wrap">
-                <div class="vf-s2-selection" id="perf-outlet-btn" tabindex="0">All outlets</div>
-                <div class="vf-s2-dropdown" id="perf-outlet-dropdown">
-                    <div class="vf-s2-search-wrap">
-                        <input class="vf-s2-search" id="perf-outlet-search" type="search" placeholder="Search outlet code...">
-                    </div>
-                    <ul class="vf-s2-list" id="perf-outlet-list"></ul>
-                </div>
-                <input type="hidden" id="perf-outlet-value" value="0">
-            </div>
-        </div>
         <div class="col-md-3 col-sm-6">
             <label class="form-label">Grade</label>
             <select id="perf-filter-grade" class="form-select form-select-sm">
@@ -324,8 +291,9 @@ if ($_pso_res) {
                     <th>Grade</th>
                     <th>Evaluation Structure</th>
                     <th class="text-center" title="Click to view details">HQ ATEM</th>
-                    <th class="text-center" title="Click to view details">Outlet ATEM</th>
                     <th class="text-center" title="Click to view details">Completed</th>
+                    <th class="text-center" title="Click to view details">Active</th>
+                    <th class="text-center" title="Click to view details">Extended</th>
                     <th class="text-center" title="Click to view details">Failed</th>
                     <th class="text-end">Est. Reward</th>
                     <th>Action</th>
@@ -333,7 +301,7 @@ if ($_pso_res) {
             </thead>
             <tbody id="perf-tbody">
                 <tr>
-                    <td colspan="10" class="text-center text-muted py-4">Loading...</td>
+                    <td colspan="11" class="text-center text-muted py-4">Loading...</td>
                 </tr>
             </tbody>
         </table>
@@ -380,7 +348,6 @@ var PERF_CFG = <?php echo json_encode(array(
     'initYear'        => $init_year,
     'defaultStatuses' => $perf_default_statuses,
     'staff'           => $perf_staff_options,
-    'outlets'         => $outlet_filter_options,
     'isSuperAdmin'    => $_is_superadmin,
     'canLockPayout'   => $_show_lock_ui,
 )); ?>;
@@ -489,6 +456,42 @@ function updateStatusButtonLabel(prefix) {
     }
 }
 
+// ---------------------------------------------------------- quarter filter
+// Same checkbox-dropdown widget as Status above, but empty selection means
+// "no quarter filter" (falls back to Month/unfiltered), not "match nothing" -
+// unlike Status, every month already belongs to exactly one quarter, so
+// checking all 4 is numerically the same as checking none.
+function getSelectedQuarters(prefix) {
+    var boxes = document.querySelectorAll('.' + prefix + '-quarter-cb:checked');
+    var out = [];
+    for (var i = 0; i < boxes.length; i++) { out.push(parseInt(boxes[i].value, 10)); }
+    return out;
+}
+
+function updateQuarterButtonLabel(prefix) {
+    var btn = document.getElementById(prefix + '-quarter-btn');
+    if (!btn) { return; }
+    var selected = getSelectedQuarters(prefix);
+    var allBoxes = document.querySelectorAll('.' + prefix + '-quarter-cb');
+    if (selected.length === 0 || selected.length === allBoxes.length) {
+        btn.textContent = 'All Quarter';
+    } else {
+        var labels = [];
+        for (var i = 0; i < selected.length; i++) { labels.push('Q' + selected[i]); }
+        btn.textContent = labels.join(', ');
+    }
+}
+
+function resetQuarterDropdown(prefix, checkedValue) {
+    var boxes = document.querySelectorAll('.' + prefix + '-quarter-cb');
+    for (var i = 0; i < boxes.length; i++) {
+        boxes[i].checked = checkedValue ? (boxes[i].value === String(checkedValue)) : false;
+    }
+    updateQuarterButtonLabel(prefix);
+    var dropEl = document.getElementById(prefix + '-quarter-dropdown');
+    if (dropEl) { dropEl.classList.remove('open'); }
+}
+
 // ------------------------------------------------- staff searchable dropdown
 // Mirrors the Staff dropdown on index.php (js/index.js buildStaffDropdown).
 // Options narrow to the selected department, if any.
@@ -595,106 +598,26 @@ function resetStaffDropdown() {
     if (dropEl) { dropEl.classList.remove('open'); }
 }
 
-// ---------------------------------------------------------- outlet dropdown
-// Searchable dropdown over PERF_CFG.outlets (id/code), same widget shape as
-// the staff dropdown above. Sits alongside Department in the merged filter
-// panel rather than replacing it (both HQ and Outlet ATEM show together now).
-function buildOutletDropdown() {
-    var listEl   = document.getElementById('perf-outlet-list');
-    var searchEl = document.getElementById('perf-outlet-search');
-    var btnEl    = document.getElementById('perf-outlet-btn');
-    var dropEl   = document.getElementById('perf-outlet-dropdown');
-    var valEl    = document.getElementById('perf-outlet-value');
-    if (!listEl || !btnEl || !dropEl) { return; }
-
-    syncS2ButtonSize(btnEl, document.getElementById('perf-filter-year'));
-
-    function renderList() {
-        var outlets = PERF_CFG.outlets || [];
-        var html = '<li class="vf-s2-list-item" data-id="0">All outlets</li>';
-        for (var i = 0; i < outlets.length; i++) {
-            html += '<li class="vf-s2-list-item" data-id="' + outlets[i].id + '">' + escHtml(outlets[i].name) + '</li>';
-        }
-        listEl.innerHTML = html;
-    }
-
-    function openDropdown() {
-        renderList();
-        dropEl.classList.add('open');
-        if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
-    }
-    function closeDropdown() { dropEl.classList.remove('open'); }
-
-    function filterList(term) {
-        var items = listEl.querySelectorAll('li');
-        var lower = term.toLowerCase();
-        for (var j = 0; j < items.length; j++) {
-            var text = items[j].textContent || '';
-            items[j].classList.toggle('hidden', !(!lower || text.toLowerCase().indexOf(lower) >= 0));
-        }
-    }
-
-    function selectOutlet(id, name) {
-        if (valEl) { valEl.value = id; }
-        if (btnEl) { btnEl.textContent = name; }
-        closeDropdown();
-        loadPerformance(buildPayload());
-    }
-
-    btnEl.addEventListener('click', function(e) {
-        e.stopPropagation();
-        if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
-    });
-    btnEl.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
-    });
-    if (searchEl) {
-        searchEl.addEventListener('input', function() { filterList(this.value); });
-        searchEl.addEventListener('click', function(e) { e.stopPropagation(); });
-    }
-    listEl.addEventListener('click', function(e) {
-        var li = e.target.closest ? e.target.closest('li') : null;
-        if (!li) { return; }
-        selectOutlet(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
-    });
-    document.addEventListener('click', function(e) {
-        var wrap = document.getElementById('perf-outlet-wrap');
-        if (wrap && !wrap.contains(e.target)) { closeDropdown(); }
-    });
-}
-
-function resetOutletDropdown() {
-    var valEl = document.getElementById('perf-outlet-value');
-    var btnEl = document.getElementById('perf-outlet-btn');
-    var dropEl = document.getElementById('perf-outlet-dropdown');
-    if (valEl)  { valEl.value = '0'; }
-    if (btnEl)  { btnEl.textContent = 'All outlets'; }
-    if (dropEl) { dropEl.classList.remove('open'); }
-}
-
 function buildPayload() {
     var year = parseInt(document.getElementById('perf-filter-year').value, 10) || PERF_CFG.initYear;
     var month = parseInt(document.getElementById('perf-filter-month').value, 10) || 0;
-    var quarter = parseInt(document.getElementById('perf-filter-quarter').value, 10) || 0;
+    var quarters = getSelectedQuarters('perf');
     var deptEl = document.getElementById('perf-filter-dept');
-    var outletEl = document.getElementById('perf-outlet-value');
     var gradeEl = document.getElementById('perf-filter-grade');
     var structEl = document.getElementById('perf-filter-struct');
     var staffEl = document.getElementById('perf-staff-value');
     var dept = deptEl ? (parseInt(deptEl.value, 10) || 0) : 0;
-    var outletId = outletEl ? (parseInt(outletEl.value, 10) || 0) : 0;
     var grade = gradeEl ? (parseInt(gradeEl.value, 10) || 0) : 0;
     var struct = structEl ? (parseInt(structEl.value, 10) || 0) : 0;
     var staffId = staffEl ? (parseInt(staffEl.value, 10) || 0) : 0;
-    if (quarter > 0) {
+    if (quarters.length) {
         month = 0;
     }
     return {
         year: year,
         month: month,
-        quarter: quarter,
+        quarter: quarters,
         dept: dept,
-        filter_outlet_id: outletId,
         grade: grade,
         struct: struct,
         staff_id: staffId,
@@ -703,8 +626,12 @@ function buildPayload() {
 }
 
 function buildLabel(payload) {
-    if (payload.quarter > 0) {
-        return (QUARTERS_LABEL[payload.quarter] || ('Q' + payload.quarter)) + ' ' + payload.year;
+    if (payload.quarter && payload.quarter.length) {
+        var qLabels = [];
+        for (var i = 0; i < payload.quarter.length; i++) {
+            qLabels.push(QUARTERS_LABEL[payload.quarter[i]] || ('Q' + payload.quarter[i]));
+        }
+        return qLabels.join(' + ') + ' ' + payload.year;
     }
     if (payload.month > 0) {
         return (MONTHS_LABEL[payload.month] || payload.month) + ' ' + payload.year;
@@ -751,27 +678,24 @@ function selectedStaffIds(prefix) {
 }
 
 // type=performance export URL, optionally scoped to specific staff ids ("Export
-// Selected") — otherwise the full current filter.
-// atem_type is intentionally omitted (defaults to 0 = combined HQ+Outlet) now
-// that the table shows both together; outlet_id still narrows the Outlet-side
-// rows when a specific outlet is selected.
+// Selected") — otherwise the full current filter. HQ ATEM only (Outlet ATEM
+// removed) - export.php no longer accepts an atem_type/outlet_id override.
 function perfExportUrl(payload, ids) {
     var statuses = (payload.statuses || []).join(',');
     var qs = 'type=performance' +
         (ids && ids.length ? '&ids=' + ids.join(',') : '') +
-        '&month=' + (payload.month || 0) + '&year=' + (payload.year || PERF_CFG.initYear) + '&quarter=' + (payload.quarter || 0) +
+        '&month=' + (payload.month || 0) + '&year=' + (payload.year || PERF_CFG.initYear) + '&quarter=' + (payload.quarter || []).join(',') +
         '&dept=' + (payload.dept || 0) + '&grade=' + (payload.grade || 0) + '&struct=' + (payload.struct || 0) +
         '&staff_filter_id=' + (payload.staff_id || 0) +
-        '&statuses=' + encodeURIComponent(statuses) + '&outlet_id=' + (payload.filter_outlet_id || 0);
+        '&statuses=' + encodeURIComponent(statuses);
     return window.ATEM_MODULE_BASE + 'staff_performance/export.php?' + qs;
 }
 
 function updateActionUrls(payload) {
     var month = payload.month || 0;
     var year = payload.year || PERF_CFG.initYear;
-    var quarter = payload.quarter || 0;
+    var quarter = (payload.quarter || []).join(',');
     var dept = payload.dept || 0;
-    var outletId = payload.filter_outlet_id || 0;
     var grade = payload.grade || 0;
     var struct = payload.struct || 0;
     var staffId = payload.staff_id || 0;
@@ -783,8 +707,7 @@ function updateActionUrls(payload) {
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
             '&staff_filter_id=' + staffId +
-            '&statuses=' + encodeURIComponent(statuses) +
-            '&outlet_id=' + outletId;
+            '&statuses=' + encodeURIComponent(statuses);
     }
 }
 
@@ -850,7 +773,7 @@ function renderTable(data, payload) {
 
     if (!data || !data.length) {
         tbody.innerHTML =
-            '<tr><td colspan="10" class="text-center text-muted py-4">No records found for this period.</td></tr>';
+            '<tr><td colspan="11" class="text-center text-muted py-4">No records found for this period.</td></tr>';
         renderPerfPager(0);
         return;
     }
@@ -872,7 +795,7 @@ function renderTable(data, payload) {
             '<span class="text-muted">0</span>';
     }
 
-    var quarter = (payload && payload.quarter) ? payload.quarter : 0;
+    var quarter = (payload && payload.quarter) ? payload.quarter.join(',') : '';
     var dept = (payload && payload.dept) ? payload.dept : 0;
     var grade = (payload && payload.grade) ? payload.grade : 0;
     var struct = (payload && payload.struct) ? payload.struct : 0;
@@ -883,16 +806,14 @@ function renderTable(data, payload) {
     for (var i = 0; i < pageData.length; i++) {
         var rec = pageData[i];
 
-        // HQ ATEM shows the Completed(+Excellence) count only - Outlet ATEM
-        // shows Completed + Failed together, since outlet cards close out
-        // fast and a failed one is just as relevant there.
-        var hqCount     = rec.complete_hq_count;
-        var outletCount = rec.complete_outlet_count + rec.failed_outlet_count;
+        // HQ ATEM shows the raw, all-status/all-role total count (links straight
+        // to edit.php) - Completed/Active/Extended/Failed are the status-selected
+        // bucket counts.
+        var hqCount = rec.total_atem;
 
         var editUrl = window.ATEM_MODULE_BASE + 'staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter + '&statuses=' + statusesQs;
-        var hqEditUrl     = editUrl + '&tab=atem&atem_type=1';
-        var outletEditUrl = editUrl + '&tab=atem&atem_type=2';
+        var hqEditUrl = editUrl + '&tab=atem&atem_type=1';
         var exportUrl = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance&ids=' + rec.id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
@@ -910,9 +831,10 @@ function renderTable(data, payload) {
             (rec.struct_period ? '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.struct_period) + '</div>' : '') +
             '</td>' +
             '<td class="text-center">' + (hqCount > 0 ? '<a class="perf-count-link" href="' + escHtml(hqEditUrl) + '">' + hqCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
-            '<td class="text-center">' + (outletCount > 0 ? '<a class="perf-count-link" href="' + escHtml(outletEditUrl) + '">' + outletCount + '</a>' : '<span class="text-muted">0</span>') + '</td>' +
-            '<td class="text-center">' + countCell(rec.complete_total) + '</td>' +
-            '<td class="text-center">' + countCell(rec.failed_total) + '</td>' +
+            '<td class="text-center">' + countCell(rec.complete_count) + '</td>' +
+            '<td class="text-center">' + countCell(rec.active_count) + '</td>' +
+            '<td class="text-center">' + countCell(rec.extend_count) + '</td>' +
+            '<td class="text-center">' + countCell(rec.failed_count) + '</td>' +
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) + '" title="View"><i class="bi bi-eye"></i></a>' +
@@ -937,7 +859,7 @@ function loadPerformance(payload) {
     var periodEl = document.getElementById('perf-period-label');
     var label = buildLabel(payload);
 
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>';
     if (labelEl) {
         labelEl.textContent = label;
     }
@@ -968,7 +890,7 @@ function loadPerformance(payload) {
         })
         .then(function(res) {
             if (!res.success) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger py-3">' +
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-3">' +
                     escHtml(res.message || 'Failed to load records.') + '</td></tr>';
                 return;
             }
@@ -978,14 +900,13 @@ function loadPerformance(payload) {
         })
         .catch(function() {
             tbody.innerHTML =
-                '<tr><td colspan="10" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
+                '<tr><td colspan="11" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
         });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
 
     buildStaffDropdown();
-    buildOutletDropdown();
 
     // Status filter dropdown (checkbox list, styled like the Issuer searchable dropdown)
     var statusBtn = document.getElementById('perf-status-btn');
@@ -1018,6 +939,41 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Quarter filter dropdown (checkbox list, same widget as Status above)
+    var quarterBtn = document.getElementById('perf-quarter-btn');
+    var quarterDropdown = document.getElementById('perf-quarter-dropdown');
+    var quarterWrap = document.getElementById('perf-quarter-wrap');
+    updateQuarterButtonLabel('perf');
+    syncS2ButtonSize(quarterBtn, document.getElementById('perf-filter-year'));
+
+    if (quarterBtn && quarterDropdown) {
+        quarterBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            quarterDropdown.classList.toggle('open');
+        });
+        quarterBtn.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                quarterDropdown.classList.toggle('open');
+            }
+        });
+        document.addEventListener('click', function(e) {
+            if (quarterWrap && !quarterWrap.contains(e.target)) {
+                quarterDropdown.classList.remove('open');
+            }
+        });
+    }
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.classList.contains('perf-quarter-cb')) {
+            updateQuarterButtonLabel('perf');
+            // Month and quarter are mutually exclusive
+            if (getSelectedQuarters('perf').length) {
+                document.getElementById('perf-filter-month').value = '0';
+            }
+            loadPerformance(buildPayload());
+        }
+    });
+
     // Initial load
     loadPerformance(buildPayload());
 
@@ -1025,7 +981,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('perf-reset-filter').addEventListener('click', function() {
         document.getElementById('perf-filter-year').value = PERF_CFG.initYear;
         document.getElementById('perf-filter-month').value = '0';
-        document.getElementById('perf-filter-quarter').value = String(PERF_CFG.initQuarter || 0);
+        resetQuarterDropdown('perf', PERF_CFG.initQuarter);
         var deptEl = document.getElementById('perf-filter-dept');
         var gradeEl = document.getElementById('perf-filter-grade');
         var structEl = document.getElementById('perf-filter-struct');
@@ -1044,20 +1000,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         updateStatusButtonLabel('perf');
         resetStaffDropdown();
-        resetOutletDropdown();
         loadPerformance(buildPayload());
     });
 
-    // Month / quarter mutual exclusion, then auto-apply
+    // Month / quarter mutual exclusion, then auto-apply. The quarter side of
+    // this exclusion (and its own auto-apply) is wired above, alongside the
+    // Quarter checkbox dropdown's other change handling.
     document.getElementById('perf-filter-month').addEventListener('change', function() {
         if (this.value && this.value !== '0') {
-            document.getElementById('perf-filter-quarter').value = '0';
-        }
-        loadPerformance(buildPayload());
-    });
-    document.getElementById('perf-filter-quarter').addEventListener('change', function() {
-        if (this.value && this.value !== '0') {
-            document.getElementById('perf-filter-month').value = '0';
+            resetQuarterDropdown('perf');
         }
         loadPerformance(buildPayload());
     });

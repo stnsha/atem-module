@@ -97,19 +97,32 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
     }
 }
 
-// Outlet filter (display only for now; not yet wired to ATEM rows) + code
-// lookup used to resolve atem_outlets.outlet_id to a display code below.
-$outlet_list  = [];
-$outlet_names = [];
-$outlet_res = mysqli_query($conn, "SELECT id, code FROM outlet ORDER BY code ASC");
+// Outlet filter + code lookup used to resolve atem_outlets.outlet_id to a
+// display code below. regional_id also lets each row resolve its region(s)
+// (odb.outlet.regional_id -> odb.outlet_regional.id) for the Region filter.
+$outlet_list       = [];
+$outlet_names      = [];
+$outlet_region_ids = [];
+$outlet_res = mysqli_query($conn, "SELECT id, code, regional_id FROM outlet ORDER BY code ASC");
 if ($outlet_res) {
     while ($orow = mysqli_fetch_assoc($outlet_res)) {
         $outlet_list[] = ['id' => (int) $orow['id'], 'code' => $orow['code']];
         $outlet_names[(int) $orow['id']] = $orow['code'];
+        $outlet_region_ids[(int) $orow['id']] = (int) $orow['regional_id'];
     }
 }
 
-$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => []];
+$region_list  = [];
+$region_names = [];
+$region_res = mysqli_query($conn, "SELECT id, regional FROM outlet_regional ORDER BY regional ASC");
+if ($region_res) {
+    while ($rrow = mysqli_fetch_assoc($region_res)) {
+        $region_list[] = ['id' => (int) $rrow['id'], 'name' => $rrow['regional']];
+        $region_names[(int) $rrow['id']] = $rrow['regional'];
+    }
+}
+
+$lookups = ['levels' => [], 'rules' => [], 'statuses' => []];
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
@@ -140,17 +153,23 @@ foreach ($rows as $a) {
     $pillar    = isset($a['pillar']) && $a['pillar'] ? $a['pillar'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
 
-    $outlet_codes = [];
-    $outlet_ids   = [];
+    $outlet_codes  = [];
+    $outlet_ids    = [];
+    $row_region_names = [];
     if (isset($a['outlets']) && is_array($a['outlets'])) {
         foreach ($a['outlets'] as $o) {
             $o_id = isset($o['outlet_id']) ? (int) $o['outlet_id'] : 0;
             if ($o_id) {
                 $outlet_codes[] = isset($outlet_names[$o_id]) ? $outlet_names[$o_id] : ('Outlet #' . $o_id);
                 $outlet_ids[]   = $o_id;
+                $o_region_id = isset($outlet_region_ids[$o_id]) ? $outlet_region_ids[$o_id] : 0;
+                if ($o_region_id && isset($region_names[$o_region_id])) {
+                    $row_region_names[] = $region_names[$o_region_id];
+                }
             }
         }
     }
+    $row_region_names = array_values(array_unique($row_region_names));
 
     $arci_ids        = array();
     $arci_dept_ids   = array();
@@ -191,6 +210,7 @@ foreach ($rows as $a) {
         'title'           => isset($a['title']) ? $a['title'] : '',
         'atem_type'       => isset($a['atem_type']) ? (int) $a['atem_type'] : 1,
         'outlet_codes'    => $outlet_codes,
+        'region_names'    => $row_region_names,
         'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
         // Outlet-type ATEM -> Issuer's position; HQ-type ATEM -> Issuer's department.
         'department_name' => $is_outlet_type
@@ -309,10 +329,10 @@ $view_config = array(
     'rows'        => $view_rows,
     'levels'      => isset($lookups['levels']) ? $lookups['levels'] : array(),
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
-    'pillars'     => isset($lookups['pillars']) ? $lookups['pillars'] : array(),
     'departments' => $dept_list,
     'issuers'     => $issuer_list,
     'outlets'     => $outlet_list,
+    'regions'     => $region_list,
     'staffId'     => (int) $staff_id,
     'isSuperAdmin' => $_is_superadmin,
     'userGrade'   => (int)$atem_permission,
@@ -575,9 +595,9 @@ $view_config = array(
                         </div>
                     </div>
                     <div class="col">
-                        <label class="form-label">Pillar</label>
-                        <select class="form-select form-select-sm" id="vfo-pillar">
-                            <option value="">All pillars</option>
+                        <label class="form-label">Region</label>
+                        <select class="form-select form-select-sm" id="vfo-region">
+                            <option value="">All regions</option>
                         </select>
                     </div>
                     <div class="col">

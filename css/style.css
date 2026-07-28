@@ -283,6 +283,10 @@ button {
   grid-column: span 4;
 }
 
+.atem-span-6 {
+  grid-column: span 6;
+}
+
 /* Right column: lay the stacked cards vertically and let the last card grow so
    the column bottom always aligns with the taller ATEM Details card. */
 .atem-bento-item.atem-span-4 {
@@ -1758,7 +1762,8 @@ button {
 --------------------------------------------------------------- */
 @media (max-width: 991.98px) {
   .atem-span-8,
-  .atem-span-4 {
+  .atem-span-4,
+  .atem-span-6 {
     grid-column: span 12;
   }
 

@@ -63,12 +63,13 @@ if ($_dept_res) {
 // grade 1 sees only self, grades 2-3 see staff in their own department(s), grade
 // 4+/SuperAdmin see everyone. dept_ids lets the frontend narrow the list further
 // when a specific department is also selected.
-// outlet_ids lets the Outlet dashboard tab narrow its Staff dropdown to
-// department 1 ("Outlet") staff, further filtered by the selected outlet.
+// status_rym lets the Outlet dashboard tab narrow its Staff dropdown to Area
+// Managers (status_rym = 134); outlet_ids then lets the Outlet dropdown follow
+// the selected staff member's own outlet(s).
 $dash_staff_options = array();
 if ((int)$atem_permission === 1 && !$_is_superadmin) {
     $_me_id = (int)$id_user;
-    $_me_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet FROM staff WHERE recycle != 1 AND id = " . $_me_id);
+    $_me_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet, status_rym FROM staff WHERE recycle != 1 AND id = " . $_me_id);
     if ($_me_res && ($_me_row = mysqli_fetch_assoc($_me_res))) {
         $_deptIds = array();
         foreach (explode(',', (string)$_me_row['department']) as $_p) {
@@ -80,10 +81,10 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
             $_o = (int)trim($_o);
             if ($_o > 0) { $_outletIds[] = $_o; }
         }
-        $dash_staff_options[] = array('id' => (int)$_me_row['id'], 'name' => $_me_row['nama_staff'], 'dept_ids' => $_deptIds, 'outlet_ids' => $_outletIds);
+        $dash_staff_options[] = array('id' => (int)$_me_row['id'], 'name' => $_me_row['nama_staff'], 'dept_ids' => $_deptIds, 'outlet_ids' => $_outletIds, 'status_rym' => (int)$_me_row['status_rym']);
     }
 } else {
-    $_staff_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+    $_staff_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet, status_rym FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
     if ($_staff_res) {
         while ($_srow = mysqli_fetch_assoc($_staff_res)) {
             $_deptIds = array();
@@ -100,25 +101,28 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
                 $_o = (int)trim($_o);
                 if ($_o > 0) { $_outletIds[] = $_o; }
             }
-            $dash_staff_options[] = array('id' => (int)$_srow['id'], 'name' => $_srow['nama_staff'], 'dept_ids' => $_deptIds, 'outlet_ids' => $_outletIds);
+            $dash_staff_options[] = array('id' => (int)$_srow['id'], 'name' => $_srow['nama_staff'], 'dept_ids' => $_deptIds, 'outlet_ids' => $_outletIds, 'status_rym' => (int)$_srow['status_rym']);
         }
     }
 }
 
-// Pillars (via the JWT proxy, same call view.php makes) + outlets (odb DB) for the
-// Outlet dashboard tab's filter bar.
+// Regions (odb.outlet_regional) + outlets (odb DB, each carrying its
+// regional_id) for the Outlet dashboard tab's filter bar. Chain:
+// outlet_regional -> outlet.regional_id -> staff.status_rym = 134.
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
-$dash_pillar_options = array();
-$_lookup_result = getAtemLookups($staff_id);
-if (!empty($_lookup_result['success']) && isset($_lookup_result['data']['pillars'])) {
-    $dash_pillar_options = $_lookup_result['data']['pillars'];
+$dash_region_options = array();
+$_region_res = mysqli_query($conn, "SELECT id, regional FROM outlet_regional ORDER BY regional ASC");
+if ($_region_res) {
+    while ($_rrow = mysqli_fetch_assoc($_region_res)) {
+        $dash_region_options[] = array('id' => (int)$_rrow['id'], 'name' => $_rrow['regional']);
+    }
 }
 $dash_outlet_options = array();
-$_outlet_res = mysqli_query($conn, "SELECT id, code FROM outlet ORDER BY code ASC");
+$_outlet_res = mysqli_query($conn, "SELECT id, code, regional_id FROM outlet ORDER BY code ASC");
 if ($_outlet_res) {
     while ($_orow = mysqli_fetch_assoc($_outlet_res)) {
-        $dash_outlet_options[] = array('id' => (int)$_orow['id'], 'code' => $_orow['code']);
+        $dash_outlet_options[] = array('id' => (int)$_orow['id'], 'code' => $_orow['code'], 'region_id' => (int)$_orow['regional_id']);
     }
 }
 ?>
@@ -128,7 +132,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
     'apiUrl'         => ATEM_BASE . 'api.php',
     'departments'    => $dash_dept_options,
     'staff'          => $dash_staff_options,
-    'pillars'        => $dash_pillar_options,
+    'regions'        => $dash_region_options,
     'outlets'        => $dash_outlet_options,
     'tabSingleView'  => $grade1_single_view,
 )); ?>;
@@ -191,13 +195,33 @@ window.ATEM_DASH = <?php echo json_encode(array(
                 </div>
                 <div class="col-md-2 col-sm-6">
                     <label class="form-label">Quarter</label>
-                    <select id="dash-filter-quarter" class="form-select form-select-sm">
-                        <option value="">All Quarters</option>
-                        <option value="1">Q1 (Jan &ndash; Mar)</option>
-                        <option value="2">Q2 (Apr &ndash; Jun)</option>
-                        <option value="3">Q3 (Jul &ndash; Sep)</option>
-                        <option value="4">Q4 (Oct &ndash; Dec)</option>
-                    </select>
+                    <div class="vf-issuer-wrap" id="dash-quarter-wrap">
+                        <div class="vf-s2-selection" id="dash-quarter-btn" tabindex="0">All Quarters</div>
+                        <div class="vf-s2-dropdown" id="dash-quarter-dropdown">
+                            <ul class="vf-s2-list" style="padding:4px 0;">
+                                <li class="vf-s2-list-item" style="cursor:default;">
+                                    <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                        <input type="checkbox" class="dash-quarter-cb" value="1"> Q1 (Jan &ndash; Mar)
+                                    </label>
+                                </li>
+                                <li class="vf-s2-list-item" style="cursor:default;">
+                                    <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                        <input type="checkbox" class="dash-quarter-cb" value="2"> Q2 (Apr &ndash; Jun)
+                                    </label>
+                                </li>
+                                <li class="vf-s2-list-item" style="cursor:default;">
+                                    <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                        <input type="checkbox" class="dash-quarter-cb" value="3"> Q3 (Jul &ndash; Sep)
+                                    </label>
+                                </li>
+                                <li class="vf-s2-list-item" style="cursor:default;">
+                                    <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                        <input type="checkbox" class="dash-quarter-cb" value="4"> Q4 (Oct &ndash; Dec)
+                                    </label>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-3 col-sm-6" id="dash-dept-col"
                     <?php if (empty($dash_dept_options)) { echo ' style="display:none;"'; } ?>>
@@ -525,18 +549,38 @@ window.ATEM_DASH = <?php echo json_encode(array(
                 </div>
                 <div class="col-md-2 col-sm-6">
                     <label class="form-label">Quarter</label>
-                    <select id="dasho-filter-quarter" class="form-select form-select-sm">
-                        <option value="">All Quarters</option>
-                        <option value="1">Q1 (Jan &ndash; Mar)</option>
-                        <option value="2">Q2 (Apr &ndash; Jun)</option>
-                        <option value="3">Q3 (Jul &ndash; Sep)</option>
-                        <option value="4">Q4 (Oct &ndash; Dec)</option>
-                    </select>
+                    <div class="vf-issuer-wrap" id="dasho-quarter-wrap">
+                        <div class="vf-s2-selection" id="dasho-quarter-btn" tabindex="0">All Quarters</div>
+                        <div class="vf-s2-dropdown" id="dasho-quarter-dropdown">
+                            <ul class="vf-s2-list" style="padding:4px 0;">
+                                <li class="vf-s2-list-item" style="cursor:default;">
+                                    <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                        <input type="checkbox" class="dasho-quarter-cb" value="1"> Q1 (Jan &ndash; Mar)
+                                    </label>
+                                </li>
+                                <li class="vf-s2-list-item" style="cursor:default;">
+                                    <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                        <input type="checkbox" class="dasho-quarter-cb" value="2"> Q2 (Apr &ndash; Jun)
+                                    </label>
+                                </li>
+                                <li class="vf-s2-list-item" style="cursor:default;">
+                                    <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                        <input type="checkbox" class="dasho-quarter-cb" value="3"> Q3 (Jul &ndash; Sep)
+                                    </label>
+                                </li>
+                                <li class="vf-s2-list-item" style="cursor:default;">
+                                    <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                        <input type="checkbox" class="dasho-quarter-cb" value="4"> Q4 (Oct &ndash; Dec)
+                                    </label>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-2 col-sm-6">
-                    <label class="form-label">Pillar</label>
-                    <select id="dasho-filter-pillar" class="form-select form-select-sm">
-                        <option value="">All Pillars</option>
+                    <label class="form-label">Region</label>
+                    <select id="dasho-filter-region" class="form-select form-select-sm">
+                        <option value="">All Regions</option>
                     </select>
                 </div>
                 <div class="col-md-2 col-sm-6">
@@ -554,9 +598,9 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     </div>
                 </div>
                 <div class="col-md-2 col-sm-6">
-                    <label class="form-label">Staff</label>
+                    <label class="form-label">Area Manager</label>
                     <div class="vf-issuer-wrap" id="dasho-staff-wrap">
-                        <div class="vf-s2-selection" id="dasho-staff-btn" tabindex="0">All staff</div>
+                        <div class="vf-s2-selection" id="dasho-staff-btn" tabindex="0">All Area Managers</div>
                         <div class="vf-s2-dropdown" id="dasho-staff-dropdown">
                             <div class="vf-s2-search-wrap">
                                 <input class="vf-s2-search" id="dasho-staff-search" type="search"
@@ -797,6 +841,64 @@ window.ATEM_DASH = <?php echo json_encode(array(
                             </div>
                             <div class="atem-bar-count" id="bar-o-force-terminated-n">-</div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Region & Outlet Breakdown -->
+        <div class="row g-3 mt-0">
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
+                    <h6 class="atem-card-title mb-0">Region Breakdown</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and reward
+                        forecast by outlet region</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="font-size:12px;text-align:left;">Region</th>
+                                    <th style="font-size:12px;text-align:left;">Cards</th>
+                                    <th style="font-size:12px;text-align:left;">Complete</th>
+                                    <th style="font-size:12px;text-align:left;">Excellence</th>
+                                    <th style="font-size:12px;text-align:left;">Fail</th>
+                                    <th style="font-size:12px;text-align:left;">Fail Rate</th>
+                                    <th style="font-size:12px;text-align:left;">Forecast</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dasho-region-body">
+                                <tr>
+                                    <td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="atem-card h-100">
+                    <h6 class="atem-card-title mb-0">Outlet Breakdown</h6>
+                    <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and reward
+                        forecast by outlet</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="font-size:12px;text-align:left;">Outlet</th>
+                                    <th style="font-size:12px;text-align:left;">Cards</th>
+                                    <th style="font-size:12px;text-align:left;">Complete</th>
+                                    <th style="font-size:12px;text-align:left;">Excellence</th>
+                                    <th style="font-size:12px;text-align:left;">Fail</th>
+                                    <th style="font-size:12px;text-align:left;">Fail Rate</th>
+                                    <th style="font-size:12px;text-align:left;">Forecast</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dasho-outlet-breakdown-body">
+                                <tr>
+                                    <td colspan="7" class="text-muted" style="font-size:12px;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

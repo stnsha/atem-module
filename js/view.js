@@ -103,8 +103,8 @@
         var depts = CFG.departments || [];
         fillSelect($('vf-dept'), 'All departments', depts);
 
-        var pillars = (CFG.pillars || []).map(function (p) { return p.name; });
-        fillSelect($('vfo-pillar'), 'All pillars', pillars);
+        var regions = (CFG.regions || []).map(function (r) { return r.name; });
+        fillSelect($('vfo-region'), 'All regions', regions);
 
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         var statuses = (CFG.statuses || [])
@@ -443,7 +443,7 @@
         var month = $('vfo-month') ? parseInt($('vfo-month').value, 10) || 0 : 0;
         var statuses = getSelectedStatuses('vfo-status');
         var allStatusCount = allStatusCheckboxes('vfo-status').length;
-        var pillar = $('vfo-pillar').value;
+        var region = $('vfo-region').value;
         var role = $('vfo-role').value;
         var from = $('vfo-from').value;
         var to = $('vfo-to').value;
@@ -467,7 +467,7 @@
             if (issuer && r.issuer_staff_id !== issuer) { return false; }
             if (statuses.length === 0) { return false; }
             if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
-            if (pillar && r.pillar_name !== pillar) { return false; }
+            if (region && (!r.region_names || r.region_names.indexOf(region) < 0)) { return false; }
             if (outletCode && (!r.outlet_codes || r.outlet_codes.indexOf(outletCode) < 0)) { return false; }
             if (role) {
                 if (role === 'Issuer') {
@@ -810,7 +810,7 @@
         });
 
         // Outlet filter bar - always renders the Outlet table.
-        ['vfo-year', 'vfo-month', 'vfo-pillar', 'vfo-from', 'vfo-to', 'vfo-closure-from', 'vfo-closure-to'].forEach(function (id) {
+        ['vfo-year', 'vfo-month', 'vfo-region', 'vfo-from', 'vfo-to', 'vfo-closure-from', 'vfo-closure-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
@@ -825,7 +825,7 @@
             renderTable('outlet', outletRows);
         });
         $('vfo-reset').addEventListener('click', function () {
-            ['vfo-year', 'vfo-pillar', 'vfo-from', 'vfo-to', 'vfo-closure-from', 'vfo-closure-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vfo-year', 'vfo-region', 'vfo-from', 'vfo-to', 'vfo-closure-from', 'vfo-closure-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl2 = $('vfo-month'); if (monthEl2) { monthEl2.value = '0'; }
             resetS2Dropdown('vfo-issuer', 'All staff');
             resetS2Dropdown('vfo-outlet', 'All outlets');
@@ -981,8 +981,8 @@
         // Deep links from the dashboard carry ?tab=outlet to land directly on the
         // Outlet tab; year/month/role/from/to/issuer=me apply to whichever tab's
         // controls (vf-* or vfo-*) the link is targeting. dept/level/level_id have
-        // no Outlet equivalent, so those stay HQ-only; pillar has no HQ equivalent,
-        // so it always targets vfo-pillar regardless of tab.
+        // no Outlet equivalent, so those stay HQ-only; region/outlet_id have no HQ
+        // equivalent, so they always target vfo-region/vfo-outlet regardless of tab.
         var isOutletDeepLink = params.get('tab') === 'outlet';
         var _tabPrefix = isOutletDeepLink ? 'vfo' : 'vf';
         if (params.get('year'))  { var ye = $(_tabPrefix + '-year');  if (ye) { ye.value = params.get('year'); } }
@@ -1003,7 +1003,22 @@
             }
         }
         if (params.get('dept'))   { var de = $('vf-dept');    if (de) { de.value = params.get('dept'); } }
-        if (params.get('pillar')) { var pl = $('vfo-pillar'); if (pl) { pl.value = params.get('pillar'); } }
+        if (params.get('region')) { var rg = $('vfo-region'); if (rg) { rg.value = params.get('region'); } }
+        if (params.get('outlet_id')) {
+            // Deep link from the dashboard's Outlet Breakdown table.
+            var outletIdNum = parseInt(params.get('outlet_id'), 10);
+            var ovEl = $('vfo-outlet-value');
+            var obEl = $('vfo-outlet-btn');
+            if (ovEl && outletIdNum > 0) { ovEl.value = outletIdNum; }
+            if (obEl && outletIdNum > 0) {
+                var outletCode = 'Outlet #' + outletIdNum;
+                var outletsList = CFG.outlets || [];
+                for (var oi = 0; oi < outletsList.length; oi++) {
+                    if (outletsList[oi].id == outletIdNum) { outletCode = outletsList[oi].code; break; }
+                }
+                obEl.textContent = outletCode;
+            }
+        }
         if (params.get('role'))  { var ro = $(_tabPrefix + '-role'); if (ro) { ro.value = params.get('role'); } }
         if (params.get('from'))  { var fr = $(_tabPrefix + '-from'); if (fr) { fr.value = params.get('from'); } }
         if (params.get('to'))    { var to = $(_tabPrefix + '-to');   if (to) { to.value = params.get('to'); } }
