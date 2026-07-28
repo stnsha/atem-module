@@ -283,6 +283,10 @@ button {
   grid-column: span 4;
 }
 
+.atem-span-6 {
+  grid-column: span 6;
+}
+
 /* Right column: lay the stacked cards vertically and let the last card grow so
    the column bottom always aligns with the taller ATEM Details card. */
 .atem-bento-item.atem-span-4 {
@@ -296,6 +300,59 @@ button {
 
 .atem-span-12 {
   grid-column: span 12;
+}
+
+.atem-hidden {
+  display: none !important;
+}
+
+/* Staff Type selector (create.php) */
+.atem-staff-type-options {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.atem-staff-type-btn {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 0.2rem 0.5rem;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #495057;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.atem-staff-type-btn .bi {
+  font-size: 12px;
+}
+
+/* Legacy common/css/page.css sets span { font-size: 15px; font-family: Arial },
+   which overrides the label span's size/family independent of the button's own
+   font-size. Pin it back to match the surrounding form labels. */
+.atem-staff-type-label {
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+}
+
+.atem-staff-type-btn:hover {
+  border-color: #86b7fe;
+}
+
+.atem-staff-type-btn.active {
+  background-color: #e7f1ff;
+  border-color: #0d6efd;
+  color: #0d6efd;
 }
 
 .atem-req {
@@ -819,7 +876,39 @@ button {
 /* ---------------------------------------------------------------
    Dashboard stat cards
 --------------------------------------------------------------- */
+/* Card itself becomes a column flex container so the value always sits
+   right after the (fixed-height) title, and the label can be pinned to
+   the bottom via margin-top:auto - regardless of how many lines the
+   title or the label wrap to. Combined with Bootstrap's h-100 (stretch
+   in a row g-3), every card in a row ends up the same height too. */
+.atem-dash-stat,
+.atem-dash-stat-outlet {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Fixed to exactly 2 lines' worth of height (line-height 1.5 x 2, plus
+   the title's own padding-bottom/border) so a 1-line title ("Suspended")
+   and a 2-line title ("Complete + Excellence") reserve identical space -
+   the value below always starts at the same Y regardless of title length. */
+.atem-dash-stat .atem-card-title,
+.atem-dash-stat-outlet .atem-card-title {
+  min-height: calc(2 * 1.5em + 10px + 1px);
+  align-items: flex-start;
+  flex-shrink: 0;
+  /* Override Bootstrap's mb-1 (0.25rem) so the gap below the divider
+     matches the title's own 10px padding-bottom above it. */
+  margin-bottom: 10px;
+}
+
+.atem-dash-stat .atem-stat-label,
+.atem-dash-stat-outlet .atem-stat-label {
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
 .atem-stat-value {
+  padding-top: 10px;
   font-size: 2rem;
   font-weight: 700;
   line-height: 1.1;
@@ -1170,6 +1259,124 @@ button {
   transition: opacity 0.15s ease;
 }
 
+/* Outlet tagging picker (create.php outlet-staff flow) */
+.atem-outlet-picker {
+  position: relative;
+}
+
+.atem-outlet-picker-btn {
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  height: 38px;
+  padding: 0.375rem 0.75rem;
+  font-size: 14px;
+  color: #495057;
+  background-color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.atem-outlet-picker-btn:hover,
+.atem-outlet-picker-btn:focus {
+  border-color: #86b7fe;
+  outline: none;
+}
+
+.atem-outlet-picker-dropdown {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background-color: #fff;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.atem-outlet-picker-dropdown.open {
+  display: block;
+}
+
+.atem-outlet-picker-search-wrap {
+  padding: 6px 6px 4px;
+}
+
+.atem-outlet-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 13px;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.atem-outlet-picker-search:focus {
+  border-color: #86b7fe;
+}
+
+.atem-outlet-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.atem-outlet-picker-list li {
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.atem-outlet-picker-list li:hover {
+  background-color: #f8f9fa;
+}
+
+.atem-outlet-picker-list li.selected {
+  background-color: #e7f1ff;
+  color: #0d6efd;
+}
+
+.atem-outlet-picker-list li.hidden {
+  display: none;
+}
+
+.atem-outlet-picker-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.atem-outlet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.atem-outlet-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #495057;
+}
+
+.atem-outlet-tag-remove {
+  color: #dc3545;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
 /* Incentive approval radio group in Timeline card */
 #tl-incentive-approval-wrap .form-check-label,
 #tl-incentive-approval-wrap .form-check-label span {
@@ -1349,6 +1556,158 @@ button {
   padding: 5px 0;
 }
 
+/* Navbar notification bell. Dedicated ids/classes (#atem-notif-badge, .atem-notif-*)
+   NOT #badge/.badge/#myDropdown - those are dead legacy ids/classes rendered on
+   every page by common/lock_adv.php + common/css/page.css (see .atem-pill note above). */
+.atem-notif-dropdown .nav-link {
+  position: relative;
+}
+
+.atem-notif-badge {
+  position: absolute;
+  top: 2px;
+  right: -4px;
+  background: #dc3545;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.atem-notif-menu {
+  width: 320px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.atem-notif-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.atem-notif-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.atem-notif-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.atem-notif-item:hover {
+  background: #f8f9fa;
+}
+
+.atem-notif-item-unread {
+  background: #eef5ff;
+}
+
+.atem-notif-item-snippet {
+  font-size: 12px;
+}
+
+.atem-notif-item-time {
+  color: #6c757d;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.atem-notif-empty {
+  padding: 16px 12px;
+  color: #6c757d;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Chat section on edit.php */
+.atem-chat-wrap {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.atem-chat-bubble {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  max-width: 80%;
+}
+
+.atem-chat-bubble-mine {
+  align-self: flex-end;
+  background: #eef5ff;
+}
+
+.atem-chat-bubble-header {
+  font-size: 12px;
+  color: #495057;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.atem-chat-bubble-time {
+  font-size: 12px;
+  color: #6c757d;
+  font-weight: 400;
+}
+
+.atem-chat-bubble-body {
+  font-size: 13px;
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+
+.atem-chat-composer {
+  margin-top: 12px;
+}
+
+.atem-chat-composer-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.atem-chat-bubble-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 12px;
+}
+
+.atem-chat-bubble-actions .btn-link {
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.atem-chat-bubble-actions .btn-link:hover {
+  text-decoration: underline;
+}
+
+.atem-chat-edit-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 /* Card header with a right-aligned action button (e.g. Add Reference Link) */
 .atem-card-title-row {
   display: flex;
@@ -1403,7 +1762,8 @@ button {
 --------------------------------------------------------------- */
 @media (max-width: 991.98px) {
   .atem-span-8,
-  .atem-span-4 {
+  .atem-span-4,
+  .atem-span-6 {
     grid-column: span 12;
   }
 
@@ -1504,3 +1864,78 @@ button {
 .vf-s2-list li.active { background: #0d6efd; color: #fff; }
 .vf-s2-list li.hidden { display: none; }
 .vf-s2-empty { padding: 8px 10px; font-size: 12px; color: #6c757d; font-family: 'Inter', sans-serif; }
+
+.atem-view-tabs {
+    border-bottom: 1px solid #e9ecef;
+    gap: 28px;
+}
+.atem-view-tabs .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 2px 12px;
+    margin-bottom: -1px;
+    border: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+    background: none;
+    color: #6c757d;
+    font-size: 13px;
+    font-weight: 500;
+    transition: color .15s ease, border-color .15s ease;
+}
+.atem-view-tabs .nav-link:hover {
+    color: #495057;
+    border-color: transparent;
+    isolation: auto;
+}
+.atem-view-tabs .nav-link.active {
+    background: none;
+}
+.atem-view-tabs .nav-link.atem-tab-color-hq.active {
+    color: #fd7e14;
+    border-color: #fd7e14;
+}
+.atem-view-tabs .nav-link.atem-tab-color-outlet.active {
+    color: #0A5AA8;
+    border-color: #0A5AA8;
+}
+.atem-view-tabs .nav-link.atem-tab-color-payout.active {
+    color: #6f42c1;
+    border-color: #6f42c1;
+}
+.atem-view-tabs .nav-link.atem-tab-color-atem.active {
+    color: #0d6efd;
+    border-color: #0d6efd;
+}
+.atem-view-tabs .nav-link.atem-tab-color-okr.active {
+    color: #20c997;
+    border-color: #20c997;
+}
+.atem-view-tabs .nav-link i {
+    font-size: 15px;
+}
+.atem-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 26px;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #f1f3f5;
+    color: #6c757d;
+}
+.atem-view-tabs .nav-link.atem-tab-color-hq.active .atem-tab-count {
+    background: #fff1e6;
+    color: #fd7e14;
+}
+.atem-view-tabs .nav-link.atem-tab-color-outlet.active .atem-tab-count {
+    background: #e6eef7;
+    color: #0A5AA8;
+}
+.atem-view-tabs .nav-link.atem-tab-color-payout.active .atem-tab-count {
+    background: #f0e9fa;
+    color: #6f42c1;
+}

@@ -34,7 +34,7 @@ A user with `atem = 1` is treated as grade 6 (SuperAdmin) throughout the ATEM mo
 
 **Where the override is applied:**
 - `header.php` — sets `$_is_superadmin`; available to all pages and to `navbar.php`
-- `navbar.php` — uses `$_is_superadmin` for Performance nav link; uses `$atem === 1` for Masterlist nav link and dev toolbar
+- `navbar.php` — uses grade 3+/`$_is_superadmin` for the Performance nav link; uses `$atem === 1` for Masterlist nav link and dev toolbar
 - `access_control/backend.php` — sets `$requester_grade = 6` and `$requester_is_superadmin = true` after reading `staff.atem` directly from DB
 
 All SuperAdmin feature gates check `$_is_superadmin` (set by `header.php`) or `$atem === 1` directly. `$atem_permission` is never set to 6 and never checked for SuperAdmin identity.
@@ -54,9 +54,9 @@ All SuperAdmin feature gates check `$_is_superadmin` (set by `header.php`) or `$
 |---|---|---|---|---|
 | 0 | Non-Graded | None | — | Redirected to dashboard; no ATEM access |
 | 1 | Frontline / Operational Staff | Basic | Own cards only | View ATEM cards where issuer or ARCI member |
-| 2 | Middle Management | Basic | Own department | View department cards; edit staff limited to overlapping departments |
-| 3 | Senior Management | Admin | Own department (cards) | Access Control page; view and edit all staff grades and structs |
-| 4 | C Suite Executive | Admin | All departments | + Staff Performance page; Masterlist page accessible (page-guard only) |
+| 2 | Middle Management | Basic | Own department | View department cards; edit staff limited to overlapping departments; Staff Performance page (view/export/lock/unlock) |
+| 3 | Senior Management | Admin | Own department (cards) | Access Control page; view and edit all staff grades and structs; Staff Performance page |
+| 4 | C Suite Executive | Admin | All departments | Staff Performance page; Masterlist page accessible (page-guard only) |
 | 5 | CEO/Board | Admin | All departments | Same as grade 4 |
 
 `staff.grade` only holds values 0–5. Grade 6 does not exist in the database. SuperAdmin is a separate flag (`staff.atem = 1`) — see the SuperAdmin Flag section for capabilities.
@@ -86,11 +86,13 @@ So grades 2–5 can open and read any card even though their list/dashboard only
 |---|---|---|
 | All pages | `$atem_permission === 0` | `/odb/index.php` (login) |
 | `access_control/index.php` | `$atem_permission < 1` | `/odb/atem/index.php` |
-| `staff_performance/index.php` | `$atem_permission < 4` | `/odb/atem/index.php` |
-| `staff_performance/edit.php` | `$atem_permission < 4` | `/odb/atem/index.php` |
+| `staff_performance/index.php` | `$atem_permission < 3` | `/odb/atem/index.php` |
+| `staff_performance/edit.php` | `$atem_permission < 3` | `/odb/atem/index.php` |
 | `access_control/masterlist.php` | `$atem_permission < 4` | `/odb/atem/index.php` |
 
 SuperAdmin (`$atem === 1`) passes all grade-based page guards above via `$_is_superadmin` (set by `header.php`). SuperAdmin-only features (Masterlist nav, struct window toggle, library writes) are gated on `$_is_superadmin` or `$atem === 1` directly.
+
+**`staff_performance/index.php` access tier** (grade 3+ or SuperAdmin — the People Management dept-17 carve-out was removed): this tier gates the page itself, the `get-performance-list`/`get-staff-atem-list` data endpoints, and the plain Export/Export Selected buttons (`staff_performance/export.php`). The list table shows three read-only Completed-count columns side by side — **HQ ATEM Completed**, **Outlet ATEM Completed**, **OKR Completed** — but **Est. Reward stays HQ ATEM only**; Outlet ATEM and OKR carry no incentive/payout concept at all (Lock Payout is likewise HQ-only, see below). `api.php`'s `get-performance-list` case builds each row by calling `getStaffPerformanceLive()` twice (`$filterAtemType` 1 then 2, for HQ and Outlet respectively — each a full `getAtemList()` HTTP round trip to `atem-api`) plus `getOkrPerformanceLive($conn, ...)` once (plain mysqli against `okr_cards`/`okr_statuses` in the same ODB database — OKR has no separate API, see `okr/CLAUDE.md`), then merges on the **union** of staff ids touched by any of the three, so a staff member with only Outlet ATEM or OKR activity and no HQ ATEM cards still appears. OKR's Completed count only credits the card's owner(s) (`owner_staff_id`/`owner2_staff_id`) — not the issuer — matching OKR's own "my cards" scoping (`okrScopeWhere()` in `okr/lib.php`), not ATEM's issuer+ARCI model. `export.php`'s `performance` export type mirrors the same three-fetch/union approach (its own `getStaffPerformanceLive()` calls for HQ/Outlet plus `getOkrPerformanceLive()`) and emits one flat CSV: HQ ATEM rows keep the full computed `Est. Reward (RM)` (via `emit_atem_rows()`), while Outlet ATEM rows (`emit_atem_rows(..., $blank_reward = true)`) and OKR rows (`emit_okr_rows()`, always Owner/Owner 2 only) always leave `Est. Reward (RM)` and `Payout` blank — and are restricted to Completed-family statuses regardless of what else is checked in the Status filter, matching the on-screen Outlet ATEM Completed/OKR Completed columns. The single-staff `staff-atem` export type (used by `edit.php`, not the Staff Performance list) is unrelated and untouched — it dumps a target staff's full unfiltered ATEM history (HQ and Outlet mixed, each with its normal computed reward) via `emit_atem_rows()` with no `$blank_reward` override. The Lock Payout/Unlock family of buttons is a **stricter, separate carve-out**: `api.php`'s `bulk-lock-payout`/`bulk-unlock-payout` cases require real SuperAdmin (`staff.atem = 1`) regardless of grade — a grade 3-5 user who can see the page and export data cannot lock or unlock payout. `staff_performance/edit.php` (the per-staff/per-ATEM detail page reached via each row's "View" link) keeps its own separate `$atem_permission < 3` guard (grade 3+ or SuperAdmin) — same threshold as the list page now, so no grade sees a dead-end "View" button; it remains HQ-ATEM-only with no Outlet/OKR tab. Payout lock/unlock server-side logic lives in `api.php`'s `resolvePayoutTargetStaffIds()`/`resolvePayoutAtemIds()` (odb) and `AtemController::bulkLockPayout()`/`bulkUnlockPayout()` (atem-api) — the atem-api endpoints trust odb's authorization decision and do not re-check grade themselves.
 
 **Navbar visibility** (navbar resolves `$atem_role` from `$atem_permission`):
 
@@ -98,7 +100,7 @@ SuperAdmin (`$atem === 1`) passes all grade-based page guards above via `$_is_su
 |---|---|---|
 | Dashboard | Always | All graded users |
 | ATEM | Always | All graded users |
-| Performance | `$atem_role >= 4` | Grades 4, 5, SuperAdmin |
+| Performance | `$atem_role >= 3 \|\| $_is_superadmin` | Grades 3+, SuperAdmin |
 | Access Control | `$atem_role >= 1` | All graded users |
 | Masterlist | `isset($atem) && (int)$atem === 1` | SuperAdmin flag check — not a grade 6 check |
 

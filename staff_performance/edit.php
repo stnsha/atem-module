@@ -4,9 +4,9 @@ ob_start();
 $page_title = 'Staff Performance - Edit';
 include('../header.php');
 
-if ($atem_permission < 4 && !$_is_superadmin) {
+if ($atem_permission < 3 && !$_is_superadmin) {
     ob_end_clean();
-    header('Location: /odb/atem/index.php');
+    header('Location: ' . ATEM_BASE . 'index.php');
     exit;
 }
 
@@ -14,8 +14,11 @@ ob_end_flush();
 
 $rec_id       = isset($_GET['id'])    ? (int)$_GET['id']    : 0;
 $target_sid   = isset($_GET['sid'])   ? (int)$_GET['sid']   : 0;
-$filter_month   = isset($_GET['month']) ? (int)$_GET['month'] : 0;
-$filter_year    = isset($_GET['year'])  ? (int)$_GET['year']  : (int)date('Y');
+$filter_month   = isset($_GET['month'])   ? (int)$_GET['month']   : 0;
+$filter_year    = isset($_GET['year'])    ? (int)$_GET['year']    : (int)date('Y');
+$filter_quarter = isset($_GET['quarter']) ? (int)$_GET['quarter'] : 0;
+if ($filter_quarter < 1 || $filter_quarter > 4) { $filter_quarter = 0; }
+if ($filter_quarter > 0) { $filter_month = 0; }
 // Carries over the Status checkboxes selected on the Staff Performance summary
 // page, so the ATEM list here starts scoped to the same statuses instead of
 // defaulting to "All statuses". Empty means no carry-over — all checked.
@@ -34,7 +37,7 @@ for ($y = 2026; $y <= $_edit_cur_year; $y++) {
 }
 
 if ($rec_id <= 0 || $target_sid <= 0) {
-    header('Location: /odb/atem/staff_performance/index.php');
+    header('Location: ' . ATEM_BASE . 'staff_performance/index.php');
     exit;
 }
 
@@ -107,12 +110,60 @@ $month_names = array(
     9=>'September', 10=>'October', 11=>'November', 12=>'December'
 );
 
-$back_url = 'atem/staff_performance/index.php';
-if ($filter_month > 0 || $filter_year > 0) {
-    $back_url .= '?' . http_build_query(array('month'=>$filter_month,'year'=>$filter_year));
+// Combined activity log for this staff (ATEM payout locks + exports), built
+// up across the ATEM fetch block below plus a dedicated export-log query,
+// then sorted/rendered next to Staff Details further down.
+$activity_logs = array();
+
+// ATEM lock events - payout_closed_by/payout_closed_at are set by the
+// Laravel atem-api's single-record payout-status endpoint (the only ATEM
+// lock path that currently actually works - see bulk-lock-payout's own
+// notes in api.php).
+foreach ($atem_rows as $_a) {
+    if (isset($_a['payout_status']) && $_a['payout_status'] === 'Closed'
+        && !empty($_a['payout_closed_by']) && !empty($_a['payout_closed_at'])
+    ) {
+        $_lock_actor_id = (int)$_a['payout_closed_by'];
+        $activity_logs[] = array(
+            'type'  => 'ATEM Lock',
+            'ref'   => '#AT' . (int)(isset($_a['id']) ? $_a['id'] : 0),
+            'actor' => isset($staff_names[$_lock_actor_id]) ? $staff_names[$_lock_actor_id] : ('Staff #' . $_lock_actor_id),
+            'when'  => $_a['payout_closed_at'],
+        );
+    }
 }
 
-$export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array('type'=>'staff-atem','staff_id'=>$target_sid));
+// Export events - written by export.php's logAtemExport() every time this
+// staff's data is included in an export (single-staff or bulk performance).
+$_exp_res = mysqli_query($conn, "SELECT actor_staff_id, export_type, exported_at
+                                  FROM atem_export_logs
+                                  WHERE target_staff_id = " . $target_sid . "
+                                  ORDER BY exported_at DESC
+                                  LIMIT 15");
+if ($_exp_res) {
+    while ($_exp = mysqli_fetch_assoc($_exp_res)) {
+        $_exp_actor_id = (int)$_exp['actor_staff_id'];
+        $activity_logs[] = array(
+            'type'  => 'Export',
+            'ref'   => ucfirst($_exp['export_type']),
+            'actor' => isset($staff_names[$_exp_actor_id]) ? $staff_names[$_exp_actor_id] : ('Staff #' . $_exp_actor_id),
+            'when'  => $_exp['exported_at'],
+        );
+    }
+}
+
+// Newest first, capped so this doesn't grow unbounded on the page over time.
+usort($activity_logs, function ($a, $b) {
+    return strtotime($b['when']) <=> strtotime($a['when']);
+});
+$activity_logs = array_slice($activity_logs, 0, 15);
+
+$back_url = ATEM_BASE . 'staff_performance/index.php';
+if ($filter_month > 0 || $filter_year > 0 || $filter_quarter > 0) {
+    $back_url .= '?' . http_build_query(array('month'=>$filter_month,'year'=>$filter_year,'quarter'=>$filter_quarter));
+}
+
+$export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_query(array('type'=>'staff-atem','staff_id'=>$target_sid));
 ?>
 
 <div class="mb-3">
@@ -129,19 +180,19 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
             <table style="width:100%;font-size:13px;border-collapse:separate;border-spacing:0 8px;">
                 <tr>
                     <td style="width:40%;color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:top;padding-right:12px;">Name</td>
-                    <td style="font-weight:500;"><?php echo htmlspecialchars($t_name); ?></td>
+                    <td style="font-size:13px;font-weight:500;"><?php echo htmlspecialchars($t_name); ?></td>
                 </tr>
                 <tr>
                     <td style="color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:top;padding-right:12px;">Department</td>
-                    <td><?php echo htmlspecialchars($t_dept); ?></td>
+                    <td style="font-size:13px;"><?php echo htmlspecialchars($t_dept); ?></td>
                 </tr>
                 <tr>
                     <td style="color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:top;padding-right:12px;">Grade</td>
-                    <td><?php echo htmlspecialchars($t_grade); ?></td>
+                    <td style="font-size:13px;"><?php echo htmlspecialchars($t_grade); ?></td>
                 </tr>
                 <tr>
                     <td style="color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:top;padding-right:12px;">Evaluation Structure</td>
-                    <td><?php echo htmlspecialchars($t_struct); ?></td>
+                    <td style="font-size:13px;"><?php echo htmlspecialchars($t_struct); ?></td>
                 </tr>
             </table>
         </div>
@@ -168,6 +219,16 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
                 <?php foreach ($month_names as $mnum => $mname): ?>
                 <option value="<?php echo $mnum; ?>"<?php echo ($mnum === $filter_month) ? ' selected' : ''; ?>><?php echo $mname; ?></option>
                 <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Quarter</label>
+            <select class="form-select form-select-sm" id="ef-quarter">
+                <option value="0">All Quarter</option>
+                <option value="1"<?php echo ($filter_quarter === 1) ? ' selected' : ''; ?>>Q1 (Jan-Mar)</option>
+                <option value="2"<?php echo ($filter_quarter === 2) ? ' selected' : ''; ?>>Q2 (Apr-Jun)</option>
+                <option value="3"<?php echo ($filter_quarter === 3) ? ' selected' : ''; ?>>Q3 (Jul-Sep)</option>
+                <option value="4"<?php echo ($filter_quarter === 4) ? ' selected' : ''; ?>>Q4 (Oct-Dec)</option>
             </select>
         </div>
         <div class="col-md-3">
@@ -332,6 +393,7 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
             'status'      => $a_status,
             'status_color'=> $a_color,
             'est_reward'  => $est_reward,
+            'is_locked'   => (isset($a['payout_status']) && $a['payout_status'] === 'Closed'),
         );
     }
     ?>
@@ -344,16 +406,17 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
                     <th>Issuer</th>
                     <th>Accountable</th>
                     <th>ARCI</th>
-                    <th>Level Structure</th>
+                    <th>Level</th>
                     <th>Start</th>
                     <th>End</th>
                     <th>Status</th>
                     <th class="text-end">Est. Reward</th>
                     <th style="width:60px;">Action</th>
+                    <th style="width:70px;">Payout</th>
                 </tr>
             </thead>
             <tbody id="edit-atem-tbody">
-                <tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>
+                <tr><td colspan="12" class="text-center text-muted py-4">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -361,10 +424,29 @@ $export_atem_url = 'atem/staff_performance/export.php?' . http_build_query(array
     <?php endif; ?>
 </div>
 
+<div class="atem-card mt-3">
+    <h6 class="atem-card-title"><i class="bi bi-clock-history"></i> Activity Log</h6>
+    <?php if (empty($activity_logs)): ?>
+    <p class="text-muted mb-0 mt-2" style="font-size:13px;">No lock or export activity recorded yet.</p>
+    <?php else: ?>
+    <div class="mt-2">
+        <?php foreach ($activity_logs as $_log): ?>
+        <div style="padding:8px 0;border-bottom:1px solid #f1f3f5;">
+            <div style="font-size:13px;font-weight:500;"><?php echo htmlspecialchars($_log['type']); ?> <?php echo htmlspecialchars($_log['ref']); ?></div>
+            <div class="text-muted" style="font-size:12px;">
+                <?php echo htmlspecialchars($_log['actor']); ?>
+                &middot; <?php echo htmlspecialchars(date('Y-m-d H:i:s', strtotime($_log['when']))); ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+</div>
+
 </div><!-- /.atem-container -->
 
 <script>
-var PERF_API_URL  = '/odb/atem/api.php';
+var PERF_API_URL  = <?php echo json_encode(ATEM_BASE . 'api.php'); ?>;
 var editTargetSid = <?php echo $target_sid; ?>;
 <?php if (!$atem_unavailable): ?>
 window.EDIT_ATEM_ROWS = <?php echo json_encode($edit_atem_js_rows); ?>;
@@ -373,6 +455,21 @@ window.EDIT_ATEM_ROWS = [];
 <?php endif; ?>
 window.EDIT_LOOKUPS = <?php echo json_encode($edit_lookups); ?>;
 window.EDIT_INIT_STATUSES = <?php echo json_encode($filter_statuses_init); ?>;
+window.EDIT_INIT_QUARTER = <?php echo json_encode($filter_quarter); ?>;
+
+var QUARTER_MONTHS = { 1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12] };
+
+// Shared period-match helper for the ATEM tab.
+function matchesPeriod(dateStr, year, month, quarter) {
+    if (!year && !month && !quarter) { return true; }
+    if (!dateStr) { return false; }
+    var y = parseInt(dateStr.substring(0, 4), 10);
+    var m = parseInt(dateStr.substring(5, 7), 10);
+    if (year && y !== year) { return false; }
+    if (quarter) { return (QUARTER_MONTHS[quarter] || []).indexOf(m) !== -1; }
+    if (month) { return m === month; }
+    return true;
+}
 
 var _editPage         = 1;
 var _editPerPage      = 30;
@@ -504,23 +601,17 @@ function buildEditStatusDropdown() {
 // falls back to start_date so it still shows up somewhere rather than vanishing silently.
 var EDIT_CLOSURE_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Extended', 'Failed'];
 
-function editInPeriod(r, year, month) {
-    if (!year && !month) { return true; }
-
+function editInPeriod(r, year, month, quarter) {
     var dateStr = (EDIT_CLOSURE_STATUSES.indexOf(r.status) !== -1) ? r.closure_date : r.start_date;
-    if (!dateStr) { return false; }
-
-    var y = parseInt(dateStr.substring(0, 4), 10);
-    var m = parseInt(dateStr.substring(5, 7), 10);
-    if (year && y !== year) { return false; }
-    if (month && m !== month) { return false; }
-    return true;
+    return matchesPeriod(dateStr, year, month, quarter);
 }
 
 function applyEditFilters() {
     var data   = window.EDIT_ATEM_ROWS || [];
     var year   = document.getElementById('ef-year')   ? parseInt(document.getElementById('ef-year').value,   10) || 0 : 0;
     var month  = document.getElementById('ef-month')  ? parseInt(document.getElementById('ef-month').value,  10) || 0 : 0;
+    var quarter = document.getElementById('ef-quarter') ? parseInt(document.getElementById('ef-quarter').value, 10) || 0 : 0;
+    if (quarter) { month = 0; }
     var level  = document.getElementById('ef-level')  ? document.getElementById('ef-level').value  : '';
     var statuses = getSelectedEditStatuses();
     var allStatusCount = allEditStatusCheckboxes().length;
@@ -530,7 +621,7 @@ function applyEditFilters() {
     var term   = document.getElementById('ef-search') ? document.getElementById('ef-search').value.toLowerCase().trim() : '';
 
     _editFilteredData = data.filter(function(r) {
-        if (!editInPeriod(r, year, month)) { return false; }
+        if (!editInPeriod(r, year, month, quarter)) { return false; }
         if (level  && r.level  !== level)  { return false; }
         if (statuses.length === 0) { return false; }
         if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
@@ -603,7 +694,7 @@ function renderEditAtemTable() {
         var emptyMsg = (window.EDIT_ATEM_ROWS && window.EDIT_ATEM_ROWS.length > 0)
             ? 'No records match the current filters.'
             : 'No ATEM records found for this staff.';
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">' + emptyMsg + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">' + emptyMsg + '</td></tr>';
         renderEditAtemPager(0);
         return;
     }
@@ -654,6 +745,10 @@ function renderEditAtemTable() {
             ? '<span class="text-muted">-</span>'
             : 'RM ' + editFmtMoney(a.est_reward);
 
+        var payoutHtml = a.is_locked
+            ? '<i class="bi bi-lock-fill" style="color:#dc3545;font-size:16px;" title="Payout locked"></i>'
+            : '<i class="bi bi-unlock-fill" style="color:#ffc107;font-size:16px;" title="Payout not yet locked"></i>';
+
         html += '<tr>'
             + '<td><span class="atem-id">#AT' + a.id + '</span></td>'
             + '<td>' + editEsc(a.title) + '</td>'
@@ -668,20 +763,31 @@ function renderEditAtemTable() {
             + '<td style="white-space:nowrap;">' + endHtml + '</td>'
             + '<td><span class="atem-pill" style="background-color:' + editEsc(a.status_color) + '">' + editEsc(a.status || '-') + '</span></td>'
             + '<td class="text-end">' + rewardHtml + '</td>'
-            + '<td><a class="btn btn-sm btn-outline-primary" href="atem/edit.php?id=' + a.id + '&mode=read" title="View"><i class="bi bi-eye"></i></a></td>'
+            + '<td><a class="btn btn-sm btn-outline-primary" href="' + window.ATEM_MODULE_BASE + 'edit.php?id=' + a.id + '&mode=read" title="View"><i class="bi bi-eye"></i></a></td>'
+            + '<td class="text-center">' + payoutHtml + '</td>'
             + '</tr>';
     }
     tbody.innerHTML = html;
     renderEditAtemPager(total);
 }
 
+// Same status-dropdown box-model sync used by buildEditStatusDropdown().
+function syncS2ButtonSizeEdit(btnEl, refEl) {
+    if (!btnEl || !refEl) { return; }
+    var refStyle = window.getComputedStyle(refEl);
+    btnEl.style.height       = refEl.offsetHeight + 'px';
+    btnEl.style.border       = refStyle.border;
+    btnEl.style.borderRadius = refStyle.borderRadius;
+    btnEl.style.fontSize     = refStyle.fontSize;
+    btnEl.style.color        = refStyle.color;
+}
 
 document.addEventListener('DOMContentLoaded', function() {
     buildEditFilters();
     applyEditFilters();
 
     // Filter events
-    var _efIds = ['ef-year', 'ef-month', 'ef-level', 'ef-role', 'ef-from', 'ef-to'];
+    var _efIds = ['ef-year', 'ef-month', 'ef-quarter', 'ef-level', 'ef-role', 'ef-from', 'ef-to'];
     for (var _efi = 0; _efi < _efIds.length; _efi++) {
         var _efEl = document.getElementById(_efIds[_efi]);
         if (_efEl) { _efEl.addEventListener('change', applyEditFilters); }
@@ -697,6 +803,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             var efMonth = document.getElementById('ef-month');
             if (efMonth) { efMonth.value = '0'; }
+            var efQuarter = document.getElementById('ef-quarter');
+            if (efQuarter) { efQuarter.value = '0'; }
             resetEditStatusDropdown();
             applyEditFilters();
         });

@@ -49,12 +49,80 @@ foreach ($departments as $d_id => $d_name) {
     $departments_list[] = array('id' => $d_id, 'name' => $d_name);
 }
 
+// Outlets for the derived outlet-scope display (outlet staff flow only).
+$outlets_list = [];
+$outlet_res = mysqli_query($conn, "SELECT id, code FROM outlet ORDER BY code ASC");
+if ($outlet_res) {
+    while ($orow = mysqli_fetch_assoc($outlet_res)) {
+        $outlets_list[] = ['id' => (int) $orow['id'], 'code' => $orow['code']];
+    }
+}
+
+// Outlet Staff(s) picker (outlet staff flow only): department 1 (Outlet) and
+// grade 3 and above. LEFT JOIN so a staff member without a matching
+// position_rymnet row is still included (just with a null position label).
+$area_managers_list = [];
+$am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
+           FROM staff s
+           LEFT JOIN position_rymnet p ON p.id = s.status_rym
+           WHERE FIND_IN_SET('1', s.department) AND s.grade >= 3 AND s.recycle != 1
+           ORDER BY s.nama_staff";
+$am_res = mysqli_query($conn, $am_sql);
+if ($am_res) {
+    while ($arow = mysqli_fetch_assoc($am_res)) {
+        $am_outlet_ids = [];
+        foreach (explode(',', (string) $arow['outlet']) as $oid) {
+            $oid = (int) trim($oid);
+            if ($oid > 0) {
+                $am_outlet_ids[] = $oid;
+            }
+        }
+        $area_managers_list[] = [
+            'id'         => (int) $arow['id'],
+            'name'       => $arow['nama_staff'],
+            'position'   => $arow['position_name'] ?? '',
+            'outlet_ids' => $am_outlet_ids,
+        ];
+    }
+}
+
+// Staff grouped by outlet (for the ARCI picker on Outlet-type ATEMs). A staff
+// member can belong to several outlets (comma-separated staff.outlet), so they
+// are bucketed under every outlet id they belong to, not just one.
+$staff_by_outlet = [];
+$all_staff_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
+                  FROM staff s
+                  LEFT JOIN position_rymnet p ON p.id = s.status_rym
+                  WHERE s.recycle != 1";
+$all_staff_res = mysqli_query($conn, $all_staff_sql);
+if ($all_staff_res) {
+    while ($orow2 = mysqli_fetch_assoc($all_staff_res)) {
+        if (empty($orow2['outlet'])) {
+            continue;
+        }
+        foreach (explode(',', (string) $orow2['outlet']) as $oid) {
+            $oid = (int) trim($oid);
+            if ($oid <= 0) {
+                continue;
+            }
+            if (!isset($staff_by_outlet[$oid])) {
+                $staff_by_outlet[$oid] = [];
+            }
+            $staff_by_outlet[$oid][] = [
+                'id'       => (int) $orow2['id'],
+                'name'     => $orow2['nama_staff'],
+                'position' => $orow2['position_name'],
+            ];
+        }
+    }
+}
+
 // Fetch lookups via the JWT proxy (server-side). No DB row is created here: the
 // in-progress card lives in the PHP session until the user saves.
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
 
-$lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array());
+$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => [], 'reward_masterlist' => []];
 $lookup_result = getAtemLookups($staff_id);
 if (!empty($lookup_result['success']) && isset($lookup_result['data'])) {
     $lookups = $lookup_result['data'];
@@ -75,11 +143,12 @@ if ($session_files !== null) {
 
 $atem_config = array(
     'atemId'        => 0,
-    'apiUrl'        => 'atem/api.php',
+    'apiUrl'        => ATEM_BASE . 'api.php',
     'mode'          => 'create',
     'levels'        => isset($lookups['levels'])   ? $lookups['levels']   : array(),
     'rules'         => isset($lookups['rules'])    ? $lookups['rules']    : array(),
     'statuses'      => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
+    'pillars'       => isset($lookups['pillars'])  ? $lookups['pillars']  : array(),
     'issuer'        => array(
         'id'              => ($issuer_auth && isset($issuer_auth['staff_id']))     ? $issuer_auth['staff_id']     : $staff_id,
         'name'            => $issuer_name,
@@ -88,6 +157,9 @@ $atem_config = array(
     ),
     'departments'   => $departments_list,
     'staffByDept'   => $staff_by_dept,
+    'outlets'       => $outlets_list,
+    'areaManagers'  => $area_managers_list,
+    'staffByOutlet' => $staff_by_outlet,
     'draft'         => $session_draft,
 );
 
@@ -112,8 +184,26 @@ $api_unavailable = empty($lookup_result['success']);
 
 <div class="atem-bento">
 
+    <!-- Staff Type -->
+    <div class="atem-bento-item atem-span-12">
+        <div class="atem-card">
+            <h6 class="atem-card-title"><i class="bi bi-person-badge"></i> ATEM Type</h6>
+            <p class="atem-card-hint">Select who this ATEM is being issued for.</p>
+            <div class="atem-staff-type-options">
+                <button type="button" class="atem-staff-type-btn" id="staff-type-hq" data-type="hq">
+                    <i class="bi bi-building"></i>
+                    <span class="atem-staff-type-label">HQ ATEM</span>
+                </button>
+                <button type="button" class="atem-staff-type-btn" id="staff-type-outlet" data-type="outlet">
+                    <i class="bi bi-shop"></i>
+                    <span class="atem-staff-type-label">Outlet ATEM</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- ATEM Details -->
-    <div class="atem-bento-item atem-span-8">
+    <div class="atem-bento-item atem-span-8" id="atem-details-section">
         <div class="atem-card h-100">
             <h6 class="atem-card-title"><i class="bi bi-file-earmark-text"></i> ATEM Details</h6>
             <p class="atem-card-hint">Fields marked <span class="atem-req">*</span> are required.</p>
@@ -133,19 +223,64 @@ $api_unavailable = empty($lookup_result['success']);
                     <input type="text" class="form-control" id="atem-department"
                         value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
                 </div>
-                <div class="col-md-6">
-                    <label for="atem-level" class="form-label">ATEM Complexity Level<span class="atem-req">*</span></label>
+                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-label-group">
+                    <label for="atem-reward-label" class="form-label">Reward</label>
+                    <select class="form-select" id="atem-reward-label">
+                        <option value="" selected>None</option>
+                        <?php foreach ($lookups['reward_masterlist'] as $_rm): ?>
+                        <option value="<?php echo htmlspecialchars((string)$_rm['reward_value']); ?>">
+                            <?php echo htmlspecialchars((string)$_rm['reward_value']); ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="atem-form-error" id="atem-reward-label-error"></div>
+                </div>
+                <div class="col-md-6 atem-hq-only" id="atem-level-group">
+                    <label for="atem-level" class="form-label">ATEM Complexity Level<span
+                            class="atem-req">*</span></label>
                     <select class="form-select" id="atem-level">
                         <option value="">Select level</option>
                     </select>
                     <div class="atem-form-error" id="atem-level-error"></div>
                 </div>
-                <div class="col-md-6">
-                    <label for="atem-rule" class="form-label">Incentive Rule <span class="atem-req" id="rule-req-star" style="display:none;">*</span></label>
+                <div class="col-md-6 atem-hq-only" id="atem-rule-group">
+                    <label for="atem-rule" class="form-label">Incentive Rule <span class="atem-req" id="rule-req-star"
+                            style="display:none;">*</span></label>
                     <select class="form-select" id="atem-rule">
                         <option value="">Select rule</option>
                     </select>
                     <div class="atem-form-error" id="atem-rule-error"></div>
+                </div>
+                <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-pillars-group">
+                    <label for="atem-pillars" class="form-label">5 Pillars</label>
+                    <select class="form-select" id="atem-pillars">
+                        <option value="">Select pillar</option>
+                    </select>
+                    <div class="atem-form-error" id="atem-pillars-error"></div>
+                </div>
+                <div class="col-12 atem-outlet-only atem-hidden" id="atem-am-tag-group">
+                    <label class="form-label">Outlet Staff(s) <span class="atem-req">*</span></label>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <div class="atem-outlet-picker" id="atem-am-picker-wrap">
+                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select outlet
+                                    staff(s)...</div>
+                                <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
+                                    <div class="atem-outlet-picker-search-wrap">
+                                        <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
+                                            placeholder="Search outlet staff...">
+                                    </div>
+                                    <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
+                                </div>
+                            </div>
+                            <div class="atem-form-error" id="atem-am-error"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <div id="atem-am-tags" class="atem-outlet-tags">
+                                <span class="atem-empty-state">No outlet staff tagged.</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-6">
                     <label for="tl-start" class="form-label">Start Date <span class="atem-req">*</span></label>
@@ -167,9 +302,11 @@ $api_unavailable = empty($lookup_result['success']);
 
     <!-- Right column: Incentive (live) + Attachment + Reference Link -->
     <div class="atem-bento-item atem-span-4">
-        <div class="atem-card mb-3">
+        <div class="atem-card mb-3" id="atem-incentive-section">
             <h6 class="atem-card-title"><i class="bi bi-cash-coin"></i> Estimated Incentive</h6>
-            <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The company reserves the right to determine the final payout under its incentive scheme. C and I roles are not incentivised.</p>
+            <p class="atem-card-hint">This shows an estimated incentive based on the selected level and rule. The
+                company reserves the right to determine the final payout under its incentive scheme. C and I roles are
+                not incentivised.</p>
             <div class="atem-incentive">
                 <div class="atem-incentive-total-block">
                     <div class="atem-incentive-total-label">Total Incentive</div>
@@ -215,7 +352,8 @@ $api_unavailable = empty($lookup_result['success']);
         <!-- Reference Link -->
         <div class="atem-card">
             <div class="atem-card-title-row">
-                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link <span class="atem-req">*</span></h6>
+                <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link <span
+                        class="atem-req">*</span></h6>
                 <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference
                     Link</button>
             </div>
@@ -231,7 +369,13 @@ $api_unavailable = empty($lookup_result['success']);
     <div class="atem-bento-item atem-span-12">
         <div class="atem-card">
             <h6 class="atem-card-title"><i class="bi bi-people"></i> Project Team (ARCI)</h6>
-            <p class="atem-card-hint">Tag the team. A (Accountable) supports up to 2 members. R (Responsible) supports up to 2 members. C and I are for visibility only and are not incentivised.</p>
+            <p class="atem-card-hint">Tag the team. A (Accountable) supports up to 2 members. R (Responsible) supports
+                up to 2 members. C and I are for visibility only and are not incentivised.</p>
+
+            <div class="alert alert-warning atem-hidden" id="atem-arci-orphan-warning" role="alert">
+                <span id="atem-arci-orphan-warning-text"></span>
+                <button type="button" class="btn-close" id="atem-arci-orphan-warning-close" aria-label="Close"></button>
+            </div>
 
             <div class="atem-arci-add">
                 <div class="atem-arci-add-grid">
@@ -246,7 +390,17 @@ $api_unavailable = empty($lookup_result['success']);
                         </select>
                     </div>
                     <div>
-                        <label class="form-label">Department</label>
+                        <label class="form-label" id="arci-dept-label">Department</label>
+                        <div class="atem-outlet-only atem-hidden mb-1" id="arci-scope-toggle">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="arci-scope" id="arci-scope-outlet" checked>
+                                <label class="form-check-label" for="arci-scope-outlet">Outlet</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="arci-scope" id="arci-scope-department">
+                                <label class="form-check-label" for="arci-scope-department">Department</label>
+                            </div>
+                        </div>
                         <input type="text" class="form-control mb-1" id="arci-dept-search"
                             placeholder="Search department...">
                         <select class="form-select" id="arci-dept-select" size="6">
@@ -366,12 +520,32 @@ $api_unavailable = empty($lookup_result['success']);
     </div>
 </div>
 
+<!-- ATEM Type switch warning modal -->
+<div class="modal fade" id="atem-type-switch-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Reset Required</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">This ATEM already has data filled in. Changing the ATEM Type requires resetting the
+                    form first - all entered fields, tags, and attachments will be cleared.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="atem-type-switch-reset-btn">Reset Form</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 var ATEM_CONFIG = <?php echo json_encode($atem_config); ?>;
 </script>
 <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
 <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
 <?php
-$page_js = 'atem/js/create.js';
+$page_js = ATEM_BASE . 'js/create.js';
 include('footer.php');
 ?>

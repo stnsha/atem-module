@@ -5,6 +5,107 @@
     var STRUCT_OPTIONS  = [];   // [{id, label, grade}]
     var STRUCT_LABELS   = {};   // id -> label
 
+    function debounce(fn, wait) {
+        var t;
+        return function () {
+            var ctx = this, args = arguments;
+            clearTimeout(t);
+            t = setTimeout(function () { fn.apply(ctx, args); }, wait);
+        };
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Searchable select ("select2-lite") — mirrors buildSearchDropdown() in
+    // js/index.js, used here for the Outlet ATEM tab's Outlet filter.
+    // -----------------------------------------------------------------------
+    function syncSearchDropdownSize(baseId, sizeRefId) {
+        var btnEl = document.getElementById(baseId + '-btn');
+        var refEl = document.getElementById(sizeRefId);
+        if (refEl && btnEl) {
+            var refStyle = window.getComputedStyle(refEl);
+            btnEl.style.height       = refEl.offsetHeight + 'px';
+            btnEl.style.border       = refStyle.border;
+            btnEl.style.borderRadius = refStyle.borderRadius;
+            btnEl.style.fontSize     = refStyle.fontSize;
+            btnEl.style.color        = refStyle.color;
+        }
+    }
+
+    function buildSearchDropdown(baseId, items, allLabel, sizeRefId, onSelect) {
+        var listEl   = document.getElementById(baseId + '-list');
+        var searchEl = document.getElementById(baseId + '-search');
+        var btnEl    = document.getElementById(baseId + '-btn');
+        var dropEl   = document.getElementById(baseId + '-dropdown');
+        var valEl    = document.getElementById(baseId + '-value');
+        var wrapEl   = document.getElementById(baseId + '-wrap');
+        if (!listEl || !btnEl || !dropEl) { return; }
+
+        syncSearchDropdownSize(baseId, sizeRefId);
+
+        var html = '<li class="vf-s2-list-item" data-id="0">' + escapeHtml(allLabel) + '</li>';
+        for (var i = 0; i < items.length; i++) {
+            html += '<li class="vf-s2-list-item" data-id="' + items[i].id + '">' + escapeHtml(items[i].name) + '</li>';
+        }
+        listEl.innerHTML = html;
+
+        function openDropdown() {
+            dropEl.classList.add('open');
+            if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
+        }
+        function closeDropdown() { dropEl.classList.remove('open'); }
+
+        function filterList(term) {
+            var liItems = listEl.querySelectorAll('li');
+            var lower = term.toLowerCase();
+            for (var j = 0; j < liItems.length; j++) {
+                var text = liItems[j].textContent || '';
+                liItems[j].classList.toggle('hidden', !(!lower || text.toLowerCase().indexOf(lower) >= 0));
+            }
+        }
+
+        function selectItem(id, name) {
+            if (valEl) { valEl.value = id; }
+            if (btnEl) { btnEl.textContent = name; }
+            closeDropdown();
+            if (onSelect) { onSelect(id); }
+        }
+
+        btnEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
+        });
+        if (searchEl) {
+            searchEl.addEventListener('input', function () { filterList(this.value); });
+            searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
+        listEl.addEventListener('click', function (e) {
+            var li = e.target.closest ? e.target.closest('li') : null;
+            if (!li) { return; }
+            selectItem(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
+        });
+        document.addEventListener('click', function (e) {
+            if (wrapEl && !wrapEl.contains(e.target)) { closeDropdown(); }
+        });
+    }
+
+    function resetSearchDropdown(baseId, allLabel) {
+        var valEl  = document.getElementById(baseId + '-value');
+        var btnEl  = document.getElementById(baseId + '-btn');
+        var dropEl = document.getElementById(baseId + '-dropdown');
+        if (valEl)  { valEl.value = '0'; }
+        if (btnEl)  { btnEl.textContent = allLabel; }
+        if (dropEl) { dropEl.classList.remove('open'); }
+    }
+
     // -----------------------------------------------------------------------
     // Struct options: load from getLibrary and populate radio buttons + mgmt
     // -----------------------------------------------------------------------
@@ -172,8 +273,14 @@
         var structName  = staff.struct_name || '-';
         var structId    = parseInt(staff.struct_id, 10) || 0;
 
+        var outletCodes = staff.outlet_codes || [];
+        var outletHtml  = outletCodes.length
+            ? $.map(outletCodes, function (code) { return '<li>' + $('<span>').text(code).html() + '</li>'; }).join('')
+            : '<li>-</li>';
+
         $('#info-name').text(staff.nama_staff);
         $('#info-dept').text(staff.department_name || '-');
+        $('#info-outlet').html(outletHtml);
         $('#info-status').text(staff.status_semasa || '-');
         $('#info-grade').text(gradeLabel);
         $('#info-struct').text(structName);
@@ -202,6 +309,8 @@
         var staffName     = $(this).data('staff-name');
         var staffDept     = $(this).data('staff-dept');
         var staffDeptRaw  = $(this).data('staff-dept-raw') || '0';
+        var staffOutletRaw = String($(this).data('staff-outlet') || '');
+        var staffOutletCodes = staffOutletRaw === '' ? [] : staffOutletRaw.split(',');
         var staffStatus   = $(this).data('staff-status')      || '-';
         var staffGrade    = parseInt($(this).data('staff-grade'),     10) || 0;
         var staffStructId = parseInt($(this).data('staff-struct-id'), 10) || 0;
@@ -217,6 +326,7 @@
             nama_staff:      staffName,
             department_name: staffDept,
             dept_raw:        staffDeptRaw,
+            outlet_codes:    staffOutletCodes,
             status_semasa:   staffStatus,
             grade:           staffGrade,
             struct_id:       staffStructId,
@@ -233,6 +343,11 @@
     var adminPerPage    = 30;
     var activeNameFilter = '';
     var activeDeptFilter = 0;
+
+    var currentPageOutlet      = 1;
+    var adminPerPageOutlet     = 30;
+    var activeNameFilterOutlet = '';
+    var activeOutletFilter     = 0;
 
     function loadActiveStaff(page) {
         currentPage = page || 1;
@@ -275,6 +390,8 @@
             var structName = s.struct_name || '-';
             var structId   = s.struct_id   || 0;
             var canEdit    = canEditStaff(s.dept_raw);
+            var outletCodes = s.outlet_codes || [];
+            var outletHtml  = outletCodes.length ? $('<span>').text(outletCodes.join(',')).html() : '-';
 
             html += '<tr>' +
                 '<td>' + $('<span>').text(s.nama_staff).html() + '</td>' +
@@ -289,6 +406,7 @@
                     ' data-staff-name="' + $('<span>').text(s.nama_staff).html() + '"' +
                     ' data-staff-dept="' + $('<span>').text(s.department_name).html() + '"' +
                     ' data-staff-dept-raw="' + $('<span>').text(s.dept_raw || '0').html() + '"' +
+                    ' data-staff-outlet="' + $('<span>').text(outletCodes.join(',')).html() + '"' +
                     ' data-staff-status="' + $('<span>').text(s.status_semasa).html() + '"' +
                     ' data-staff-grade="' + grade + '"' +
                     ' data-staff-struct-id="' + structId + '"' +
@@ -299,6 +417,76 @@
             html += '</tr>';
         });
         $('#active-staff-tbody').html(html);
+    }
+
+    function loadActiveStaffOutlet(page) {
+        currentPageOutlet = page || 1;
+        var colSpan = TABLE_COLS_OUTLET;
+        $('#aco-staff-tbody').html('<tr><td colspan="' + colSpan + '" class="text-center text-muted py-3">Loading...</td></tr>');
+
+        var url = BACKEND_URL + '?action=getActiveStaff&outlet_only=1&page=' + currentPageOutlet + '&per_page=' + adminPerPageOutlet;
+        if (activeNameFilterOutlet !== '') { url += '&name_filter=' + encodeURIComponent(activeNameFilterOutlet); }
+        if (activeOutletFilter > 0) { url += '&outlet_filter=' + activeOutletFilter; }
+
+        $.ajax({
+            url: url,
+            type: 'GET',
+            dataType: 'json',
+            success: function (response) {
+                if (!response.success) {
+                    $('#aco-staff-tbody').html('<tr><td colspan="' + colSpan + '" class="text-center text-muted py-3">Failed to load.</td></tr>');
+                    return;
+                }
+                renderTableOutlet(response.data);
+                renderPaginationOutlet(response.page, response.total_pages, response.total, response.per_page);
+            },
+            error: function () {
+                $('#aco-staff-tbody').html('<tr><td colspan="' + colSpan + '" class="text-center text-muted py-3">Error loading data.</td></tr>');
+            }
+        });
+    }
+
+    function renderTableOutlet(data) {
+        var colSpan = TABLE_COLS_OUTLET;
+        if (!data || data.length === 0) {
+            $('#aco-staff-tbody').html('<tr><td colspan="' + colSpan + '" class="text-center text-muted py-3">No records found.</td></tr>');
+            return;
+        }
+        var html = '';
+        $.each(data, function (i, s) {
+            var grade      = s.grade;
+            var gradeLabel = GRADE_LABELS[grade] !== undefined ? GRADE_LABELS[grade] : 'Unknown';
+            var gradeBadge = GRADE_BADGES[grade] !== undefined ? GRADE_BADGES[grade] : 'bg-secondary';
+            var structName = s.struct_name || '-';
+            var structId   = s.struct_id   || 0;
+            var canEdit    = canEditStaff(s.dept_raw);
+            var outletCodes = s.outlet_codes || [];
+            var outletHtml  = outletCodes.length ? $('<span>').text(outletCodes.join(',')).html() : '-';
+
+            html += '<tr>' +
+                '<td>' + $('<span>').text(s.nama_staff).html() + '</td>' +
+                '<td class="text-muted">' + outletHtml + '</td>' +
+                '<td><span class="atem-pill ' + gradeBadge + '">' + gradeLabel + '</span></td>' +
+                '<td class="text-muted">' + $('<span>').text(structName).html() + '</td>';
+
+            if (SHOW_EDIT) {
+                html += '<td><button type="button" class="btn btn-sm btn-outline-secondary edit-btn"' +
+                    (canEdit ? '' : ' disabled') +
+                    ' data-staff-id="' + s.id + '"' +
+                    ' data-staff-name="' + $('<span>').text(s.nama_staff).html() + '"' +
+                    ' data-staff-dept="' + $('<span>').text(s.department_name).html() + '"' +
+                    ' data-staff-dept-raw="' + $('<span>').text(s.dept_raw || '0').html() + '"' +
+                    ' data-staff-outlet="' + $('<span>').text(outletCodes.join(',')).html() + '"' +
+                    ' data-staff-status="' + $('<span>').text(s.status_semasa).html() + '"' +
+                    ' data-staff-grade="' + grade + '"' +
+                    ' data-staff-struct-id="' + structId + '"' +
+                    ' data-staff-struct-name="' + $('<span>').text(structName).html() + '"' +
+                    '>Edit</button></td>';
+            }
+
+            html += '</tr>';
+        });
+        $('#aco-staff-tbody').html(html);
     }
 
     function adminPageBtn(p, activePg) {
@@ -355,13 +543,73 @@
         });
     }
 
+    function renderPaginationOutlet(page, totalPages, total, perPage) {
+        var start = total === 0 ? 0 : (page - 1) * perPage + 1;
+        var end   = Math.min(page * perPage, total);
+        var pager = document.getElementById('aco-staff-pager');
+        if (!pager) { return; }
+        if (total === 0) { pager.innerHTML = ''; return; }
+
+        var opts    = [10, 30, 50, 100];
+        var selHtml = '<select class="atem-perpage-select">';
+        for (var oi = 0; oi < opts.length; oi++) {
+            selHtml += '<option value="' + opts[oi] + '"' + (adminPerPageOutlet === opts[oi] ? ' selected' : '') + '>' + opts[oi] + '</option>';
+        }
+        selHtml += '</select>';
+        var leftHtml = '<div class="atem-pager-left">Show ' + selHtml + ' entries</div>';
+        var info     = '<span class="atem-pager-info">Showing ' + start + ' to ' + end + ' of ' + total + ' entries</span>';
+
+        if (totalPages <= 1) {
+            pager.innerHTML = leftHtml + '<div class="d-flex align-items-center gap-2">' + info + '</div>';
+            return;
+        }
+
+        var win = 2, pfrom = Math.max(1, page - win), pto = Math.min(totalPages, page + win);
+        var btns = '<button type="button" class="atem-pager-btn" data-page="' + (page - 1) + '"' + (page === 1 ? ' disabled' : '') + '>Previous</button>';
+        if (pfrom > 1) { btns += adminPageBtn(1, page) + (pfrom > 2 ? '<span class="atem-pager-gap">...</span>' : ''); }
+        for (var p = pfrom; p <= pto; p++) { btns += adminPageBtn(p, page); }
+        if (pto < totalPages) { btns += (pto < totalPages - 1 ? '<span class="atem-pager-gap">...</span>' : '') + adminPageBtn(totalPages, page); }
+        btns += '<button type="button" class="atem-pager-btn" data-page="' + (page + 1) + '"' + (page === totalPages ? ' disabled' : '') + '>Next</button>';
+
+        var rightHtml = '<div class="d-flex align-items-center gap-2">' + info + '<div class="atem-pager-bar">' + btns + '</div></div>';
+        pager.innerHTML = leftHtml + rightHtml;
+    }
+
+    var _adminPagerOutlet = document.getElementById('aco-staff-pager');
+    if (_adminPagerOutlet) {
+        _adminPagerOutlet.addEventListener('click', function (e) {
+            var btn = e.target.closest ? e.target.closest('.atem-pager-btn') : null;
+            if (btn && !btn.disabled) {
+                var p = parseInt(btn.getAttribute('data-page'), 10);
+                if (!isNaN(p) && p >= 1) { loadActiveStaffOutlet(p); }
+            }
+        });
+        _adminPagerOutlet.addEventListener('change', function (e) {
+            if (e.target.classList.contains('atem-perpage-select')) {
+                adminPerPageOutlet = parseInt(e.target.value, 10);
+                currentPageOutlet  = 1;
+                loadActiveStaffOutlet(1);
+            }
+        });
+    }
+
     // -----------------------------------------------------------------------
-    // Filter bar (grade 2+ only)
+    // Filter bar (grade 2+ only) — auto-filters as the user types/selects
     // -----------------------------------------------------------------------
-    $('#ac-apply-filter').on('click', function () {
-        activeDeptFilter = HAS_DEPT_FILTER ? (parseInt($('#ac-filter-dept').val(), 10) || 0) : 0;
+    function applyHqNameFilterNow() {
         activeNameFilter = $.trim($('#ac-filter-name').val());
         loadActiveStaff(1);
+    }
+    var applyHqNameFilterDebounced = debounce(applyHqNameFilterNow, 400);
+
+    $('#ac-filter-dept').on('change', function () {
+        activeDeptFilter = HAS_DEPT_FILTER ? (parseInt($(this).val(), 10) || 0) : 0;
+        loadActiveStaff(1);
+    });
+
+    $('#ac-filter-name').on('input', applyHqNameFilterDebounced);
+    $('#ac-filter-name').on('keydown', function (e) {
+        if (e.key === 'Enter') { applyHqNameFilterNow(); }
     });
 
     $('#ac-reset-filter').on('click', function () {
@@ -372,8 +620,28 @@
         loadActiveStaff(1);
     });
 
-    $('#ac-filter-name').on('keydown', function (e) {
-        if (e.key === 'Enter') { $('#ac-apply-filter').trigger('click'); }
+    function applyOutletNameFilterNow() {
+        activeNameFilterOutlet = $.trim($('#aco-filter-name').val());
+        loadActiveStaffOutlet(1);
+    }
+    var applyOutletNameFilterDebounced = debounce(applyOutletNameFilterNow, 400);
+
+    buildSearchDropdown('aco-filter-outlet', OUTLET_FILTER_OPTIONS || [], 'All Outlets', 'aco-filter-name', function (id) {
+        activeOutletFilter = parseInt(id, 10) || 0;
+        loadActiveStaffOutlet(1);
+    });
+
+    $('#aco-filter-name').on('input', applyOutletNameFilterDebounced);
+    $('#aco-filter-name').on('keydown', function (e) {
+        if (e.key === 'Enter') { applyOutletNameFilterNow(); }
+    });
+
+    $('#aco-reset-filter').on('click', function () {
+        activeNameFilterOutlet = '';
+        activeOutletFilter     = 0;
+        $('#aco-filter-name').val('');
+        resetSearchDropdown('aco-filter-outlet', 'All Outlets');
+        loadActiveStaffOutlet(1);
     });
 
     // -----------------------------------------------------------------------
@@ -401,6 +669,7 @@
                 if (response.success) {
                     showAlert(response.message, true);
                     loadActiveStaff(currentPage);
+                    loadActiveStaffOutlet(currentPageOutlet);
                     loadStructHistory(selectedStaffId);
 
                     var g      = parseInt(grade, 10);
@@ -430,9 +699,22 @@
     function dismissAlert() { $('#form-alert').css('display', 'none'); }
     window.dismissAlert = dismissAlert;
 
+    // The Outlet ATEM tab-pane starts hidden (display:none), so offsetHeight
+    // reads 0 when buildSearchDropdown() first sized the Outlet filter's
+    // button off '#aco-filter-name' — re-sync once the tab is actually shown.
+    var acTabOutletBtn = document.getElementById('ac-tab-outlet-btn');
+    if (acTabOutletBtn) {
+        acTabOutletBtn.addEventListener('shown.bs.tab', function () {
+            syncSearchDropdownSize('aco-filter-outlet', 'aco-filter-name');
+        });
+    }
+
     // -----------------------------------------------------------------------
     // Init
     // -----------------------------------------------------------------------
-    loadAllStructData(function () { loadActiveStaff(1); });
+    loadAllStructData(function () {
+        if (TAB_SINGLE_VIEW !== 'outlet') { loadActiveStaff(1); }
+        if (TAB_SINGLE_VIEW !== 'hq') { loadActiveStaffOutlet(1); }
+    });
 
 })();

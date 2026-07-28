@@ -33,14 +33,22 @@ if (!isset($_SERVER['REQUEST_METHOD']) || $_SERVER['REQUEST_METHOD'] !== 'POST')
 }
 
 $allowed_roles = array(1, 2, 3, 4, 5, 6);
+$allowed_views = array('hq', 'outlet');
 $role_input    = isset($_POST['role']) ? $_POST['role'] : null;
+$view_input    = isset($_POST['view']) ? $_POST['view'] : null;
 
 if ($role_input === 'clear') {
     unset($_SESSION['atem_dev_role_override']);
+    unset($_SESSION['atem_dev_view_override']);
 } elseif ($role_input !== null) {
     $role = (int)$role_input;
     if (in_array($role, $allowed_roles)) {
         $_SESSION['atem_dev_role_override'] = $role;
+        if (in_array($view_input, $allowed_views, true)) {
+            $_SESSION['atem_dev_view_override'] = $view_input;
+        } else {
+            unset($_SESSION['atem_dev_view_override']);
+        }
     }
 }
 
@@ -48,13 +56,18 @@ if ($role_input === 'clear') {
 unset($_SESSION['jwt_token']);
 unset($_SESSION['jwt_expires']);
 
+// This file doesn't include header.php, so compute the module base locally
+// the same way header.php's ATEM_BASE constant does, keeping the fallback
+// redirect on the same folder (atem or atem-staging) that served this request.
+$_dev_atem_base = '/odb/' . basename(dirname(__FILE__)) . '/';
+
 $redirect = isset($_POST['redirect']) && $_POST['redirect'] !== ''
     ? $_POST['redirect']
-    : '/odb/atem/index.php';
+    : $_dev_atem_base . 'index.php';
 
 // Only allow relative redirects to prevent open redirect
 if (strpos($redirect, '://') !== false) {
-    $redirect = '/odb/atem/index.php';
+    $redirect = $_dev_atem_base . 'index.php';
 }
 
 header('Location: ' . $redirect);

@@ -28,7 +28,7 @@ $_be_isLocal    = in_array($_be_serverName, array('localhost', '127.0.0.1'))
 
 // Always query DB to get requester identity and department
 $username    = mysqli_real_escape_string($conn, $_SESSION['myusername']);
-$auth_result = mysqli_query($conn, "SELECT id, grade, atem, department FROM staff WHERE username = '$username' AND recycle != 1");
+$auth_result = mysqli_query($conn, "SELECT id, grade, atem, okr, department, outlet FROM staff WHERE username = '$username' AND recycle != 1");
 if (!$auth_result || mysqli_num_rows($auth_result) === 0) {
     echo json_encode(array('error' => 'Unauthorized'));
     exit;
@@ -42,20 +42,53 @@ foreach (explode(',', (string)$auth_row['department']) as $_d) {
         $requester_dept_ids[] = $_d;
     }
 }
+// staff.outlet is comma-separated too - used to narrow a grade-2 Outlet-
+// department requester down to their own specific outlet(s) in getActiveStaff.
+$requester_outlet_ids = array();
+foreach (explode(',', (string)$auth_row['outlet']) as $_ro) {
+    $_ro = (int)trim($_ro);
+    if ($_ro > 0) {
+        $requester_outlet_ids[] = $_ro;
+    }
+}
 
-// Always reflects the real DB atem flag — used for administrative actions
-// (library management, window toggle) that dev override should not suppress.
-$db_is_superadmin = ((int)$auth_row['atem'] === 1);
+// Always reflects the real DB SuperAdmin flags — used for administrative
+// actions (library management, window toggle) that dev override should not
+// suppress. SuperAdmin is the union of staff.atem and staff.okr.
+$db_is_superadmin = ((int)$auth_row['atem'] === 1 || (int)$auth_row['okr'] === 1);
 
-// Dev grade override applies to grade only; department always from DB.
-// $requester_is_superadmin is suppressed when dev override is active so devs
-// can simulate lower-grade struct-lock behaviour.
+// Dev grade override applies to grade (and, when a view override is also
+// active, to department - see below). $requester_is_superadmin is suppressed
+// when dev override is active so devs can simulate lower-grade struct-lock
+// behaviour.
 if ($_be_isLocal && isset($_SESSION['atem_dev_role_override'])) {
     $requester_grade         = (int)$_SESSION['atem_dev_role_override'];
     $requester_is_superadmin = false;
 } else {
     $requester_is_superadmin = $db_is_superadmin;
     $requester_grade         = $requester_is_superadmin ? 6 : (int)$auth_row['grade'];
+}
+
+// Dev department-view override: simulates the dev as Outlet-department (id 1)
+// staff or as non-Outlet ("HQ") staff, paired with the grade override above.
+if ($_be_isLocal && isset($_SESSION['atem_dev_role_override']) && isset($_SESSION['atem_dev_view_override'])) {
+    if ($_SESSION['atem_dev_view_override'] === 'outlet') {
+        $requester_dept_ids = array(1);
+    } elseif ($_SESSION['atem_dev_view_override'] === 'hq') {
+        $_hq_dept_ids = array();
+        foreach ($requester_dept_ids as $_hd) {
+            if ($_hd !== 1) {
+                $_hq_dept_ids[] = $_hd;
+            }
+        }
+        if (empty($_hq_dept_ids)) {
+            $_hq_fallback_r = mysqli_query($conn, "SELECT id FROM staff_department WHERE id != 1 ORDER BY id ASC LIMIT 1");
+            if ($_hq_fallback_r && ($_hq_fallback_row = mysqli_fetch_assoc($_hq_fallback_r))) {
+                $_hq_dept_ids[] = (int)$_hq_fallback_row['id'];
+            }
+        }
+        $requester_dept_ids = $_hq_dept_ids;
+    }
 }
 
 // Quarter window helpers
@@ -69,6 +102,45 @@ function getCurrentQuarter() {
 function isInStructWindow() {
     $day = (int)date('j');
     return ($day >= 1 && $day <= 10);
+}
+
+function attachOutletCodes($conn, $staff_list)
+{
+    $ids = [];
+    foreach ($staff_list as $s) {
+        foreach (explode(',', $s['outlet_raw']) as $oid) {
+            $oid = (int)trim($oid);
+            if ($oid > 0) {
+                $ids[$oid] = true;
+            }
+        }
+    }
+
+    $code_map = [];
+    if (!empty($ids)) {
+        $ids_sql = implode(',', array_keys($ids));
+        $r = mysqli_query($conn, "SELECT id, code FROM outlet WHERE id IN ($ids_sql)");
+        if ($r) {
+            while ($row = mysqli_fetch_assoc($r)) {
+                $code_map[(int)$row['id']] = $row['code'];
+            }
+        }
+    }
+
+    foreach ($staff_list as &$s) {
+        $codes = [];
+        foreach (explode(',', $s['outlet_raw']) as $oid) {
+            $oid = (int)trim($oid);
+            if ($oid > 0 && isset($code_map[$oid])) {
+                $codes[] = $code_map[$oid];
+            }
+        }
+        $s['outlet_codes'] = $codes;
+        unset($s['outlet_raw']);
+    }
+    unset($s);
+
+    return $staff_list;
 }
 $current_year    = (int)date('Y');
 $current_quarter = getCurrentQuarter();
@@ -89,13 +161,17 @@ $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'GET') {
 
+    $outlet_only           = (isset($_GET['outlet_only']) && $_GET['outlet_only'] == '1');
+    $outlet_only_sql       = $outlet_only ? 'AND FIND_IN_SET(1, s.department)' : '';
+    $outlet_only_sql_count = $outlet_only ? 'AND FIND_IN_SET(1, department)'   : '';
+
     if ($requester_grade === 1) {
         $query  = "SELECT s.id, s.nama_staff, s.grade, s.status_semasa, s.struct,
-                          s.department, d.depart_name, st.struct_name
+                          s.department, d.depart_name, st.struct_name, s.outlet
                    FROM staff s
                    LEFT JOIN staff_department d  ON s.department = d.id
                    LEFT JOIN staff_struct     st ON s.struct      = st.id
-                   WHERE s.recycle != 1 AND s.id = $requester_id";
+                   WHERE s.recycle != 1 AND s.id = $requester_id $outlet_only_sql";
         $result = mysqli_query($conn, $query);
         $staff  = array();
         if ($result) {
@@ -108,10 +184,12 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
                     'department_name' => $row['depart_name']    ? $row['depart_name']    : '-',
                     'dept_raw'        => $row['department']     ? $row['department']     : '0',
                     'struct_id'       => ($row['struct'] !== null) ? (int)$row['struct'] : 0,
-                    'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-'
+                    'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-',
+                    'outlet_raw'      => $row['outlet']         ? $row['outlet']         : ''
                 );
             }
         }
+        $staff = attachOutletCodes($conn, $staff);
         echo json_encode(array(
             'success'     => true,
             'data'        => $staff,
@@ -130,6 +208,7 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
     $name_filter_raw = isset($_GET['name_filter']) ? trim($_GET['name_filter']) : '';
     $name_filter     = ($name_filter_raw !== '') ? mysqli_real_escape_string($conn, $name_filter_raw) : '';
     $dept_filter     = isset($_GET['dept_filter']) ? (int)$_GET['dept_filter'] : 0;
+    $outlet_filter   = isset($_GET['outlet_filter']) ? (int)$_GET['outlet_filter'] : 0;
 
     $name_sql       = ($name_filter !== '') ? "AND s.nama_staff LIKE '%$name_filter%'" : '';
     $name_sql_count = ($name_filter !== '') ? "AND nama_staff LIKE '%$name_filter%'"   : '';
@@ -141,20 +220,36 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
     $dept_filter_sql       = ($dept_filter > 0) ? "AND FIND_IN_SET($dept_filter, s.department)"   : '';
     $dept_filter_sql_count = ($dept_filter > 0) ? "AND FIND_IN_SET($dept_filter, department)"     : '';
 
+    $outlet_filter_sql       = ($outlet_filter > 0) ? "AND FIND_IN_SET($outlet_filter, s.outlet)" : '';
+    $outlet_filter_sql_count = ($outlet_filter > 0) ? "AND FIND_IN_SET($outlet_filter, outlet)"   : '';
+
     if ($requester_grade <= 3 && !$requester_is_superadmin) {
-        $dept_conds       = array();
-        $dept_conds_count = array();
-        foreach ($requester_dept_ids as $_did) {
-            $dept_conds[]       = "FIND_IN_SET($_did, s.department)";
-            $dept_conds_count[] = "FIND_IN_SET($_did, department)";
+        // Grade 2, Outlet department: narrowed to the requester's own specific
+        // outlet(s) instead of the usual department overlap - department=1
+        // alone is shared by every outlet company-wide, so a grade-2 Outlet
+        // requester would otherwise see every outlet's staff.
+        if ($requester_grade === 2 && in_array(1, $requester_dept_ids, true)) {
+            $own_scope_conds       = array();
+            $own_scope_conds_count = array();
+            foreach ($requester_outlet_ids as $_roid) {
+                $own_scope_conds[]       = "FIND_IN_SET($_roid, s.outlet)";
+                $own_scope_conds_count[] = "FIND_IN_SET($_roid, outlet)";
+            }
+        } else {
+            $own_scope_conds       = array();
+            $own_scope_conds_count = array();
+            foreach ($requester_dept_ids as $_did) {
+                $own_scope_conds[]       = "FIND_IN_SET($_did, s.department)";
+                $own_scope_conds_count[] = "FIND_IN_SET($_did, department)";
+            }
         }
-        $dept_sql           = count($dept_conds)       ? '(' . implode(' OR ', $dept_conds) . ')'       : '1=0';
-        $dept_sql_count     = count($dept_conds_count) ? '(' . implode(' OR ', $dept_conds_count) . ')' : '1=0';
-        $where_clause       = "s.recycle != 1 AND s.grade > 0 AND $dept_sql $name_sql $dept_filter_sql";
-        $where_clause_count = "recycle != 1 AND grade > 0 AND $dept_sql_count $name_sql_count $dept_filter_sql_count";
+        $dept_sql           = count($own_scope_conds)       ? '(' . implode(' OR ', $own_scope_conds) . ')'       : '1=0';
+        $dept_sql_count     = count($own_scope_conds_count) ? '(' . implode(' OR ', $own_scope_conds_count) . ')' : '1=0';
+        $where_clause       = "s.recycle != 1 AND s.grade > 0 AND $dept_sql $name_sql $dept_filter_sql $outlet_only_sql $outlet_filter_sql";
+        $where_clause_count = "recycle != 1 AND grade > 0 AND $dept_sql_count $name_sql_count $dept_filter_sql_count $outlet_only_sql_count $outlet_filter_sql_count";
     } else {
-        $where_clause       = "s.recycle != 1 AND s.grade > 0 $name_sql $dept_filter_sql";
-        $where_clause_count = "recycle != 1 AND grade > 0 $name_sql_count $dept_filter_sql_count";
+        $where_clause       = "s.recycle != 1 AND s.grade > 0 $name_sql $dept_filter_sql $outlet_only_sql $outlet_filter_sql";
+        $where_clause_count = "recycle != 1 AND grade > 0 $name_sql_count $dept_filter_sql_count $outlet_only_sql_count $outlet_filter_sql_count";
     }
 
     $count_result = mysqli_query($conn, "SELECT COUNT(*) as total FROM staff WHERE $where_clause_count");
@@ -165,7 +260,7 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
     }
 
     $query = "SELECT s.id, s.nama_staff, s.grade, s.status_semasa, s.struct,
-                     s.department, d.depart_name, st.struct_name
+                     s.department, d.depart_name, st.struct_name, s.outlet
               FROM staff s
               LEFT JOIN staff_department d  ON s.department = d.id
               LEFT JOIN staff_struct     st ON s.struct      = st.id
@@ -185,10 +280,12 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
                 'department_name' => $row['depart_name']    ? $row['depart_name']    : '-',
                 'dept_raw'        => $row['department']     ? $row['department']     : '0',
                 'struct_id'       => ($row['struct'] !== null) ? (int)$row['struct'] : 0,
-                'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-'
+                'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-',
+                'outlet_raw'      => $row['outlet']         ? $row['outlet']         : ''
             );
         }
     }
+    $staff = attachOutletCodes($conn, $staff);
 
     echo json_encode(array(
         'success'     => true,
@@ -214,17 +311,28 @@ if ($action === 'searchStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['
     }
 
     if ($requester_grade <= 3 && !$requester_is_superadmin) {
-        $dept_conds = array();
-        foreach ($requester_dept_ids as $_did) {
-            $dept_conds[] = "FIND_IN_SET($_did, s.department)";
+        // Grade 2, Outlet department: same "own outlet(s) only" narrowing as
+        // getActiveStaff, so the Select2 staff search can't surface staff
+        // outside the requester's own outlet even though department=1 is
+        // shared by every outlet company-wide.
+        if ($requester_grade === 2 && in_array(1, $requester_dept_ids, true)) {
+            $own_scope_conds = array();
+            foreach ($requester_outlet_ids as $_roid) {
+                $own_scope_conds[] = "FIND_IN_SET($_roid, s.outlet)";
+            }
+        } else {
+            $own_scope_conds = array();
+            foreach ($requester_dept_ids as $_did) {
+                $own_scope_conds[] = "FIND_IN_SET($_did, s.department)";
+            }
         }
-        $dept_filter = count($dept_conds) ? 'AND (' . implode(' OR ', $dept_conds) . ')' : 'AND 1=0';
+        $dept_filter = count($own_scope_conds) ? 'AND (' . implode(' OR ', $own_scope_conds) . ')' : 'AND 1=0';
     } else {
         $dept_filter = '';
     }
 
     $query = "SELECT s.id, s.nama_staff, s.grade, s.status_semasa, s.struct,
-                     s.department, d.depart_name, st.struct_name
+                     s.department, d.depart_name, st.struct_name, s.outlet
               FROM staff s
               LEFT JOIN staff_department d  ON s.department = d.id
               LEFT JOIN staff_struct     st ON s.struct      = st.id
@@ -246,10 +354,12 @@ if ($action === 'searchStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['
                 'department_name' => $row['depart_name']    ? $row['depart_name']    : '-',
                 'dept_raw'        => $row['department']     ? $row['department']     : '0',
                 'struct_id'       => ($row['struct'] !== null) ? (int)$row['struct'] : 0,
-                'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-'
+                'struct_name'     => $row['struct_name']    ? $row['struct_name']    : '-',
+                'outlet_raw'      => $row['outlet']         ? $row['outlet']         : ''
             );
         }
     }
+    $staff = attachOutletCodes($conn, $staff);
 
     echo json_encode($staff);
     exit;
@@ -380,17 +490,17 @@ if ($action === 'getLibrary' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['R
     $grades  = array();
     $structs = array();
 
-    $r = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade ORDER BY id ASC");
+    $r = mysqli_query($conn, "SELECT id, grade_name, is_active FROM staff_grade ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
-            $grades[] = array('id' => (int)$row['id'], 'label' => $row['grade_name']);
+            $grades[] = array('id' => (int)$row['id'], 'label' => $row['grade_name'], 'is_active' => (int)$row['is_active']);
         }
     }
 
-    $r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
+    $r = mysqli_query($conn, "SELECT id, struct_name, is_active FROM staff_struct ORDER BY id ASC");
     if ($r) {
         while ($row = mysqli_fetch_assoc($r)) {
-            $structs[] = array('id' => (int)$row['id'], 'label' => $row['struct_name']);
+            $structs[] = array('id' => (int)$row['id'], 'label' => $row['struct_name'], 'is_active' => (int)$row['is_active']);
         }
     }
 
@@ -404,22 +514,42 @@ if ($action === 'updateLibrary' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER
         exit;
     }
 
-    $type  = isset($_POST['type'])  ? $_POST['type']        : '';
-    $id    = isset($_POST['id'])    ? (int)$_POST['id']     : -1;
-    $label = isset($_POST['label']) ? trim($_POST['label'])  : '';
+    $type      = isset($_POST['type'])       ? $_POST['type']            : '';
+    $id        = isset($_POST['id'])         ? (int)$_POST['id']         : -1;
+    $has_label = isset($_POST['label']);
+    $label     = $has_label ? trim($_POST['label']) : '';
+    $has_active = isset($_POST['is_active']);
+    $is_active  = $has_active ? ((int)$_POST['is_active'] === 1 ? 1 : 0) : 0;
 
-    if (!in_array($type, array('grade', 'struct')) || $id < 0 || $label === '') {
+    if (!in_array($type, array('grade', 'struct')) || $id < 0) {
         echo json_encode(array('success' => false, 'message' => 'Invalid input.'));
         exit;
     }
+    if ($has_label && $label === '') {
+        echo json_encode(array('success' => false, 'message' => 'Invalid input.'));
+        exit;
+    }
+    if (!$has_label && !$has_active) {
+        echo json_encode(array('success' => false, 'message' => 'Nothing to update.'));
+        exit;
+    }
 
-    $table         = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
-    $col           = ($type === 'grade') ? 'grade_name'  : 'struct_name';
-    $label_escaped = mysqli_real_escape_string($conn, $label);
+    $table = ($type === 'grade') ? 'staff_grade' : 'staff_struct';
+    $col   = ($type === 'grade') ? 'grade_name'  : 'struct_name';
 
-    $result = mysqli_query($conn, "UPDATE `$table` SET `$col` = '$label_escaped' WHERE id = $id");
+    $set_parts = [];
+    if ($has_label) {
+        $label_escaped = mysqli_real_escape_string($conn, $label);
+        $set_parts[]   = "`$col` = '$label_escaped'";
+    }
+    if ($has_active) {
+        $set_parts[] = "`is_active` = " . $is_active;
+    }
+
+    $result = mysqli_query($conn, "UPDATE `$table` SET " . implode(', ', $set_parts) . " WHERE id = $id");
     if ($result && mysqli_affected_rows($conn) >= 0) {
-        echo json_encode(array('success' => true, 'message' => 'Label updated successfully.'));
+        $message = $has_label ? 'Label updated successfully.' : 'Status updated successfully.';
+        echo json_encode(array('success' => true, 'message' => $message));
     } else {
         echo json_encode(array('success' => false, 'message' => 'Database error: ' . mysqli_error($conn)));
     }

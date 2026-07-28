@@ -1,19 +1,28 @@
 <?php
 $page_title = 'ATEM';
-$page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="atem/create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
+// header.php (and its ATEM_BASE constant) hasn't been included yet at this point,
+// since header.php itself echoes $page_title_actions during its own run — so the
+// module base is computed locally here the same way ATEM_BASE will be.
+$_view_atem_base = '/odb/' . basename(__DIR__) . '/';
+$page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="' . $_view_atem_base . 'create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
 $extra_css = '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">';
 include('header.php');
 
 // header.php bootstrapped the odb connection ($conn) and current staff.
 // Build id -> name maps from odb so we can show issuer and department names
 // for the FK ids returned by the atem-api.
-$staff_names = array();
-$dept_names  = array();
+$staff_names      = array();
+$staff_positions  = array();
+$dept_names       = array();
 
-$staff_res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1");
+$staff_res = mysqli_query($conn, "SELECT s.id, s.nama_staff, p.position_name
+                                   FROM staff s
+                                   LEFT JOIN position_rymnet p ON p.id = s.status_rym
+                                   WHERE s.recycle != 1");
 if ($staff_res) {
     while ($srow = mysqli_fetch_assoc($staff_res)) {
-        $staff_names[(int) $srow['id']] = $srow['nama_staff'];
+        $staff_names[(int) $srow['id']]      = $srow['nama_staff'];
+        $staff_positions[(int) $srow['id']]  = $srow['position_name'];
     }
 }
 $dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
@@ -36,6 +45,27 @@ if (isset($department) && $department !== '') {
         $_dpart = (int)trim($_dpart);
         if ($_dpart > 0) { $user_dept_ids[] = $_dpart; }
     }
+}
+
+// staff.outlet is comma-separated too (e.g. an Area Manager covering several
+// outlets). Used to narrow a grade-2 Outlet-department viewer down to their
+// own specific outlet(s), instead of every outlet company-wide. $outlet is
+// set by lock_adv.php and is untouched by api.php's own bootstrap below.
+$user_outlet_ids = array();
+if (isset($outlet) && $outlet !== '') {
+    foreach (explode(',', (string)$outlet) as $_opart) {
+        $_opart = (int)trim($_opart);
+        if ($_opart > 0) { $user_outlet_ids[] = $_opart; }
+    }
+}
+
+// Grade 1 and 2 users only ever belong to one side (HQ or Outlet, per their
+// own department), so showing both tabs is misleading noise - collapse to the
+// single matching tab, like the pre-tab single-view page. Grade 3+ and
+// SuperAdmin keep seeing both tabs as today (deferred to a future task).
+$grade1_single_view = null;
+if (((int)$atem_permission === 1 || (int)$atem_permission === 2) && !$_is_superadmin) {
+    $grade1_single_view = in_array(1, $user_dept_ids, true) ? 'outlet' : 'hq';
 }
 
 // Build grade-scoped issuer list for the filter dropdown.
@@ -67,7 +97,32 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
     }
 }
 
-$lookups = array('levels' => array(), 'rules' => array(), 'statuses' => array());
+// Outlet filter + code lookup used to resolve atem_outlets.outlet_id to a
+// display code below. regional_id also lets each row resolve its region(s)
+// (odb.outlet.regional_id -> odb.outlet_regional.id) for the Region filter.
+$outlet_list       = [];
+$outlet_names      = [];
+$outlet_region_ids = [];
+$outlet_res = mysqli_query($conn, "SELECT id, code, regional_id FROM outlet ORDER BY code ASC");
+if ($outlet_res) {
+    while ($orow = mysqli_fetch_assoc($outlet_res)) {
+        $outlet_list[] = ['id' => (int) $orow['id'], 'code' => $orow['code']];
+        $outlet_names[(int) $orow['id']] = $orow['code'];
+        $outlet_region_ids[(int) $orow['id']] = (int) $orow['regional_id'];
+    }
+}
+
+$region_list  = [];
+$region_names = [];
+$region_res = mysqli_query($conn, "SELECT id, regional FROM outlet_regional ORDER BY regional ASC");
+if ($region_res) {
+    while ($rrow = mysqli_fetch_assoc($region_res)) {
+        $region_list[] = ['id' => (int) $rrow['id'], 'name' => $rrow['regional']];
+        $region_names[(int) $rrow['id']] = $rrow['regional'];
+    }
+}
+
+$lookups = ['levels' => [], 'rules' => [], 'statuses' => []];
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
@@ -88,11 +143,33 @@ if (isset($_SESSION['atem_warning'])) {
 // Enrich each row with resolved names + flattened display fields.
 $view_rows         = array();
 $row_arci_dept_ids = array(); // parallel array used only for grade 2 server-side filtering
+$row_outlet_ids    = array(); // parallel array used only for grade-2-Outlet server-side filtering
 foreach ($rows as $a) {
     $issuer_id = isset($a['issuer_staff_id']) ? (int) $a['issuer_staff_id'] : 0;
     $dept_id   = isset($a['staff_dept_id']) ? (int) $a['staff_dept_id'] : 0;
+    // Outlet-type ATEMs show Position for Issuer/Accountable instead of Department.
+    $is_outlet_type = ((int) (isset($a['atem_type']) ? $a['atem_type'] : 1) === 2);
     $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
+    $pillar    = isset($a['pillar']) && $a['pillar'] ? $a['pillar'] : null;
     $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
+
+    $outlet_codes  = [];
+    $outlet_ids    = [];
+    $row_region_names = [];
+    if (isset($a['outlets']) && is_array($a['outlets'])) {
+        foreach ($a['outlets'] as $o) {
+            $o_id = isset($o['outlet_id']) ? (int) $o['outlet_id'] : 0;
+            if ($o_id) {
+                $outlet_codes[] = isset($outlet_names[$o_id]) ? $outlet_names[$o_id] : ('Outlet #' . $o_id);
+                $outlet_ids[]   = $o_id;
+                $o_region_id = isset($outlet_region_ids[$o_id]) ? $outlet_region_ids[$o_id] : 0;
+                if ($o_region_id && isset($region_names[$o_region_id])) {
+                    $row_region_names[] = $region_names[$o_region_id];
+                }
+            }
+        }
+    }
+    $row_region_names = array_values(array_unique($row_region_names));
 
     $arci_ids        = array();
     $arci_dept_ids   = array();
@@ -118,7 +195,10 @@ foreach ($rows as $a) {
                     $a_dept_id = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
                     $accountable[] = array(
                         'name' => isset($staff_names[$m_id]) ? $staff_names[$m_id] : ('Staff #' . $m_id),
-                        'dept' => ($a_dept_id && isset($dept_names[$a_dept_id])) ? $dept_names[$a_dept_id] : '-',
+                        // Outlet-type ATEM -> show position; HQ-type ATEM -> show department.
+                        'dept' => $is_outlet_type
+                            ? (!empty($staff_positions[$m_id]) ? $staff_positions[$m_id] : '-')
+                            : (($a_dept_id && isset($dept_names[$a_dept_id])) ? $dept_names[$a_dept_id] : '-'),
                     );
                 }
             }
@@ -128,14 +208,22 @@ foreach ($rows as $a) {
     $view_rows[] = array(
         'id'              => (int) (isset($a['id']) ? $a['id'] : 0),
         'title'           => isset($a['title']) ? $a['title'] : '',
+        'atem_type'       => isset($a['atem_type']) ? (int) $a['atem_type'] : 1,
+        'outlet_codes'    => $outlet_codes,
+        'region_names'    => $row_region_names,
         'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
-        'department_name' => isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : '-',
+        // Outlet-type ATEM -> Issuer's position; HQ-type ATEM -> Issuer's department.
+        'department_name' => $is_outlet_type
+            ? (!empty($staff_positions[$issuer_id]) ? $staff_positions[$issuer_id] : '-')
+            : (isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : '-'),
         'department_id'   => $dept_id,
         'level_label'     => ($level && isset($level['level']))       ? $level['level']       : '',
         'system_name'     => ($level && isset($level['system_name'])) ? $level['system_name'] : '',
+        'pillar_name'     => ($pillar && isset($pillar['name']))      ? $pillar['name']       : '',
         'status'          => ($status && isset($status['value']))     ? $status['value']      : '',
         'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
+        'closure_date'    => isset($a['closure_date']) ? $a['closure_date'] : '',
         'extended_date_1' => isset($a['extended_date_1']) ? $a['extended_date_1'] : '',
         'issuer_staff_id' => $issuer_id,
         'arci_staff_ids'  => $arci_ids,
@@ -147,8 +235,10 @@ foreach ($rows as $a) {
         // card is always locked down even if its deleted_at drifted from its status.
         'is_deleted'      => (!empty($a['deleted_at']) || ($status && $status['value'] === 'Suspended')),
         'deleted_at'      => isset($a['deleted_at']) ? $a['deleted_at'] : null,
+        'payout_status'   => isset($a['payout_status']) ? $a['payout_status'] : null,
     );
     $row_arci_dept_ids[] = $arci_dept_ids;
+    $row_outlet_ids[]    = $outlet_ids;
 }
 
 // Apply server-side visibility filtering based on grade.
@@ -165,6 +255,24 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
         }
         if ($r['issuer_staff_id'] === (int)$staff_id
                 || in_array((int)$staff_id, $r['arci_staff_ids'])) {
+            $filtered[] = $r;
+        }
+    }
+    $view_rows = $filtered;
+} elseif ((int)$atem_permission === 2 && !$_is_superadmin && in_array(1, $user_dept_ids, true)) {
+    // Grade 2, Outlet department: narrowed to the viewer's own specific
+    // outlet(s) (staff.outlet overlap with the card's own linked outlets) -
+    // department=1 alone is shared by every outlet company-wide, so the
+    // regular dept-overlap rule below would show every outlet's cards.
+    $filtered = array();
+    foreach ($view_rows as $idx => $r) {
+        if ($r['is_deleted']) {
+            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
+                $filtered[] = $r;
+            }
+            continue;
+        }
+        if (array_intersect($user_outlet_ids, $row_outlet_ids[$idx])) {
             $filtered[] = $r;
         }
     }
@@ -223,9 +331,12 @@ $view_config = array(
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
     'departments' => $dept_list,
     'issuers'     => $issuer_list,
+    'outlets'     => $outlet_list,
+    'regions'     => $region_list,
     'staffId'     => (int) $staff_id,
     'isSuperAdmin' => $_is_superadmin,
     'userGrade'   => (int)$atem_permission,
+    'tabSingleView' => $grade1_single_view,
 );
 ?>
 
@@ -243,124 +354,294 @@ $view_config = array(
 </div>
 <?php endif; ?>
 
-<!-- Filter bar -->
-<div class="atem-card atem-filter mb-3">
-    <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
-
-    <!-- Row 1: Year | Month | Start Date | End Date | Status -->
-    <div class="row row-cols-md-5 row-cols-2 g-2 mt-1">
-        <div class="col">
-            <label class="form-label">Year</label>
-            <select class="form-select form-select-sm" id="vf-year">
-                <option value="">All Year</option>
-                <?php foreach ($view_year_opts as $y): ?>
-                <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Month</label>
-            <select class="form-select form-select-sm" id="vf-month">
-                <option value="0">All Month</option>
-                <option value="1">January</option>
-                <option value="2">February</option>
-                <option value="3">March</option>
-                <option value="4">April</option>
-                <option value="5">May</option>
-                <option value="6">June</option>
-                <option value="7">July</option>
-                <option value="8">August</option>
-                <option value="9">September</option>
-                <option value="10">October</option>
-                <option value="11">November</option>
-                <option value="12">December</option>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Start Date</label>
-            <input type="date" class="form-control form-control-sm" id="vf-from">
-        </div>
-        <div class="col">
-            <label class="form-label">End Date</label>
-            <input type="date" class="form-control form-control-sm" id="vf-to">
-        </div>
-        <div class="col">
-            <label class="form-label">Status</label>
-            <div class="vf-issuer-wrap" id="vf-status-wrap">
-                <div class="vf-s2-selection" id="vf-status-btn" tabindex="0">All statuses</div>
-                <div class="vf-s2-dropdown" id="vf-status-dropdown">
-                    <ul class="vf-s2-list" id="vf-status-list" style="padding:4px 0;"></ul>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Row 2: Issuer | Department | Level | Role | Search -->
-    <div class="row row-cols-md-5 row-cols-2 g-2 mt-0">
-        <div class="col">
-            <label class="form-label">Issuer</label>
-            <div class="vf-issuer-wrap" id="vf-issuer-wrap">
-                <div class="vf-s2-selection" id="vf-issuer-btn" tabindex="0">All issuers</div>
-                <div class="vf-s2-dropdown" id="vf-issuer-dropdown">
-                    <div class="vf-s2-search-wrap">
-                        <input class="vf-s2-search" id="vf-issuer-search" type="search" placeholder="Search name...">
-                    </div>
-                    <ul class="vf-s2-list" id="vf-issuer-list"></ul>
-                </div>
-                <input type="hidden" id="vf-issuer-value" value="0">
-            </div>
-        </div>
-        <div class="col">
-            <label class="form-label">Department</label>
-            <select class="form-select form-select-sm" id="vf-dept">
-                <option value="">All departments</option>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Level</label>
-            <select class="form-select form-select-sm" id="vf-level">
-                <option value="">All levels</option>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Your Role with ARCI</label>
-            <select class="form-select form-select-sm" id="vf-role">
-                <option value="">All roles</option>
-            </select>
-        </div>
-        <div class="col">
-            <label class="form-label">Search title or ID</label>
-            <input type="text" class="form-control form-control-sm" id="vf-search" placeholder="Type title or ATEM ID...">
-        </div>
-    </div>
-
-    <div class="d-flex justify-content-end mt-2">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="vf-reset">Reset Filters</button>
-    </div>
-</div>
-
 <!-- Table -->
 <div class="atem-card">
-    <div class="table-responsive">
-        <table class="table table-hover align-middle atem-view-tbl" id="atem-view-tbl">
-            <thead>
-                <tr>
-                    <th class="atem-sortable" data-col="id">ATEM ID</th>
-                    <th class="atem-sortable" data-col="title">Title</th>
-                    <th class="atem-sortable" data-col="issuer_name">Issuer</th>
-                    <th>Accountable</th>
-                    <th>ARCI</th>
-                    <th class="atem-sortable" data-col="level_label">Level Structure</th>
-                    <th class="atem-sortable" data-col="start_date">Start</th>
-                    <th class="atem-sortable" data-col="end_date">End</th>
-                    <th class="atem-sortable" data-col="status">Status</th>
-                    <th style="width:110px;">Action</th>
-                </tr>
-            </thead>
-            <tbody id="atem-view-body"></tbody>
-        </table>
+    <?php if ($grade1_single_view === null): ?>
+    <ul class="nav nav-tabs atem-view-tabs" id="atem-view-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active atem-tab-color-hq" id="atem-tab-hq-btn" data-bs-toggle="tab"
+                data-bs-target="#atem-tab-hq" type="button" role="tab" aria-controls="atem-tab-hq" aria-selected="true">
+                <i class="bi bi-building"></i> HQ ATEM <span class="atem-tab-count" id="atem-tab-hq-count">0</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link atem-tab-color-outlet" id="atem-tab-outlet-btn" data-bs-toggle="tab"
+                data-bs-target="#atem-tab-outlet" type="button" role="tab" aria-controls="atem-tab-outlet"
+                aria-selected="false">
+                <i class="bi bi-shop"></i> Outlet ATEM <span class="atem-tab-count" id="atem-tab-outlet-count">0</span>
+            </button>
+        </li>
+    </ul>
+    <?php endif; ?>
+    <div class="tab-content pt-3">
+        <div class="tab-pane fade<?php echo ($grade1_single_view === null || $grade1_single_view === 'hq') ? ' show active' : ''; ?>"
+            id="atem-tab-hq" role="tabpanel" aria-labelledby="atem-tab-hq-btn">
+
+            <!-- HQ Filter bar -->
+            <div class="atem-card atem-filter mb-3">
+                <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
+
+                <!-- Row 1: Year/Month | Start - End date (range) | Closure Date | Status -->
+                <div class="row row-cols-md-4 row-cols-2 g-2 mt-1">
+                    <div class="col">
+                        <label class="form-label">Year / Month</label>
+                        <div class="d-flex gap-1">
+                            <select class="form-select form-select-sm" id="vf-year">
+                                <option value="">All Year</option>
+                                <?php foreach ($view_year_opts as $y): ?>
+                                <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <select class="form-select form-select-sm" id="vf-month">
+                                <option value="0">All Month</option>
+                                <option value="1">January</option>
+                                <option value="2">February</option>
+                                <option value="3">March</option>
+                                <option value="4">April</option>
+                                <option value="5">May</option>
+                                <option value="6">June</option>
+                                <option value="7">July</option>
+                                <option value="8">August</option>
+                                <option value="9">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Start - End Date</label>
+                        <div class="d-flex gap-1">
+                            <input type="date" class="form-control form-control-sm" id="vf-from" title="Start Date">
+                            <input type="date" class="form-control form-control-sm" id="vf-to" title="End Date">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Closure Date</label>
+                        <div class="d-flex gap-1">
+                            <input type="date" class="form-control form-control-sm" id="vf-closure-from" title="Closure Date From">
+                            <input type="date" class="form-control form-control-sm" id="vf-closure-to" title="Closure Date To">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Status</label>
+                        <div class="vf-issuer-wrap" id="vf-status-wrap">
+                            <div class="vf-s2-selection" id="vf-status-btn" tabindex="0">All statuses</div>
+                            <div class="vf-s2-dropdown" id="vf-status-dropdown">
+                                <ul class="vf-s2-list" id="vf-status-list" style="padding:4px 0;"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 2: Level | Department | Staff | Your Role with ARCI/Issuer -->
+                <div class="row row-cols-md-4 row-cols-2 g-2 mt-0">
+                    <div class="col">
+                        <label class="form-label">Level</label>
+                        <select class="form-select form-select-sm" id="vf-level">
+                            <option value="">All levels</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Department</label>
+                        <select class="form-select form-select-sm" id="vf-dept">
+                            <option value="">All departments</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Staff</label>
+                        <div class="vf-issuer-wrap" id="vf-issuer-wrap">
+                            <div class="vf-s2-selection" id="vf-issuer-btn" tabindex="0">All staff</div>
+                            <div class="vf-s2-dropdown" id="vf-issuer-dropdown">
+                                <div class="vf-s2-search-wrap">
+                                    <input class="vf-s2-search" id="vf-issuer-search" type="search"
+                                        placeholder="Search name...">
+                                </div>
+                                <ul class="vf-s2-list" id="vf-issuer-list"></ul>
+                            </div>
+                            <input type="hidden" id="vf-issuer-value" value="0">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Your Role with ARCI/Issuer</label>
+                        <select class="form-select form-select-sm" id="vf-role">
+                            <option value="">All roles</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Row 3: Search (full width) -->
+                <div class="row g-2 mt-0">
+                    <div class="col-12">
+                        <label class="form-label">Search title or ID</label>
+                        <input type="text" class="form-control form-control-sm" id="vf-search"
+                            placeholder="Type title or ATEM ID...">
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end mt-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="vf-reset">Reset Filters</button>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle atem-view-tbl" id="atem-view-tbl-hq">
+                    <thead>
+                        <tr>
+                            <th class="atem-sortable" data-col="id">ATEM ID</th>
+                            <th class="atem-sortable" data-col="title">Title</th>
+                            <th class="atem-sortable" data-col="issuer_name">Issuer / Accountable</th>
+                            <th>ARCI</th>
+                            <th class="atem-sortable" data-col="level_label">Level</th>
+                            <th class="atem-sortable" data-col="start_date">Start / End</th>
+                            <th class="atem-sortable" data-col="closure_date">Closure Date</th>
+                            <th class="atem-sortable" data-col="status">Status</th>
+                            <th style="width:110px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="atem-view-body-hq"></tbody>
+                </table>
+            </div>
+            <div class="atem-pager" id="atem-pager-hq"></div>
+        </div>
+        <div class="tab-pane fade<?php echo ($grade1_single_view === 'outlet') ? ' show active' : ''; ?>"
+            id="atem-tab-outlet" role="tabpanel" aria-labelledby="atem-tab-outlet-btn">
+
+            <!-- Outlet Filter bar -->
+            <div class="atem-card atem-filter mb-3">
+                <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
+
+                <!-- Row 1: Year/Month | Start - End date (range) | Closure Date | Status -->
+                <div class="row row-cols-md-4 row-cols-2 g-2 mt-1">
+                    <div class="col">
+                        <label class="form-label">Year / Month</label>
+                        <div class="d-flex gap-1">
+                            <select class="form-select form-select-sm" id="vfo-year">
+                                <option value="">All Year</option>
+                                <?php foreach ($view_year_opts as $y): ?>
+                                <option value="<?php echo $y; ?>"><?php echo $y; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <select class="form-select form-select-sm" id="vfo-month">
+                                <option value="0">All Month</option>
+                                <option value="1">January</option>
+                                <option value="2">February</option>
+                                <option value="3">March</option>
+                                <option value="4">April</option>
+                                <option value="5">May</option>
+                                <option value="6">June</option>
+                                <option value="7">July</option>
+                                <option value="8">August</option>
+                                <option value="9">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Start - End Date</label>
+                        <div class="d-flex gap-1">
+                            <input type="date" class="form-control form-control-sm" id="vfo-from" title="Start Date">
+                            <input type="date" class="form-control form-control-sm" id="vfo-to" title="End Date">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Closure Date</label>
+                        <div class="d-flex gap-1">
+                            <input type="date" class="form-control form-control-sm" id="vfo-closure-from" title="Closure Date From">
+                            <input type="date" class="form-control form-control-sm" id="vfo-closure-to" title="Closure Date To">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Status</label>
+                        <div class="vf-issuer-wrap" id="vfo-status-wrap">
+                            <div class="vf-s2-selection" id="vfo-status-btn" tabindex="0">All statuses</div>
+                            <div class="vf-s2-dropdown" id="vfo-status-dropdown">
+                                <ul class="vf-s2-list" id="vfo-status-list" style="padding:4px 0;"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 2: Staff | Outlet | Pillar | Role -->
+                <div class="row row-cols-md-4 row-cols-2 g-2 mt-0">
+                    <div class="col">
+                        <label class="form-label">Staff</label>
+                        <div class="vf-issuer-wrap" id="vfo-issuer-wrap">
+                            <div class="vf-s2-selection" id="vfo-issuer-btn" tabindex="0">All staff</div>
+                            <div class="vf-s2-dropdown" id="vfo-issuer-dropdown">
+                                <div class="vf-s2-search-wrap">
+                                    <input class="vf-s2-search" id="vfo-issuer-search" type="search"
+                                        placeholder="Search name...">
+                                </div>
+                                <ul class="vf-s2-list" id="vfo-issuer-list"></ul>
+                            </div>
+                            <input type="hidden" id="vfo-issuer-value" value="0">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Outlet</label>
+                        <div class="vf-issuer-wrap" id="vfo-outlet-wrap">
+                            <div class="vf-s2-selection" id="vfo-outlet-btn" tabindex="0">All outlets</div>
+                            <div class="vf-s2-dropdown" id="vfo-outlet-dropdown">
+                                <div class="vf-s2-search-wrap">
+                                    <input class="vf-s2-search" id="vfo-outlet-search" type="search"
+                                        placeholder="Search outlet...">
+                                </div>
+                                <ul class="vf-s2-list" id="vfo-outlet-list"></ul>
+                            </div>
+                            <input type="hidden" id="vfo-outlet-value" value="0">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Region</label>
+                        <select class="form-select form-select-sm" id="vfo-region">
+                            <option value="">All regions</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Your Role with ARCI/Issuer</label>
+                        <select class="form-select form-select-sm" id="vfo-role">
+                            <option value="">All roles</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Row 3: Search (full width) -->
+                <div class="row g-2 mt-0">
+                    <div class="col-12">
+                        <label class="form-label">Search title or ID</label>
+                        <input type="text" class="form-control form-control-sm" id="vfo-search"
+                            placeholder="Type title or ATEM ID...">
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end mt-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="vfo-reset">Reset Filters</button>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle atem-view-tbl" id="atem-view-tbl-outlet">
+                    <thead>
+                        <tr>
+                            <th class="atem-sortable" data-col="id">ATEM ID</th>
+                            <th class="atem-sortable" data-col="title">Title</th>
+                            <th class="atem-sortable" data-col="issuer_name">Issuer / Accountable</th>
+                            <th class="atem-sortable" data-col="pillar_name">Pillars</th>
+                            <th class="atem-sortable" data-col="start_date">Start / End Date</th>
+                            <th class="atem-sortable" data-col="closure_date">Closure Date</th>
+                            <th class="atem-sortable" data-col="status">Status</th>
+                            <th style="width:110px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="atem-view-body-outlet"></tbody>
+                </table>
+            </div>
+            <div class="atem-pager" id="atem-pager-outlet"></div>
+        </div>
     </div>
-    <div class="atem-pager" id="atem-pager"></div>
 </div>
 
 <!-- Delete confirmation modal -->
@@ -368,17 +649,22 @@ $view_config = array(
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete ATEM Card</h5>
+                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete ATEM Card
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body pt-2">
                 <p id="atem-delete-modal-msg" style="font-size:13px;"></p>
-                <label class="form-label fw-semibold" style="font-size:13px;">Remark <span class="text-danger">*</span></label>
-                <textarea id="atem-delete-remark" class="form-control form-control-sm" rows="3" placeholder="State the reason for deletion..."></textarea>
-                <div id="atem-delete-remark-err" class="text-danger" style="font-size:12px;min-height:16px;margin-top:4px;"></div>
+                <label class="form-label fw-semibold" style="font-size:13px;">Remark <span
+                        class="text-danger">*</span></label>
+                <textarea id="atem-delete-remark" class="form-control form-control-sm" rows="3"
+                    placeholder="State the reason for deletion..."></textarea>
+                <div id="atem-delete-remark-err" class="text-danger"
+                    style="font-size:12px;min-height:16px;margin-top:4px;"></div>
             </div>
             <div class="modal-footer pt-0">
-                <button type="button" id="atem-delete-cancel" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="atem-delete-cancel" class="btn btn-secondary btn-sm"
+                    data-bs-dismiss="modal">Cancel</button>
                 <button type="button" id="atem-delete-confirm" class="btn btn-danger btn-sm">Confirm Delete</button>
             </div>
         </div>
@@ -389,6 +675,6 @@ $view_config = array(
 window.ATEM_VIEW = <?php echo json_encode($view_config); ?>;
 </script>
 <?php
-$page_js = 'atem/js/view.js';
+$page_js = ATEM_BASE . 'js/view.js';
 include('footer.php');
 ?>
