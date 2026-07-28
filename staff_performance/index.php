@@ -306,13 +306,15 @@ if ($_pso_res) {
                     <th class="text-center">HQ ATEM</th>
                     <th class="text-center">Outlet ATEM</th>
                     <th class="text-center">OKR</th>
+                    <th class="text-center">Total Completed</th>
+                    <th class="text-center">Failed</th>
                     <th class="text-end">Est. Reward</th>
                     <th>Action</th>
                 </tr>
             </thead>
             <tbody id="perf-tbody">
                 <tr>
-                    <td colspan="9" class="text-center text-muted py-4">Loading...</td>
+                    <td colspan="11" class="text-center text-muted py-4">Loading...</td>
                 </tr>
             </tbody>
         </table>
@@ -853,7 +855,7 @@ function renderTable(data, payload) {
 
     if (!data || !data.length) {
         tbody.innerHTML =
-            '<tr><td colspan="9" class="text-center text-muted py-4">No records found for this period.</td></tr>';
+            '<tr><td colspan="11" class="text-center text-muted py-4">No records found for this period.</td></tr>';
         renderPerfPager(0);
         return;
     }
@@ -908,6 +910,8 @@ function renderTable(data, payload) {
             '<td class="text-center">' + countCell(rec.complete_hq_count) + '</td>' +
             '<td class="text-center">' + countCell(rec.complete_outlet_count) + '</td>' +
             '<td class="text-center">' + countCell(rec.complete_okr_count) + '</td>' +
+            '<td class="text-center">' + countCell(rec.complete_total_count) + '</td>' +
+            '<td class="text-center">' + countCell(rec.failed_total_count) + '</td>' +
             '<td class="text-end">RM ' + formatNumber(rec.total_incentive) + '</td>' +
             '<td style="white-space:nowrap;">' +
             '<a class="btn btn-sm btn-outline-secondary me-1" href="' + escHtml(editUrl) +
@@ -937,7 +941,7 @@ function loadPerformance(payload) {
     var periodEl = document.getElementById('perf-period-label');
     var label = buildLabel(payload);
 
-    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>';
     if (labelEl) {
         labelEl.textContent = label;
     }
@@ -968,7 +972,7 @@ function loadPerformance(payload) {
         })
         .then(function(res) {
             if (!res.success) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-3">' +
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-3">' +
                     escHtml(res.message || 'Failed to load records.') + '</td></tr>';
                 return;
             }
@@ -978,7 +982,7 @@ function loadPerformance(payload) {
         })
         .catch(function() {
             tbody.innerHTML =
-                '<tr><td colspan="9" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
+                '<tr><td colspan="11" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
         });
 }
 

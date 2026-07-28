@@ -1991,12 +1991,12 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
  * (OKR is plain mysqli against the same database, not a separate API - see
  * okr/CLAUDE.md - so no getAtemList()-style HTTP round trip is needed here).
  * OKR has no incentive/payout concept any more (okr/CLAUDE.md's "Retired
- * incentive columns"), so this only ever returns a 'complete' count and a
+ * incentive columns"), so this only ever returns 'complete'/'failed' counts and a
  * 'total_all' raw count used solely to decide whether a staff member with no
  * HQ/Outlet ATEM activity should still show up on the page - 'total_all' is
  * never itself displayed.
  *
- * The 'complete' bucket only credits the card's owner(s) (owner_staff_id/
+ * The 'complete'/'failed' buckets only credit the card's owner(s) (owner_staff_id/
  * owner2_staff_id) - not the issuer - matching OKR's own "my cards" scoping
  * (okrScopeWhere() in okr/lib.php) rather than ATEM's issuer+ARCI model.
  * 'total_all' additionally counts the issuer, mirroring getStaffPerformanceLive()'s
@@ -2027,19 +2027,21 @@ function getOkrPerformanceLive($conn, $month, $year, $quarter, $selectedStatuses
         if (atem_date_in_period($rawDateStr, $months, $year)) {
             foreach (array_unique(array($ownerId, $owner2Id, $issuerId)) as $rsid) {
                 if ($rsid <= 0) { continue; }
-                if (!isset($aggregates[$rsid])) { $aggregates[$rsid] = array('total_all' => 0, 'complete' => 0); }
+                if (!isset($aggregates[$rsid])) { $aggregates[$rsid] = array('total_all' => 0, 'complete' => 0, 'failed' => 0); }
                 $aggregates[$rsid]['total_all']++;
             }
         }
 
         if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
-        if (!in_array($statusVal, $completeStatuses, true)) { continue; }
         if (!atem_date_in_period($row['closed_at'], $months, $year)) { continue; }
+
+        $okrBucket = in_array($statusVal, $completeStatuses, true) ? 'complete' : (($statusVal === 'Failed') ? 'failed' : null);
+        if ($okrBucket === null) { continue; }
 
         foreach (array_unique(array($ownerId, $owner2Id)) as $sid) {
             if ($sid <= 0) { continue; }
-            if (!isset($aggregates[$sid])) { $aggregates[$sid] = array('total_all' => 0, 'complete' => 0); }
-            $aggregates[$sid]['complete']++;
+            if (!isset($aggregates[$sid])) { $aggregates[$sid] = array('total_all' => 0, 'complete' => 0, 'failed' => 0); }
+            $aggregates[$sid][$okrBucket]++;
         }
     }
 
@@ -3780,6 +3782,12 @@ if (!defined('API_JWT_INCLUDED')) {
                             'complete_hq_count'     => $pl_hq_rec     ? $pl_hq_rec['complete']     : 0,
                             'complete_outlet_count' => $pl_outlet_rec ? $pl_outlet_rec['complete'] : 0,
                             'complete_okr_count'    => $pl_okr_rec    ? $pl_okr_rec['complete']    : 0,
+                            // Sums of the three Completed-family columns / three Failed
+                            // counts above - not independently filtered/scoped, so they
+                            // always equal HQ + Outlet + OKR for the row's current Status
+                            // filter selection.
+                            'complete_total_count' => ($pl_hq_rec ? $pl_hq_rec['complete'] : 0) + ($pl_outlet_rec ? $pl_outlet_rec['complete'] : 0) + ($pl_okr_rec ? $pl_okr_rec['complete'] : 0),
+                            'failed_total_count'   => ($pl_hq_rec ? $pl_hq_rec['failed']   : 0) + ($pl_outlet_rec ? $pl_outlet_rec['failed']   : 0) + ($pl_okr_rec ? $pl_okr_rec['failed']   : 0),
                             'total_incentive' => round($pl_total_reward, 2),
                             'has_locked'      => $pl_has_locked,
                             'has_unlocked'    => $pl_has_unlocked,
