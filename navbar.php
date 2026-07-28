@@ -80,7 +80,7 @@ if ($_navbar_isLocal && $_navbar_realRole === 6) {
 // Get current page to highlight active nav item
 $current_page   = basename(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '');
 $current_dir    = basename(dirname(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : ''));
-$_atem_module_dir = basename(dirname(__FILE__)); // 'atem' or 'atem-staging'
+$_atem_module_dir = basename(dirname(__FILE__)); // 'atem'
 
 // Determine active class for each nav item
 $dashboard_active = ($current_page == 'index.php' && $current_dir == $_atem_module_dir)  ? 'active' : '';

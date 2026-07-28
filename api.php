@@ -155,7 +155,7 @@ function getEnvironment()
         strpos($httpHost, 'localhost') !== false ||
         strpos($httpHost, '127.0.0.1') !== false;
 
-    return $isLocal ? 'local' : 'staging';
+    return $isLocal ? 'local' : 'production';
 }
 
 /**
@@ -169,7 +169,7 @@ function getApiHost()
     if ($env === 'local') {
         return 'http://127.0.0.1:8000/api/';
     } else {
-        return 'http://mytotalhealth.com.my/atem-staging/public/api/';
+        return 'http://mytotalhealth.com.my/atem-api/public/api/';
     }
 }
 

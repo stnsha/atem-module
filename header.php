@@ -13,11 +13,10 @@
 ob_start();
 $page_title = isset($page_title) ? $page_title : 'ATEM';
 
-// Absolute base URL for this module's own pages/assets, e.g. "/odb/atem/" or
-// "/odb/atem-staging/". Derived from this file's own folder name so every
-// in-module link, redirect, and asset reference follows whichever copy
-// (production or staging) is actually serving the current request, instead
-// of a hardcoded folder name.
+// Absolute base URL for this module's own pages/assets, e.g. "/odb/atem/".
+// Derived from this file's own folder name so every in-module link,
+// redirect, and asset reference follows this module's actual location
+// instead of a hardcoded folder name.
 if (!defined('ATEM_BASE')) {
     define('ATEM_BASE', '/odb/' . basename(dirname(__FILE__)) . '/');
 }

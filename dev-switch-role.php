@@ -58,7 +58,7 @@ unset($_SESSION['jwt_expires']);
 
 // This file doesn't include header.php, so compute the module base locally
 // the same way header.php's ATEM_BASE constant does, keeping the fallback
-// redirect on the same folder (atem or atem-staging) that served this request.
+// redirect on this module's actual folder ('atem').
 $_dev_atem_base = '/odb/' . basename(dirname(__FILE__)) . '/';
 
 $redirect = isset($_POST['redirect']) && $_POST['redirect'] !== ''
