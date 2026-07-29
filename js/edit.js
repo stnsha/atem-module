@@ -30,6 +30,7 @@
     // Issuer, all ARCI members (A/R/C/I), and SuperAdmin see all progress entries.
     var CAN_VIEW_ALL_PROGRESS = IS_TAGGED_ON_CARD || !!CFG.isSuperAdmin;
     var TERMINAL_STATUSES = ['Failed', 'Completed', 'Completed with Excellence', 'Completed with Extension'];
+    var COMPLETION_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension'];
     var quillEditor = null;
     var arciState = { A: [], R: [], C: [], I: [] };
     var reflinks = [];
@@ -52,12 +53,37 @@
         });
     }
 
+    // A saved status change here is pushed onto the linked OKR Key Result/
+    // Subtask (okr_key_results.atem_id) too, only when the current user is
+    // literally the Issuer of this ATEM - okr/backend.php independently
+    // re-verifies OKR-side issuership from its own DB before applying
+    // anything, this is just the trigger. Same-origin as okr/backend.php
+    // (both live under odb/), so no extra auth bridging is needed.
+    function syncOkrKeyResultStatus(atemData) {
+        if (!atemData || !atemData.okr_id || !CFG.okrBackendUrl) { return; }
+        if (!IS_ISSUER) { return; }
+        var statusValue = atemData.status && atemData.status.value;
+        if (!statusValue) { return; }
+
+        var body = new URLSearchParams();
+        body.set('action', 'syncKeyResultStatusFromAtem');
+        body.set('atem_id', atemData.id);
+        body.set('status_value', statusValue);
+        body.set('atem_issuer_staff_id', atemData.issuer_staff_id);
+        fetch(CFG.okrBackendUrl, { method: 'POST', body: body }).catch(function () {});
+    }
+
     function apiCall(action, payload) {
         var body = { action: action };
         if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) { body[k] = payload[k]; } } }
         return fetch(CFG.apiUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-        }).then(function (r) { return r.json(); });
+        }).then(function (r) { return r.json(); }).then(function (res) {
+            if (action === 'update-atem' && res && res.success && res.data) {
+                syncOkrKeyResultStatus(res.data);
+            }
+            return res;
+        });
     }
 
     function uploadCall(formData) {
@@ -1309,16 +1335,6 @@
             var _arciErr = validateArciIncentive();
             if (_arciErr) { setError('arci-error', _arciErr); return false; }
         }
-        var COMPLETION_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension'];
-        if (COMPLETION_STATUSES.indexOf(_tlStatusVal) >= 0) {
-            var hasOutcomeAttachment = (reflinks || []).some(function (r) {
-                return (r.name || '').trim().toLowerCase() === 'outcome attachment';
-            });
-            if (!hasOutcomeAttachment) {
-                setError('reflink-section-error', 'A Reference Link titled "Outcome Attachment" is required before saving as ' + _tlStatusVal + '.');
-                return false;
-            }
-        }
         if (!reflinks || reflinks.length === 0) {
             setError('reflink-section-error', 'At least one Reference Link is required.');
             return false;
@@ -1365,8 +1381,57 @@
             }
         }).catch(function () { setError('atem-save-error', 'Network error while saving.'); });
     }
+    function getSelectedStatusValue() {
+        var selId = $('tl-status') ? $('tl-status').value : '';
+        var selVal = '';
+        (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(selId)) { selVal = s.value; } });
+        return selVal;
+    }
+    function hasOutcomeAttachmentLink() {
+        return (reflinks || []).some(function (r) { return (r.name || '').trim().toLowerCase() === 'outcome attachment'; });
+    }
+    var _outcomeAttachmentModal = null;
+    function getOutcomeAttachmentModal() {
+        if (!_outcomeAttachmentModal && typeof bootstrap !== 'undefined') { _outcomeAttachmentModal = new bootstrap.Modal($('atem-outcome-attachment-modal')); }
+        return _outcomeAttachmentModal;
+    }
+    function openOutcomeAttachmentModal() {
+        setError('outcome-attachment-error', '');
+        if ($('outcome-attachment-url')) { $('outcome-attachment-url').value = ''; }
+        var m = getOutcomeAttachmentModal();
+        if (m) { m.show(); } else { performSaveAtem(); }
+    }
+    function attachOutcomeAndSave() {
+        setError('outcome-attachment-error', '');
+        var url = $('outcome-attachment-url') ? $('outcome-attachment-url').value.trim() : '';
+        if (!url) { setError('outcome-attachment-error', 'Please enter the outcome link.'); return; }
+        try { new URL(url); } catch (e) { setError('outcome-attachment-error', 'Please enter a valid URL.'); return; }
+        var btn = $('outcome-attachment-save-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Attaching...'; }
+        apiCall('reflink-add', { id: CFG.atemId, data: { name: 'Outcome Attachment', url: url } }).then(function (res) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Attach & Save'; }
+            if (res && res.success) {
+                reflinks = res.data || [];
+                renderReferenceLinks();
+                var m = getOutcomeAttachmentModal(); if (m) { m.hide(); }
+                performSaveAtem();
+            } else {
+                setError('outcome-attachment-error', (res && res.message) ? res.message : 'Failed to attach outcome link.');
+            }
+        }).catch(function () {
+            if (btn) { btn.disabled = false; btn.textContent = 'Attach & Save'; }
+            setError('outcome-attachment-error', 'Network error while attaching outcome link.');
+        });
+    }
     function saveAtem() {
         if (!validateFinal()) { scrollToFirstError(); return; }
+        if (COMPLETION_STATUSES.indexOf(getSelectedStatusValue()) >= 0 && !hasOutcomeAttachmentLink()) {
+            openOutcomeAttachmentModal();
+            return;
+        }
+        performSaveAtem();
+    }
+    function performSaveAtem() {
         var levelId = $('atem-level').value, ruleId = $('atem-rule').value;
         var pillarId = $('atem-pillars') ? $('atem-pillars').value : '';
         var rewardLabel = $('atem-reward-label') ? $('atem-reward-label').value : '';
@@ -2060,6 +2125,7 @@
         if ($('atem-suspended-save-btn')) { $('atem-suspended-save-btn').addEventListener('click', saveSuspendedFields); }
         if ($('atem-add-reflink-btn')) { $('atem-add-reflink-btn').addEventListener('click', openReflinkModal); }
         if ($('reflink-save-btn')) { $('reflink-save-btn').addEventListener('click', saveReferenceLink); }
+        if ($('outcome-attachment-save-btn')) { $('outcome-attachment-save-btn').addEventListener('click', attachOutcomeAndSave); }
         var rl = $('atem-reflink-list');
         if (rl) {
             rl.addEventListener('click', function (e) {

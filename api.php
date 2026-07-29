@@ -936,6 +936,32 @@ function updatePayoutStatus($id, $status, $remarks, $staff_id)
 }
 
 /**
+ * Set (or clear, when $okr_id is null) the OKR card an ATEM is linked back
+ * to. Used when OKR's Link ATEM picker links an already-existing ATEM -
+ * newly-created ATEMs get okr_id set directly at creation time instead
+ * (saveAtemCard's payload), this is only for the "link existing" path.
+ * @param int $id ATEM ID
+ * @param int|null $okr_id OKR card ID to link, or null to clear the link
+ * @param int $staff_id Staff ID for authentication (also recorded as actor)
+ * @return array Result with the updated atem data
+ */
+function linkAtemOkr($id, $okr_id, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/okr-link';
+    $result   = getApiDataWithJWT($endpoint, array(
+        'okr_id'   => $okr_id !== null ? (int)$okr_id : null,
+        'actor_id' => (int)$staff_id,
+    ), 'PATCH', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : null);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to link OKR to ATEM.';
+    return array('success' => false, 'message' => $msg);
+}
+
+/**
  * Bulk lock/unlock payout status for a set of ATEM ids.
  * @param array $ids ATEM ids to act on
  * @param string $remarks Required remark for the batch
@@ -2413,6 +2439,17 @@ if (!defined('API_JWT_INCLUDED')) {
                         $scopedItems = $_scopedFiltered;
                     }
                     // Grades 4-6 (superadmin resolves to 6): no role-based filtering.
+
+                    // OKR's Link ATEM picker only offers cards that aren't already
+                    // linked to a different OKR - avoids one ATEM silently getting
+                    // re-pointed from one OKR to another via the picker.
+                    $_scopedUnlinked = array();
+                    foreach ($scopedItems as $_sItem) {
+                        if (empty($_sItem['okr_id'])) {
+                            $_scopedUnlinked[] = $_sItem;
+                        }
+                    }
+                    $scopedItems = $_scopedUnlinked;
 
                     $response = array('success' => true, 'data' => array_values($scopedItems));
                     break;
@@ -4121,6 +4158,17 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM data');
+                    }
+                    break;
+
+                case 'link-atem-okr':
+                    // Called from OKR's Link ATEM picker when linking an already-
+                    // existing ATEM (as opposed to Create New, which sets okr_id at
+                    // creation time). okr_id may be omitted/null to clear the link.
+                    if (isset($jsonData['id'])) {
+                        $response = linkAtemOkr($jsonData['id'], isset($jsonData['okr_id']) ? $jsonData['okr_id'] : null, $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID');
                     }
                     break;
             }

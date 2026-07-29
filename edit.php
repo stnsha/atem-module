@@ -393,6 +393,11 @@ if (!$is_read && !$can_edit) {
 $atem_config = array(
     'atemId'       => $atem_id,
     'apiUrl'       => ATEM_BASE . 'api.php',
+    // Sibling OKR module's own backend, hit directly from the browser (same
+    // PHP session, same origin as ATEM_BASE - no extra auth bridging needed)
+    // to sync a linked Key Result/Subtask's status when this ATEM's own
+    // status is saved here. See js/edit.js's apiCall() interception.
+    'okrBackendUrl' => dirname(rtrim(ATEM_BASE, '/')) . '/okr/backend.php',
     'mode'         => $mode,
     'staffId'      => (int) $staff_id,
     'userGrade'    => (int) $atem_permission,
@@ -637,8 +642,9 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <?php if (!$is_read): ?>
             <p class="atem-card-hint" style="color:#b45309;">
                 <i class="bi bi-exclamation-triangle"></i>
-                Before saving as Completed, Completed with Excellence, or Completed with Extension, you must add a
-                Reference Link titled exactly <strong>"Outcome Attachment"</strong> (case-insensitive).
+                Saving as Completed, Completed with Excellence, or Completed with Extension requires a
+                Reference Link titled <strong>"Outcome Attachment"</strong> — if it's missing, you'll be prompted to
+                attach it when you save.
             </p>
             <?php endif; ?>
             <div id="atem-reflink-list" class="atem-reflink-list">
@@ -1081,6 +1087,34 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" id="reflink-save-btn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Outcome Attachment modal (prompted on save when completing an ATEM) -->
+<div class="modal fade" id="atem-outcome-attachment-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Attach Outcome</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="atem-card-hint">A Reference Link titled <strong>"Outcome Attachment"</strong> is required to
+                    complete this ATEM. Paste the link to the outcome below and it will be added automatically.</p>
+                <div class="mb-2">
+                    <label for="outcome-attachment-url" class="form-label">Outcome Link <span
+                            class="atem-req">*</span></label>
+                    <input type="url" class="form-control" id="outcome-attachment-url"
+                        placeholder="https://example.com">
+                </div>
+                <div class="atem-form-error" id="outcome-attachment-error"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="outcome-attachment-save-btn">Attach &amp;
+                    Save</button>
             </div>
         </div>
     </div>
