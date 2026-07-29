@@ -573,46 +573,21 @@
         return r.issuer_staff_id == CFG.staffId;
     }
 
-    // --------------------------------------------------------------- edit permission
-    function canEdit(r) {
-        if (r.payout_status === 'Closed') { return false; }
-        if (CFG.isSuperAdmin) { return true; }
-        if (!CFG.staffId) { return false; }
-        if (r.issuer_staff_id == CFG.staffId) { return true; }
-        if (r.user_arci_roles && r.user_arci_roles.indexOf('A') !== -1) {
-            if (r.status === 'Active') { return true; }
-            if (r.status === 'Extended') {
-                var today = new Date().toISOString().substring(0, 10);
-                return !r.extended_date_1 || today <= r.extended_date_1.substring(0, 10);
-            }
-            return false;
-        }
-        return false;
-    }
-
-    function canUpdateProgress(r) {
-        if (!CFG.staffId) { return false; }
-        if (r.issuer_staff_id == CFG.staffId) { return false; }
-        if (!r.user_arci_roles || r.user_arci_roles.length === 0) { return false; }
-        return r.user_arci_roles.indexOf('A') === -1;
-    }
-
     // --------------------------------------------------------------- rendering
+    // The Edit link always points at mode=edit and is shown for every row,
+    // whether or not this viewer can actually edit it. edit.php's own
+    // $can_edit backstop (issuer / Accountable ARCI / real SuperAdmin) is the
+    // sole authority and downgrades unauthorized viewers to a read-only page
+    // server-side, so the button doubles as "open" for everyone else.
     function buildActionCell(r) {
         var _canViewDeleted = CFG.isSuperAdmin || CFG.userGrade >= 4
             || (r.status === 'Suspended' && r.issuer_staff_id == CFG.staffId);
         var _base = window.ATEM_MODULE_BASE || 'atem/';
+        var editLink = '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>';
         return r.is_deleted
-            ? (_canViewDeleted
-                ? '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-secondary" title="View (Suspended)"><i class="bi bi-eye"></i></a>'
-                : '')
-            + (r.status === 'Suspended' && CFG.isSuperAdmin
-                ? ' <a href="' + _base + 'edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>'
-                : '')
+            ? (_canViewDeleted ? editLink : '')
             + (canDeleteSuspended(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '')
-            : '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=read" class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a> '
-            + (canEdit(r) ? '<a href="' + _base + 'edit.php?id=' + r.id + '&mode=edit" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
-            + (canUpdateProgress(r) ? ' <a href="' + _base + 'edit.php?id=' + r.id + '&mode=read#atem-progress-section" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>' : '')
+            : editLink
             + (canDelete(r) ? ' <button type="button" class="btn btn-sm btn-outline-danger atem-delete-row" data-id="' + r.id + '" title="Delete"><i class="bi bi-trash"></i></button>' : '');
     }
 

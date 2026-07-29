@@ -76,9 +76,11 @@ The browse/statistics scope above is the **list** layer. Two finer layers gate a
 | Layer | Rule |
 |---|---|
 | Open a single card (read-only view) | Grade 1: own cards only (issuer or ARCI member). Grades 2–5 and real SuperAdmin: any card. Gate at `edit.php` (`$can_view`). |
-| Edit a card (`mode=edit`) | Issuer, Accountable ARCI member (`role 'A'`), or real SuperAdmin only — for every grade. Enforced by the edit backstop in `edit.php` (`$can_edit`) and mirrored by `canEdit()` in `js/view.js`. A grade 2–5 viewer is downgraded to read on unrelated cards. |
+| Edit a card (`mode=edit`) | Issuer, Accountable ARCI member (`role 'A'`), or real SuperAdmin only — for every grade. Enforced solely by the edit backstop in `edit.php` (`$can_edit`); everyone else is downgraded to read server-side. |
 
 So grades 2–5 can open and read any card even though their list/dashboard only shows their own department(s); editing remains issuer/ARCI-only regardless of grade.
+
+`view.php`'s Action column shows exactly two buttons per row — Edit and Delete. There is no separate View button: the Edit button always links to `edit.php?id=<id>&mode=edit` for every viewer, including those who cannot actually edit — `edit.php`'s `$can_edit` backstop (see above) downgrades unauthorized viewers to a read-only render server-side, so the single button doubles as "open" for read-only users. `js/view.js`'s `buildActionCell()` no longer gates the Edit link on any frontend permission check (the old `canEdit()`/`canUpdateProgress()` helpers were removed as dead code); it only gates the Delete button, via `canDelete()`/`canDeleteSuspended()`.
 
 **Page-level guards** use `$atem_permission` (not `$grade` directly):
 
