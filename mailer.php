@@ -148,6 +148,7 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
 
         $mail->CharSet    = 'UTF-8';
         $mail->Timeout    = 30;
+        $mail->SMTPKeepAlive = false;
 
         $mail->setFrom(
             $cfg['from_email'],
