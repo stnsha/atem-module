@@ -55,15 +55,30 @@ function logMailOperation($event, $message, $data = null, $level = 'INFO')
  */
 function getMailConfig()
 {
-    return array(
-        'host'       => 'mail.alpropharmacy.com.my',
-        'port'       => 465,
-        'username'   => 'octopus@alpropharmacy.com.my',
-        'password'   => '5Q75=Ve)^BM;',
-        'secure'     => PHPMailer::ENCRYPTION_SMTPS,
-        'from_email' => 'octopus@alpropharmacy.com.my',
-        'from_name'  => 'ATEM System',
-    );
+    static $config = null;
+    if ($config === null) {
+        $envPath = __DIR__ . '/.env';
+        $env = (is_file($envPath) && is_readable($envPath))
+            ? parse_ini_file($envPath, false, INI_SCANNER_RAW)
+            : false;
+
+        if (!empty($env['outgoing_server'])) {
+            $port = isset($env['smtp_port']) ? (int)$env['smtp_port'] : 465;
+            $config = array(
+                'host'       => $env['outgoing_server'],
+                'port'       => $port,
+                'username'   => isset($env['username']) ? $env['username'] : '',
+                'password'   => isset($env['password']) ? $env['password'] : '',
+                'secure'     => ($port === 465) ? 'ssl' : 'tls',
+                'from_email' => !empty($env['username']) ? $env['username'] : 'noreply@atem.local',
+                'from_name'  => 'ATEM System',
+            );
+        } else {
+            $path = __DIR__ . '/mail_config.local.php';
+            $config = file_exists($path) ? include $path : array();
+        }
+    }
+    return $config;
 }
 
 /**
