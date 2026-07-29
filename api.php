@@ -514,6 +514,17 @@ function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id =
 
     // Handle HTTP status codes
     if ($response === false) {
+        logJWTOperation(
+            'getApiDataWithJWT',
+            'API call failed - no response (connection error)',
+            array(
+                'endpoint' => $endpoint,
+                'url' => $url,
+                'curl_error' => $error
+            ),
+            'ERROR'
+        );
+
         return array(
             'success' => false,
             'error' => 'API Request Failed',
