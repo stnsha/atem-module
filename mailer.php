@@ -55,30 +55,15 @@ function logMailOperation($event, $message, $data = null, $level = 'INFO')
  */
 function getMailConfig()
 {
-    static $config = null;
-    if ($config === null) {
-        $envPath = __DIR__ . '/.env';
-        $env = (is_file($envPath) && is_readable($envPath))
-            ? parse_ini_file($envPath, false, INI_SCANNER_RAW)
-            : false;
-
-        if (!empty($env['outgoing_server'])) {
-            $port = isset($env['smtp_port']) ? (int)$env['smtp_port'] : 465;
-            $config = array(
-                'host'       => $env['outgoing_server'],
-                'port'       => $port,
-                'username'   => isset($env['username']) ? $env['username'] : '',
-                'password'   => isset($env['password']) ? $env['password'] : '',
-                'secure'     => ($port === 465) ? 'ssl' : 'tls',
-                'from_email' => !empty($env['username']) ? $env['username'] : 'noreply@atem.local',
-                'from_name'  => 'ATEM System',
-            );
-        } else {
-            $path = __DIR__ . '/mail_config.local.php';
-            $config = file_exists($path) ? include $path : array();
-        }
-    }
-    return $config;
+    return array(
+        'host'       => 'mail.alpropharmacy.com',
+        'port'       => 465,
+        'username'   => 'octopus@alpropharmacy.com',
+        'password'   => '5Q75=Ve)^BM;',
+        'secure'     => PHPMailer::ENCRYPTION_SMTPS,
+        'from_email' => 'octopus@alpropharmacy.com',
+        'from_name'  => 'ATEM System',
+    );
 }
 
 /**
@@ -137,29 +122,27 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        $mail->Host       = $cfg['host'];
-        $mail->SMTPAuth   = true;
-        $mail->Username   = $cfg['username'];
-        $mail->Password   = $cfg['password'];
-        $mail->Port       = 465;
-
-        // SSL for port 465
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-
-        $mail->CharSet    = 'UTF-8';
-        $mail->Timeout    = 30;
+        $mail->Host = $cfg['host'];
+        $mail->SMTPAuth = true;
+        $mail->Username = $cfg['username'];
+        $mail->Password = $cfg['password'];
+        $mail->Port = $cfg['port'];
+        $mail->SMTPSecure = !empty($cfg['secure'])
+            ? $cfg['secure']
+            : (((int)$cfg['port'] === 465) ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS);
+        $mail->CharSet = 'UTF-8';
+        $mail->Timeout = 30;
         $mail->SMTPKeepAlive = false;
 
         $mail->setFrom(
-            $cfg['from_email'],
-            $cfg['from_name']
+            !empty($cfg['from_email']) ? $cfg['from_email'] : 'noreply@atem.local',
+            !empty($cfg['from_name']) ? $cfg['from_name'] : 'ATEM System'
         );
-
         $mail->addAddress($toEmail, $toName);
 
         $mail->isHTML(true);
         $mail->Subject = $subject;
-        $mail->Body    = $htmlBody;
+        $mail->Body = $htmlBody;
         $mail->AltBody = $altBody;
 
         $mail->send();
