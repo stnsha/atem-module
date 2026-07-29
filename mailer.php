@@ -137,25 +137,28 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        $mail->Host = $cfg['host'];
-        $mail->SMTPAuth = true;
-        $mail->Username = $cfg['username'];
-        $mail->Password = $cfg['password'];
-        $mail->Port = $cfg['port'];
-        $mail->SMTPSecure = !empty($cfg['secure'])
-            ? $cfg['secure']
-            : (((int)$cfg['port'] === 465) ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS);
-        $mail->CharSet = 'UTF-8';
+        $mail->Host       = $cfg['host'];
+        $mail->SMTPAuth   = true;
+        $mail->Username   = $cfg['username'];
+        $mail->Password   = $cfg['password'];
+        $mail->Port       = 465;
+
+        // SSL for port 465
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+
+        $mail->CharSet    = 'UTF-8';
+        $mail->Timeout    = 30;
 
         $mail->setFrom(
-            !empty($cfg['from_email']) ? $cfg['from_email'] : 'noreply@atem.local',
-            !empty($cfg['from_name']) ? $cfg['from_name'] : 'ATEM System'
+            $cfg['from_email'],
+            $cfg['from_name']
         );
+
         $mail->addAddress($toEmail, $toName);
 
         $mail->isHTML(true);
         $mail->Subject = $subject;
-        $mail->Body = $htmlBody;
+        $mail->Body    = $htmlBody;
         $mail->AltBody = $altBody;
 
         $mail->send();
