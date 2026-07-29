@@ -1,4 +1,5 @@
 /logs/jwt_operations*.log
+/logs/mail_operations*.log
 /vendor/
 /mail_config.local.php
 /.env

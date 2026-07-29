@@ -11,6 +11,44 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception as PHPMailerException;
 
 /**
+ * Daily mail-attempt log, independent of api.php's jwt_operations log, so
+ * mail delivery is traceable from a file this app controls even when PHP's
+ * own error_log() path isn't something ops actually checks on production.
+ */
+function logMailOperation($event, $message, $data = null, $level = 'INFO')
+{
+    $log_dir = __DIR__ . '/logs';
+    $log_file = $log_dir . '/mail_operations-' . date('Y-m-d') . '.log';
+
+    if (!is_dir($log_dir)) {
+        if (!@mkdir($log_dir, 0755, true)) {
+            @mkdir($log_dir, 0755);
+        }
+    }
+    if (!is_dir($log_dir)) {
+        return false;
+    }
+    if (!is_writable($log_dir)) {
+        @chmod($log_dir, 0755);
+    }
+
+    $timestamp = date('Y-m-d H:i:s');
+    $log_message = "[$timestamp] [$level] [$event] $message";
+    if ($data !== null) {
+        $log_message .= ' | ' . (is_array($data) ? json_encode($data) : $data);
+    }
+    $log_message .= "\n";
+
+    $result = @file_put_contents($log_file, $log_message, FILE_APPEND);
+    if ($result === false && !file_exists($log_file)) {
+        @touch($log_file);
+        @chmod($log_file, 0644);
+        $result = @file_put_contents($log_file, $log_message, FILE_APPEND);
+    }
+    return $result !== false;
+}
+
+/**
  * SMTP credentials, sourced from .env (production mailbox) when present,
  * falling back to mail_config.local.php (e.g. a local Mailtrap sandbox).
  * Both files are gitignored - never commit real credentials.
@@ -85,11 +123,14 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
 {
     $cfg = getMailConfig();
     if (empty($cfg['host']) || !class_exists(PHPMailer::class)) {
+        $reason = empty($cfg['host']) ? 'no host in .env/mail_config.local.php' : 'PHPMailer class not found (vendor/ not installed)';
         error_log('ATEM email skipped: mail is not configured (missing vendor/ or mail_config.local.php).');
+        logMailOperation('dispatchAtemEmail', 'Skipped - mail not configured', array('atem_id' => (int)$atemId, 'reason' => $reason, 'subject' => $subject), 'ERROR');
         return array('success' => false, 'message' => 'Mail is not configured.');
     }
     if (empty($toEmail)) {
         error_log('ATEM email skipped: recipient has no email on file (atem_id=' . (int)$atemId . ').');
+        logMailOperation('dispatchAtemEmail', 'Skipped - recipient has no email on file', array('atem_id' => (int)$atemId, 'to_name' => $toName, 'subject' => $subject), 'WARNING');
         return array('success' => false, 'message' => 'Recipient has no email on file.');
     }
 
@@ -118,15 +159,18 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
         $mail->AltBody = $altBody;
 
         $mail->send();
+        logMailOperation('dispatchAtemEmail', 'Sent', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject), 'INFO');
         return array('success' => true);
     } catch (PHPMailerException $e) {
         error_log('ATEM email failed (atem_id=' . (int)$atemId . '): ' . $mail->ErrorInfo);
+        logMailOperation('dispatchAtemEmail', 'Failed - PHPMailer error', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject, 'error' => $mail->ErrorInfo), 'ERROR');
         return array('success' => false, 'message' => $mail->ErrorInfo);
     } catch (Throwable $e) {
         // Catches anything beyond PHPMailer's own exception type (e.g. a bad
         // link/config error) so a mail-step bug can never corrupt the JSON
         // response of the action that triggered it (e.g. suspend-atem).
         error_log('ATEM email failed (atem_id=' . (int)$atemId . '): ' . $e->getMessage());
+        logMailOperation('dispatchAtemEmail', 'Failed - exception', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject, 'error' => $e->getMessage()), 'ERROR');
         return array('success' => false, 'message' => $e->getMessage());
     }
 }
