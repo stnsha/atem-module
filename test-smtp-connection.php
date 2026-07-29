@@ -40,13 +40,25 @@ $host = isset($_GET['host']) && trim($_GET['host']) !== '' ? trim($_GET['host'])
 
 // 465 is implicit TLS (SMTPS) - the server expects a TLS handshake
 // immediately, so it needs the ssl:// wrapper to get a readable banner.
-// 587/25 are plaintext until STARTTLS, so a plain socket is enough to see
-// whether the connection opens at all.
+// 587/25/26 are plaintext until STARTTLS, so a plain socket is enough to see
+// whether the connection opens at all. 26 is a common alternate submission
+// port some mail providers/hosts offer when 25/465/587 are blocked upstream.
 $targets = array(
     465 => 'ssl://' . $host,
     587 => $host,
     25  => $host,
+    26  => $host,
 );
+
+// ?port=NNNN tests one extra arbitrary port on top of the defaults above,
+// without needing another code change for the next one-off port to check.
+if (isset($_GET['port']) && ctype_digit((string)$_GET['port'])) {
+    $extraPort = (int)$_GET['port'];
+    if ($extraPort > 0 && $extraPort <= 65535 && !isset($targets[$extraPort])) {
+        $targets[$extraPort] = $host;
+    }
+}
+
 $timeoutSeconds = 8;
 
 echo "SMTP connectivity test\n";
