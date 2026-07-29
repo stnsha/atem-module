@@ -92,7 +92,7 @@ $is_api_superadmin = (!isset($_SESSION['atem_dev_role_override']) && !empty($ate
 function logJWTOperation($operation, $message, $data = null, $level = 'INFO')
 {
     $log_dir = __DIR__ . '/logs';
-    $log_file = $log_dir . '/jwt_operations.log';
+    $log_file = $log_dir . '/jwt_operations-' . date('Y-m-d') . '.log';
 
     // Create logs directory if it doesn't exist
     if (!is_dir($log_dir)) {

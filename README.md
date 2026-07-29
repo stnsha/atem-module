@@ -40,7 +40,7 @@ atem/
 │   └── add_staff_atem_column.sql   One-time migration: adds staff.atem column
 │
 └── logs/
-    └── jwt_operations.log  JWT request/response log (auto-created)
+    └── jwt_operations-YYYY-MM-DD.log  JWT request/response log, one file per day (auto-created)
 ```
 
 ---

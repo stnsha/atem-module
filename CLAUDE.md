@@ -214,7 +214,7 @@ Soft delete only — `atems.deleted_at` is set, the row remains in the DB.
 
 - Display errors inline as small red text — never use `alert()` or system dialogs
 - All API responses use `{'success': true/false, 'message': '...'}` shape
-- Log JWT operations to `logs/jwt_operations.log` via `logJWTOperation()`
+- Log JWT operations to `logs/jwt_operations-YYYY-MM-DD.log` (one file per day) via `logJWTOperation()`
 
 ## Dev Tooling
 
