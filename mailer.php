@@ -56,12 +56,12 @@ function logMailOperation($event, $message, $data = null, $level = 'INFO')
 function getMailConfig()
 {
     return array(
-        'host'       => 'mail.alpropharmacy.com',
+        'host'       => 'mail.alpropharmacy.com.my',
         'port'       => 465,
-        'username'   => 'octopus@alpropharmacy.com',
+        'username'   => 'octopus@alpropharmacy.com.my',
         'password'   => '5Q75=Ve)^BM;',
         'secure'     => PHPMailer::ENCRYPTION_SMTPS,
-        'from_email' => 'octopus@alpropharmacy.com',
+        'from_email' => 'octopus@alpropharmacy.com.my',
         'from_name'  => 'ATEM System',
     );
 }
