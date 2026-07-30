@@ -117,13 +117,15 @@ function atemEmailShell($headerColor, $headerTitle, $innerHtml)
  * array('ok' => bool, 'error' => string) - error is the last SMTP reply line
  * on failure, so dispatchAtemEmail() can log something actionable.
  */
-function _atemSmtpSend($host, $port, $user, $pass, $fromName, $toEmail, $toName, $subject, $htmlBody)
+function _atemSmtpSend($host, $port, $user, $pass, $fromName, $toEmail, $toName, $subject, $htmlBody, $useTLS = true)
 {
     $ctx = stream_context_create(array('ssl' => array(
         'verify_peer'      => false,
         'verify_peer_name' => false,
+        'allow_self_signed' => true,
     )));
-    $sock = @stream_socket_client('ssl://' . $host . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    $target = ($useTLS ? 'ssl://' : '') . $host . ':' . $port;
+    $sock = @stream_socket_client($target, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
     if (!$sock) {
         return array('ok' => false, 'error' => "Could not connect to {$host}:{$port} - [{$errno}] {$errstr}");
     }
@@ -205,6 +207,9 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
         return array('success' => false, 'message' => 'Recipient has no email on file.');
     }
 
+    $secure = isset($cfg['secure']) ? strtolower((string)$cfg['secure']) : '';
+    $useTLS = !in_array($secure, array('', 'none', 'false', '0'), true);
+
     try {
         $result = _atemSmtpSend(
             $cfg['host'],
@@ -215,7 +220,8 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
             $toEmail,
             $toName,
             $subject,
-            $htmlBody
+            $htmlBody,
+            $useTLS
         );
     } catch (Throwable $e) {
         // Catches anything unexpected in the socket/protocol handling so a
