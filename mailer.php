@@ -1,14 +1,9 @@
 <?php
-// ATEM mail utility. Uses PHPMailer via Composer (see composer.json/vendor).
+// ATEM mail utility. Hand-rolled SMTP over a raw SSL socket (same approach as
+// odb/voucher/email_helper.php) - no PHPMailer/Composer vendor dependency, so
+// there is nothing to `composer install` on deploy and no vendor/ to go stale.
 // Sending is always best-effort: callers must not let a mail failure block
 // the underlying action (e.g. a card suspend already committed to the DB).
-
-if (file_exists(__DIR__ . '/vendor/autoload.php')) {
-    require_once __DIR__ . '/vendor/autoload.php';
-}
-
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception as PHPMailerException;
 
 /**
  * Daily mail-attempt log, independent of api.php's jwt_operations log, so
@@ -116,16 +111,92 @@ function atemEmailShell($headerColor, $headerTitle, $innerHtml)
 }
 
 /**
+ * Raw-socket SMTP send over implicit TLS (port 465), same protocol handling
+ * as voucher/email_helper.php's _smtpSend(): connect, EHLO, AUTH LOGIN, MAIL
+ * FROM/RCPT TO/DATA, then read the reply code after each step. Returns
+ * array('ok' => bool, 'error' => string) - error is the last SMTP reply line
+ * on failure, so dispatchAtemEmail() can log something actionable.
+ */
+function _atemSmtpSend($host, $port, $user, $pass, $fromName, $toEmail, $toName, $subject, $htmlBody)
+{
+    $ctx = stream_context_create(array('ssl' => array(
+        'verify_peer'      => false,
+        'verify_peer_name' => false,
+    )));
+    $sock = @stream_socket_client('ssl://' . $host . ':' . $port, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$sock) {
+        return array('ok' => false, 'error' => "Could not connect to {$host}:{$port} - [{$errno}] {$errstr}");
+    }
+    stream_set_timeout($sock, 15);
+
+    $read = function () use ($sock) {
+        $r = '';
+        while ($l = fgets($sock, 515)) {
+            $r .= $l;
+            if (isset($l[3]) && $l[3] === ' ') break;
+        }
+        return $r;
+    };
+    $cmd = function ($c) use ($sock, &$read) { fwrite($sock, $c . "\r\n"); return $read(); };
+
+    $reply = $read(); // server greeting
+    $reply = $cmd('EHLO localhost');
+    $cmd('AUTH LOGIN');
+    $cmd(base64_encode($user));
+    $reply = $cmd(base64_encode($pass));
+    if (strpos($reply, '235') === false) {
+        fclose($sock);
+        return array('ok' => false, 'error' => 'SMTP auth failed: ' . trim($reply));
+    }
+
+    $reply = $cmd('MAIL FROM:<' . $user . '>');
+    if (strpos($reply, '250') === false) {
+        fclose($sock);
+        return array('ok' => false, 'error' => 'MAIL FROM rejected: ' . trim($reply));
+    }
+    $reply = $cmd('RCPT TO:<' . trim($toEmail) . '>');
+    if (strpos($reply, '250') === false && strpos($reply, '251') === false) {
+        fclose($sock);
+        return array('ok' => false, 'error' => 'RCPT TO rejected: ' . trim($reply));
+    }
+
+    $reply = $cmd('DATA');
+    if (strpos($reply, '354') === false) {
+        fclose($sock);
+        return array('ok' => false, 'error' => 'DATA rejected: ' . trim($reply));
+    }
+
+    $msg = 'Date: ' . date('r') . "\r\n"
+        . 'From: =?UTF-8?B?' . base64_encode($fromName) . '?= <' . $user . '>' . "\r\n"
+        . 'To: =?UTF-8?B?' . base64_encode($toName) . '?= <' . trim($toEmail) . '>' . "\r\n"
+        . 'Subject: =?UTF-8?B?' . base64_encode($subject) . '?=' . "\r\n"
+        . "MIME-Version: 1.0\r\n"
+        . "Content-Type: text/html; charset=UTF-8\r\n"
+        . "Content-Transfer-Encoding: base64\r\n"
+        . "\r\n"
+        . chunk_split(base64_encode($htmlBody))
+        . "\r\n.\r\n";
+    fwrite($sock, $msg);
+    $reply = $read();
+    $cmd('QUIT');
+    fclose($sock);
+
+    if (strpos($reply, '250') === false) {
+        return array('ok' => false, 'error' => 'Message not accepted: ' . trim($reply));
+    }
+    return array('ok' => true, 'error' => '');
+}
+
+/**
  * Low-level sender shared by every ATEM notification email. Never throws -
  * returns array('success' => bool, 'message' => string) and logs failures.
  */
 function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $atemId)
 {
     $cfg = getMailConfig();
-    if (empty($cfg['host']) || !class_exists(PHPMailer::class)) {
-        $reason = empty($cfg['host']) ? 'no host in .env/mail_config.local.php' : 'PHPMailer class not found (vendor/ not installed)';
-        error_log('ATEM email skipped: mail is not configured (missing vendor/ or mail_config.local.php).');
-        logMailOperation('dispatchAtemEmail', 'Skipped - mail not configured', array('atem_id' => (int)$atemId, 'reason' => $reason, 'subject' => $subject), 'ERROR');
+    if (empty($cfg['host']) || empty($cfg['username']) || empty($cfg['password'])) {
+        error_log('ATEM email skipped: mail is not configured (missing .env/mail_config.local.php values).');
+        logMailOperation('dispatchAtemEmail', 'Skipped - mail not configured', array('atem_id' => (int)$atemId, 'reason' => 'no host/username/password in .env/mail_config.local.php', 'subject' => $subject), 'ERROR');
         return array('success' => false, 'message' => 'Mail is not configured.');
     }
     if (empty($toEmail)) {
@@ -134,47 +205,35 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
         return array('success' => false, 'message' => 'Recipient has no email on file.');
     }
 
-    $mail = new PHPMailer(true);
     try {
-        $mail->isSMTP();
-        $mail->Host = $cfg['host'];
-        $mail->SMTPAuth = true;
-        $mail->Username = $cfg['username'];
-        $mail->Password = $cfg['password'];
-        $mail->Port = $cfg['port'];
-        $mail->SMTPSecure = !empty($cfg['secure'])
-            ? $cfg['secure']
-            : (((int)$cfg['port'] === 465) ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS);
-        $mail->CharSet = 'UTF-8';
-        $mail->Timeout = 30;
-        $mail->SMTPKeepAlive = false;
-
-        $mail->setFrom(
-            !empty($cfg['from_email']) ? $cfg['from_email'] : 'noreply@atem.local',
-            !empty($cfg['from_name']) ? $cfg['from_name'] : 'ATEM System'
+        $result = _atemSmtpSend(
+            $cfg['host'],
+            (int)$cfg['port'],
+            $cfg['username'],
+            $cfg['password'],
+            !empty($cfg['from_name']) ? $cfg['from_name'] : 'ATEM System',
+            $toEmail,
+            $toName,
+            $subject,
+            $htmlBody
         );
-        $mail->addAddress($toEmail, $toName);
-
-        $mail->isHTML(true);
-        $mail->Subject = $subject;
-        $mail->Body = $htmlBody;
-        $mail->AltBody = $altBody;
-
-        $mail->send();
-        logMailOperation('dispatchAtemEmail', 'Sent', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject), 'INFO');
-        return array('success' => true);
-    } catch (PHPMailerException $e) {
-        error_log('ATEM email failed (atem_id=' . (int)$atemId . '): ' . $mail->ErrorInfo);
-        logMailOperation('dispatchAtemEmail', 'Failed - PHPMailer error', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject, 'error' => $mail->ErrorInfo), 'ERROR');
-        return array('success' => false, 'message' => $mail->ErrorInfo);
     } catch (Throwable $e) {
-        // Catches anything beyond PHPMailer's own exception type (e.g. a bad
-        // link/config error) so a mail-step bug can never corrupt the JSON
-        // response of the action that triggered it (e.g. suspend-atem).
+        // Catches anything unexpected in the socket/protocol handling so a
+        // mail-step bug can never corrupt the JSON response of the action
+        // that triggered it (e.g. suspend-atem).
         error_log('ATEM email failed (atem_id=' . (int)$atemId . '): ' . $e->getMessage());
         logMailOperation('dispatchAtemEmail', 'Failed - exception', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject, 'error' => $e->getMessage()), 'ERROR');
         return array('success' => false, 'message' => $e->getMessage());
     }
+
+    if ($result['ok']) {
+        logMailOperation('dispatchAtemEmail', 'Sent', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject), 'INFO');
+        return array('success' => true);
+    }
+
+    error_log('ATEM email failed (atem_id=' . (int)$atemId . '): ' . $result['error']);
+    logMailOperation('dispatchAtemEmail', 'Failed - SMTP error', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject, 'error' => $result['error']), 'ERROR');
+    return array('success' => false, 'message' => $result['error']);
 }
 
 /**
