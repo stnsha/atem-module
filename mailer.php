@@ -57,16 +57,16 @@ function getMailConfig()
             ? parse_ini_file($envPath, false, INI_SCANNER_RAW)
             : false;
 
-        if (!empty($env['outgoing_server'])) {
-            $port = isset($env['smtp_port']) ? (int)$env['smtp_port'] : 465;
+        if (!empty($env['MAIL_HOST'])) {
+            $port = isset($env['MAIL_PORT']) ? (int)$env['MAIL_PORT'] : 465;
             $config = array(
-                'host'       => $env['outgoing_server'],
+                'host'       => $env['MAIL_HOST'],
                 'port'       => $port,
-                'username'   => isset($env['username']) ? $env['username'] : '',
-                'password'   => isset($env['password']) ? $env['password'] : '',
-                'secure'     => ($port === 465) ? 'ssl' : 'tls',
-                'from_email' => !empty($env['username']) ? $env['username'] : 'noreply@atem.local',
-                'from_name'  => 'ATEM System',
+                'username'   => isset($env['MAIL_USERNAME']) ? $env['MAIL_USERNAME'] : '',
+                'password'   => isset($env['MAIL_PASSWORD']) ? $env['MAIL_PASSWORD'] : '',
+                'secure'     => isset($env['MAIL_ENCRYPTION']) ? $env['MAIL_ENCRYPTION'] : (($port === 465) ? 'ssl' : 'tls'),
+                'from_email' => !empty($env['MAIL_FROM_ADDRESS']) ? $env['MAIL_FROM_ADDRESS'] : (isset($env['MAIL_USERNAME']) ? $env['MAIL_USERNAME'] : 'noreply@atem.local'),
+                'from_name'  => !empty($env['MAIL_FROM_NAME']) ? $env['MAIL_FROM_NAME'] : 'ATEM System',
             );
         } else {
             $path = __DIR__ . '/mail_config.local.php';

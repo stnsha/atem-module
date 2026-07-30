@@ -32,8 +32,8 @@ $cfgHost = null;
 $envPath = dirname(__FILE__) . '/.env';
 if (is_file($envPath) && is_readable($envPath)) {
     $env = parse_ini_file($envPath, false, INI_SCANNER_RAW);
-    if (!empty($env['outgoing_server'])) {
-        $cfgHost = $env['outgoing_server'];
+    if (!empty($env['MAIL_HOST'])) {
+        $cfgHost = $env['MAIL_HOST'];
     }
 }
 $host = isset($_GET['host']) && trim($_GET['host']) !== '' ? trim($_GET['host']) : ($cfgHost ? $cfgHost : 'mail.alpropharmacy.com.my');
