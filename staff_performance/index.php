@@ -986,6 +986,18 @@ function loadPerformance(payload) {
                 return;
             }
             _perfAllData = res.data || [];
+            // Staff who actually match the current filter (nonzero Total
+            // Completed or Failed) float to the top; staff with nothing to
+            // show for this filter sink to the bottom - otherwise they're
+            // scattered through the list in whatever order the API union
+            // happened to build them in, forcing a scroll to find anyone
+            // with real data. Stable sort keeps everything else in place.
+            _perfAllData.sort(function (a, b) {
+                var aZero = ((a.complete_total_count || 0) + (a.failed_total_count || 0)) === 0;
+                var bZero = ((b.complete_total_count || 0) + (b.failed_total_count || 0)) === 0;
+                if (aZero === bZero) { return 0; }
+                return aZero ? 1 : -1;
+            });
             _perfPage = 1;
             renderTable(_perfAllData, payload);
         })
