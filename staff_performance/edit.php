@@ -16,9 +16,20 @@ $rec_id       = isset($_GET['id'])    ? (int)$_GET['id']    : 0;
 $target_sid   = isset($_GET['sid'])   ? (int)$_GET['sid']   : 0;
 $filter_month   = isset($_GET['month'])   ? (int)$_GET['month']   : 0;
 $filter_year    = isset($_GET['year'])    ? (int)$_GET['year']    : (int)date('Y');
-$filter_quarter = isset($_GET['quarter']) ? (int)$_GET['quarter'] : 0;
-if ($filter_quarter < 1 || $filter_quarter > 4) { $filter_quarter = 0; }
-if ($filter_quarter > 0) { $filter_month = 0; }
+// Quarter carries over as a comma-separated list from the Staff Performance
+// summary page's own multi-select Quarter checkboxes (index.php) - parsed the
+// same way api.php's atem_parse_quarters() does, so a link like "?quarter=2,3"
+// pre-checks both boxes here instead of silently keeping only the first one.
+$filter_quarter_raw = isset($_GET['quarter']) ? (string)$_GET['quarter'] : '';
+$filter_quarters = array();
+if ($filter_quarter_raw !== '') {
+    foreach (explode(',', $filter_quarter_raw) as $_fq) {
+        $_fq = (int)trim($_fq);
+        if ($_fq >= 1 && $_fq <= 4) { $filter_quarters[] = $_fq; }
+    }
+    $filter_quarters = array_values(array_unique($filter_quarters));
+}
+if (!empty($filter_quarters)) { $filter_month = 0; }
 // Carries over the Status checkboxes selected on the Staff Performance summary
 // page, so the ATEM list here starts scoped to the same statuses instead of
 // defaulting to "All statuses". Empty means no carry-over — all checked.
@@ -159,8 +170,8 @@ usort($activity_logs, function ($a, $b) {
 $activity_logs = array_slice($activity_logs, 0, 15);
 
 $back_url = ATEM_BASE . 'staff_performance/index.php';
-if ($filter_month > 0 || $filter_year > 0 || $filter_quarter > 0) {
-    $back_url .= '?' . http_build_query(array('month'=>$filter_month,'year'=>$filter_year,'quarter'=>$filter_quarter));
+if ($filter_month > 0 || $filter_year > 0 || !empty($filter_quarters)) {
+    $back_url .= '?' . http_build_query(array('month'=>$filter_month,'year'=>$filter_year,'quarter'=>implode(',', $filter_quarters)));
 }
 
 $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_query(array('type'=>'staff-atem','staff_id'=>$target_sid));
@@ -223,13 +234,22 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
         </div>
         <div class="col-md-3">
             <label class="form-label">Quarter</label>
-            <select class="form-select form-select-sm" id="ef-quarter">
-                <option value="0">All Quarter</option>
-                <option value="1"<?php echo ($filter_quarter === 1) ? ' selected' : ''; ?>>Q1 (Jan-Mar)</option>
-                <option value="2"<?php echo ($filter_quarter === 2) ? ' selected' : ''; ?>>Q2 (Apr-Jun)</option>
-                <option value="3"<?php echo ($filter_quarter === 3) ? ' selected' : ''; ?>>Q3 (Jul-Sep)</option>
-                <option value="4"<?php echo ($filter_quarter === 4) ? ' selected' : ''; ?>>Q4 (Oct-Dec)</option>
-            </select>
+            <div class="vf-issuer-wrap" id="ef-quarter-wrap">
+                <div class="vf-s2-selection" id="ef-quarter-btn" tabindex="0">All Quarter</div>
+                <div class="vf-s2-dropdown" id="ef-quarter-dropdown">
+                    <ul class="vf-s2-list" id="ef-quarter-list" style="padding:4px 0;">
+                        <?php foreach (array(1 => 'Q1 (Jan-Mar)', 2 => 'Q2 (Apr-Jun)', 3 => 'Q3 (Jul-Sep)', 4 => 'Q4 (Oct-Dec)') as $_qn => $_ql): ?>
+                        <li class="vf-s2-list-item" style="cursor:default;">
+                            <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                <input type="checkbox" class="ef-quarter-cb" value="<?php echo $_qn; ?>"
+                                    <?php echo in_array($_qn, $filter_quarters, true) ? ' checked' : ''; ?>>
+                                <?php echo htmlspecialchars($_ql); ?>
+                            </label>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            </div>
         </div>
         <div class="col-md-3">
             <label class="form-label">Start Date</label>
@@ -455,18 +475,28 @@ window.EDIT_ATEM_ROWS = [];
 <?php endif; ?>
 window.EDIT_LOOKUPS = <?php echo json_encode($edit_lookups); ?>;
 window.EDIT_INIT_STATUSES = <?php echo json_encode($filter_statuses_init); ?>;
-window.EDIT_INIT_QUARTER = <?php echo json_encode($filter_quarter); ?>;
 
 var QUARTER_MONTHS = { 1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12] };
+var QUARTERS_LABEL = { 1: 'Q1 (Jan-Mar)', 2: 'Q2 (Apr-Jun)', 3: 'Q3 (Jul-Sep)', 4: 'Q4 (Oct-Dec)' };
 
-// Shared period-match helper for the ATEM tab.
-function matchesPeriod(dateStr, year, month, quarter) {
-    if (!year && !month && !quarter) { return true; }
+// Shared period-match helper for the ATEM tab. quarters is an array (possibly
+// empty) of quarter numbers - mirrors api.php's atem_period_months(), so a
+// multi-quarter selection (e.g. Q2+Q3) matches the union of both quarters'
+// months, same as the Staff Performance summary page.
+function matchesPeriod(dateStr, year, month, quarters) {
+    var hasQuarter = quarters && quarters.length > 0;
+    if (!year && !month && !hasQuarter) { return true; }
     if (!dateStr) { return false; }
     var y = parseInt(dateStr.substring(0, 4), 10);
     var m = parseInt(dateStr.substring(5, 7), 10);
     if (year && y !== year) { return false; }
-    if (quarter) { return (QUARTER_MONTHS[quarter] || []).indexOf(m) !== -1; }
+    if (hasQuarter) {
+        var months = [];
+        for (var qi = 0; qi < quarters.length; qi++) {
+            months = months.concat(QUARTER_MONTHS[quarters[qi]] || []);
+        }
+        return months.indexOf(m) !== -1;
+    }
     if (month) { return m === month; }
     return true;
 }
@@ -595,23 +625,98 @@ function buildEditStatusDropdown() {
     });
 }
 
+// ------------------------------------------------ quarter checkbox dropdown
+// Same checkbox-dropdown widget as Status above, but empty selection means
+// "no quarter filter" (falls back to Month/unfiltered), not "match nothing" -
+// mirrors index.php's Quarter widget exactly (including multi-select), so a
+// link carrying over multiple quarters from the summary page pre-checks all
+// of them here instead of only the first.
+function getSelectedEditQuarters() {
+    var boxes = document.querySelectorAll('.ef-quarter-cb:checked');
+    var out = [];
+    for (var i = 0; i < boxes.length; i++) { out.push(parseInt(boxes[i].value, 10)); }
+    return out;
+}
+
+function allEditQuarterCheckboxes() { return document.querySelectorAll('.ef-quarter-cb'); }
+
+function updateEditQuarterButtonLabel() {
+    var btn = document.getElementById('ef-quarter-btn');
+    if (!btn) { return; }
+    var selected = getSelectedEditQuarters();
+    var all = allEditQuarterCheckboxes();
+    if (selected.length === 0 || selected.length === all.length) {
+        btn.textContent = 'All Quarter';
+    } else {
+        var labels = [];
+        for (var i = 0; i < selected.length; i++) { labels.push(QUARTERS_LABEL[selected[i]] || ('Q' + selected[i])); }
+        btn.textContent = labels.join(', ');
+    }
+}
+
+function resetEditQuarterDropdown() {
+    var boxes = allEditQuarterCheckboxes();
+    for (var i = 0; i < boxes.length; i++) { boxes[i].checked = false; }
+    updateEditQuarterButtonLabel();
+    var dropEl = document.getElementById('ef-quarter-dropdown');
+    if (dropEl) { dropEl.classList.remove('open'); }
+}
+
+var _efQuarterDropdownBuilt = false;
+function buildEditQuarterDropdown() {
+    var btnEl  = document.getElementById('ef-quarter-btn');
+    var dropEl = document.getElementById('ef-quarter-dropdown');
+    var wrapEl = document.getElementById('ef-quarter-wrap');
+    if (!btnEl || !dropEl) { return; }
+
+    var refEl = document.getElementById('ef-year');
+    if (refEl) { syncS2ButtonSizeEdit(btnEl, refEl); }
+
+    updateEditQuarterButtonLabel();
+
+    if (_efQuarterDropdownBuilt) { return; }
+    _efQuarterDropdownBuilt = true;
+
+    btnEl.addEventListener('click', function (e) {
+        e.stopPropagation();
+        dropEl.classList.toggle('open');
+    });
+    btnEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dropEl.classList.toggle('open'); }
+    });
+    document.addEventListener('click', function (e) {
+        if (wrapEl && !wrapEl.contains(e.target)) { dropEl.classList.remove('open'); }
+    });
+    document.addEventListener('change', function (e) {
+        if (e.target && e.target.classList.contains('ef-quarter-cb')) {
+            updateEditQuarterButtonLabel();
+            // Month and quarter are mutually exclusive
+            if (getSelectedEditQuarters().length) {
+                var efMonth = document.getElementById('ef-month');
+                if (efMonth) { efMonth.value = '0'; }
+            }
+            applyEditFilters();
+        }
+    });
+}
+
 // Mirrors the Closure Month rule used everywhere else in the app: closing statuses
 // (Completed family, Extended-with-a-recorded-date, Failed) are matched by closure_date;
 // Active is matched by start_date; anything else (Draft/Suspended/Deleted/pending-Extended)
 // falls back to start_date so it still shows up somewhere rather than vanishing silently.
 var EDIT_CLOSURE_STATUSES = ['Completed', 'Completed with Excellence', 'Completed with Extension', 'Extended', 'Failed'];
 
-function editInPeriod(r, year, month, quarter) {
+function editInPeriod(r, year, month, quarters) {
     var dateStr = (EDIT_CLOSURE_STATUSES.indexOf(r.status) !== -1) ? r.closure_date : r.start_date;
-    return matchesPeriod(dateStr, year, month, quarter);
+    return matchesPeriod(dateStr, year, month, quarters);
 }
 
 function applyEditFilters() {
     var data   = window.EDIT_ATEM_ROWS || [];
     var year   = document.getElementById('ef-year')   ? parseInt(document.getElementById('ef-year').value,   10) || 0 : 0;
     var month  = document.getElementById('ef-month')  ? parseInt(document.getElementById('ef-month').value,  10) || 0 : 0;
-    var quarter = document.getElementById('ef-quarter') ? parseInt(document.getElementById('ef-quarter').value, 10) || 0 : 0;
-    if (quarter) { month = 0; }
+    var quarters = getSelectedEditQuarters();
+    if (quarters.length) { month = 0; }
     var level  = document.getElementById('ef-level')  ? document.getElementById('ef-level').value  : '';
     var statuses = getSelectedEditStatuses();
     var allStatusCount = allEditStatusCheckboxes().length;
@@ -784,13 +889,24 @@ function syncS2ButtonSizeEdit(btnEl, refEl) {
 
 document.addEventListener('DOMContentLoaded', function() {
     buildEditFilters();
+    buildEditQuarterDropdown();
     applyEditFilters();
 
     // Filter events
-    var _efIds = ['ef-year', 'ef-month', 'ef-quarter', 'ef-level', 'ef-role', 'ef-from', 'ef-to'];
+    var _efIds = ['ef-year', 'ef-level', 'ef-role', 'ef-from', 'ef-to'];
     for (var _efi = 0; _efi < _efIds.length; _efi++) {
         var _efEl = document.getElementById(_efIds[_efi]);
         if (_efEl) { _efEl.addEventListener('change', applyEditFilters); }
+    }
+    // Month / quarter mutual exclusion, then auto-apply - mirrors index.php's
+    // perf-filter-month handling (the Quarter side of this exclusion is wired
+    // inside buildEditQuarterDropdown() above).
+    var efMonthEl = document.getElementById('ef-month');
+    if (efMonthEl) {
+        efMonthEl.addEventListener('change', function() {
+            if (this.value && this.value !== '0') { resetEditQuarterDropdown(); }
+            applyEditFilters();
+        });
     }
     var efSearch = document.getElementById('ef-search');
     if (efSearch) { efSearch.addEventListener('keyup', applyEditFilters); }
@@ -803,8 +919,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             var efMonth = document.getElementById('ef-month');
             if (efMonth) { efMonth.value = '0'; }
-            var efQuarter = document.getElementById('ef-quarter');
-            if (efQuarter) { efQuarter.value = '0'; }
+            resetEditQuarterDropdown();
             resetEditStatusDropdown();
             applyEditFilters();
         });

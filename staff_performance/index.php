@@ -511,7 +511,7 @@ function updateQuarterButtonLabel(prefix) {
     } else {
         var labels = [];
         for (var i = 0; i < selected.length; i++) {
-            labels.push('Q' + selected[i]);
+            labels.push(QUARTERS_LABEL[selected[i]] || ('Q' + selected[i]));
         }
         btn.textContent = labels.join(', ');
     }
