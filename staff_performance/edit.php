@@ -365,17 +365,18 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
         }
 
         // Estimated Reward: the target staff member's own share of the incentive,
-        // only for closing statuses and only when the amount was actually approved
-        // (final_incentive_amount stays 0 unless approved — a_incentive_amount/
-        // r_incentive_amount are always the raw rule-based estimate regardless).
-        // Stays null (rendered as "-") unless this staff is themselves an
-        // incentivised A/R member who actually earns a nonzero share - an
-        // issuer-only/C/I role, or a non-incentivised A/R, shows "-" rather
-        // than a misleading "RM 0.00" even on an approved card.
+        // only for closing statuses. Stays null (rendered as "-") unless this
+        // staff is themselves an incentivised A/R member on this card - an
+        // issuer-only/C/I role, or a non-incentivised A/R, shows "-" since
+        // they have no stake in the incentive at all. Once they ARE an
+        // incentivised A/R participant, this becomes a real number (0.00 if
+        // the payout isn't approved yet, final_incentive_amount stays 0 until
+        // approved — a_incentive_amount/r_incentive_amount are always the raw
+        // rule-based estimate regardless) rather than "-", since they're a
+        // genuine (pending) participant, not a bystander.
         $closing_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
         $est_reward = null;
         if (in_array($a_status, $closing_statuses, true)
-            && isset($a['final_incentive_amount']) && (float)$a['final_incentive_amount'] > 0
             && !empty($a['arci']) && is_array($a['arci'])
         ) {
             $incACount = 0;
@@ -385,15 +386,18 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
                 if (isset($_m['role']) && $_m['role'] === 'A') { $incACount++; }
                 if (isset($_m['role']) && $_m['role'] === 'R') { $incRCount++; }
             }
+            $is_approved = isset($a['final_incentive_amount']) && (float)$a['final_incentive_amount'] > 0;
 
             foreach ($a['arci'] as $_m) {
                 if (empty($_m['staff_id']) || (int)$_m['staff_id'] !== $target_sid || empty($_m['is_incentivised'])) {
                     continue;
                 }
                 if ($_m['role'] === 'A' && $incACount > 0) {
-                    $est_reward = ($est_reward === null ? 0.0 : $est_reward) + (float)(isset($a['a_incentive_amount']) ? $a['a_incentive_amount'] : 0) / $incACount;
+                    $est_reward = ($est_reward === null ? 0.0 : $est_reward)
+                        + ($is_approved ? (float)(isset($a['a_incentive_amount']) ? $a['a_incentive_amount'] : 0) / $incACount : 0.0);
                 } elseif ($_m['role'] === 'R' && $incRCount > 0) {
-                    $est_reward = ($est_reward === null ? 0.0 : $est_reward) + (float)(isset($a['r_incentive_amount']) ? $a['r_incentive_amount'] : 0) / $incRCount;
+                    $est_reward = ($est_reward === null ? 0.0 : $est_reward)
+                        + ($is_approved ? (float)(isset($a['r_incentive_amount']) ? $a['r_incentive_amount'] : 0) / $incRCount : 0.0);
                 }
             }
         }
