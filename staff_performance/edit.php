@@ -726,7 +726,7 @@ function applyEditFilters() {
     var term   = document.getElementById('ef-search') ? document.getElementById('ef-search').value.toLowerCase().trim() : '';
 
     _editFilteredData = data.filter(function(r) {
-        if (!editInPeriod(r, year, month, quarter)) { return false; }
+        if (!editInPeriod(r, year, month, quarters)) { return false; }
         if (level  && r.level  !== level)  { return false; }
         if (statuses.length === 0) { return false; }
         if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }

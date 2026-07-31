@@ -120,11 +120,14 @@ function ex_level_val($a) {
 
 // Emit one or more rows for one staff member's involvement in one ATEM.
 // One row per ARCI role; if issuer-only (no ARCI), one row with ARCI blank.
-// Reward per role: A -> a_incentive_amount; R -> r_incentive_amount / R-count; C/I/issuer-only -> 0.
 // Reward per role: A -> a_incentive_amount split among incentivised A members;
 // R -> r_incentive_amount split among incentivised R members; a non-incentivised
 // A/R member (or C/I/issuer-only) gets 0 - mirrors api.php's
-// getStaffPerformanceLive() exactly, so this matches the on-screen table.
+// getStaffPerformanceLive() exactly, so this matches the on-screen table. The
+// reward is additionally gated on payout approval (final_incentive_amount > 0)
+// - an unapproved card shows RM0.00 here too, same as the on-screen Est.
+// Reward total and edit.php's own per-row Est. Reward column, rather than the
+// raw pre-approval estimate.
 // $blank_reward is used for Outlet ATEM rows (atem_type=2) - Outlet ATEM no
 // longer carries any incentive concept (Est. Reward on the on-screen table
 // stays HQ-only), so the Est. Reward column is left blank instead of 0.00.
@@ -156,6 +159,11 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a, $blank_re
     // is_incentivised - mirrors api.php's getStaffPerformanceLive() so the
     // export matches the on-screen table (a non-incentivised A/R member gets
     // RM 0, not an equal share of the pool).
+    // final_incentive_amount is the actual approved payout (0 unless approved,
+    // same convention as CalculateBonusEligibility.php) - a_incentive_amount/
+    // r_incentive_amount are always the raw rule-based estimate and stay
+    // nonzero even before approval, so the reward below must gate on this.
+    $is_approved = isset($a['final_incentive_amount']) && (float)$a['final_incentive_amount'] > 0;
     $inc_a_count = 0;
     $inc_r_count = 0;
     if (!empty($a['arci']) && is_array($a['arci'])) {
@@ -180,9 +188,9 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a, $blank_re
             $role = $r['role'];
             if ($blank_reward) {
                 $reward = '';
-            } elseif ($role === 'A' && $r['is_incentivised'] && $inc_a_count > 0) {
+            } elseif ($is_approved && $role === 'A' && $r['is_incentivised'] && $inc_a_count > 0) {
                 $reward = number_format($a_amount / $inc_a_count, 2);
-            } elseif ($role === 'R' && $r['is_incentivised'] && $inc_r_count > 0) {
+            } elseif ($is_approved && $role === 'R' && $r['is_incentivised'] && $inc_r_count > 0) {
                 $reward = number_format($r_amount / $inc_r_count, 2);
             } else {
                 $reward = number_format(0, 2);
