@@ -111,13 +111,19 @@ function atemEmailShell($headerColor, $headerTitle, $innerHtml)
 }
 
 /**
+ * Monitoring CC address - temporary, per explicit request: every ATEM
+ * outgoing email must also reach this inbox while the user monitors delivery.
+ */
+define('ATEM_MAIL_MONITOR_CC', 'anasuharosli@gmail.com');
+
+/**
  * Raw-socket SMTP send over implicit TLS (port 465), same protocol handling
  * as voucher/email_helper.php's _smtpSend(): connect, EHLO, AUTH LOGIN, MAIL
  * FROM/RCPT TO/DATA, then read the reply code after each step. Returns
  * array('ok' => bool, 'error' => string) - error is the last SMTP reply line
  * on failure, so dispatchAtemEmail() can log something actionable.
  */
-function _atemSmtpSend($host, $port, $user, $pass, $fromName, $toEmail, $toName, $subject, $htmlBody, $useTLS = true)
+function _atemSmtpSend($host, $port, $user, $pass, $fromName, $toEmail, $toName, $subject, $htmlBody, $useTLS = true, $ccEmail = null)
 {
     $ctx = stream_context_create(array('ssl' => array(
         'verify_peer'      => false,
@@ -161,6 +167,13 @@ function _atemSmtpSend($host, $port, $user, $pass, $fromName, $toEmail, $toName,
         fclose($sock);
         return array('ok' => false, 'error' => 'RCPT TO rejected: ' . trim($reply));
     }
+    if (!empty($ccEmail)) {
+        $reply = $cmd('RCPT TO:<' . trim($ccEmail) . '>');
+        if (strpos($reply, '250') === false && strpos($reply, '251') === false) {
+            fclose($sock);
+            return array('ok' => false, 'error' => 'RCPT TO (cc) rejected: ' . trim($reply));
+        }
+    }
 
     $reply = $cmd('DATA');
     if (strpos($reply, '354') === false) {
@@ -171,6 +184,7 @@ function _atemSmtpSend($host, $port, $user, $pass, $fromName, $toEmail, $toName,
     $msg = 'Date: ' . date('r') . "\r\n"
         . 'From: =?UTF-8?B?' . base64_encode($fromName) . '?= <' . $user . '>' . "\r\n"
         . 'To: =?UTF-8?B?' . base64_encode($toName) . '?= <' . trim($toEmail) . '>' . "\r\n"
+        . (!empty($ccEmail) ? 'Cc: <' . trim($ccEmail) . '>' . "\r\n" : '')
         . 'Subject: =?UTF-8?B?' . base64_encode($subject) . '?=' . "\r\n"
         . "MIME-Version: 1.0\r\n"
         . "Content-Type: text/html; charset=UTF-8\r\n"
@@ -221,7 +235,8 @@ function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $at
             $toName,
             $subject,
             $htmlBody,
-            $useTLS
+            $useTLS,
+            ATEM_MAIL_MONITOR_CC
         );
     } catch (Throwable $e) {
         // Catches anything unexpected in the socket/protocol handling so a
