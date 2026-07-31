@@ -189,11 +189,32 @@ function _atemSmtpSend($host, $port, $user, $pass, $fromName, $toEmail, $toName,
 }
 
 /**
+ * True when running on a local dev host (Laragon/XAMPP), independent of
+ * api.php's own getEnvironment() so mailer.php stays usable standalone
+ * (test-smtp-connection.php / test-send-email.php include it without api.php).
+ */
+function isAtemLocalEnvironment()
+{
+    $serverName = isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : '';
+    $httpHost = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+
+    return in_array($serverName, array('localhost', '127.0.0.1'), true) ||
+        strpos($serverName, 'localhost') !== false ||
+        strpos($httpHost, 'localhost') !== false ||
+        strpos($httpHost, '127.0.0.1') !== false;
+}
+
+/**
  * Low-level sender shared by every ATEM notification email. Never throws -
  * returns array('success' => bool, 'message' => string) and logs failures.
  */
 function dispatchAtemEmail($toEmail, $toName, $subject, $htmlBody, $altBody, $atemId)
 {
+    if (isAtemLocalEnvironment()) {
+        logMailOperation('dispatchAtemEmail', 'Skipped - local environment', array('atem_id' => (int)$atemId, 'to' => $toEmail, 'subject' => $subject), 'INFO');
+        return array('success' => false, 'message' => 'Mail sending is disabled in the local environment.');
+    }
+
     $cfg = getMailConfig();
     if (empty($cfg['host']) || empty($cfg['username']) || empty($cfg['password'])) {
         error_log('ATEM email skipped: mail is not configured (missing .env/mail_config.local.php values).');

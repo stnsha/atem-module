@@ -47,6 +47,14 @@
     function money(n) { return 'RM' + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
     function dateOnly(v) { return v ? String(v).substring(0, 10) : ''; }
 
+    // Today as a local-timezone YYYY-MM-DD string (toISOString() would shift
+    // the date across midnight UTC).
+    function localTodayStr() {
+        var d = new Date();
+        var m = d.getMonth() + 1, day = d.getDate();
+        return d.getFullYear() + '-' + (m < 10 ? '0' + m : '' + m) + '-' + (day < 10 ? '0' + day : '' + day);
+    }
+
     function escapeHtml(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -94,7 +102,7 @@
 
     function scrollToFirstError() {
         var ids = ['atem-title-error', 'atem-level-error', 'atem-rule-error', 'tl-start-error',
-                   'tl-end-error', 'tl-status-error', 'tl-remarks-error', 'arci-error', 'reflink-section-error', 'atem-save-error'];
+                   'tl-end-error', 'tl-status-error', 'tl-closure-error', 'tl-remarks-error', 'arci-error', 'reflink-section-error', 'atem-save-error'];
         for (var i = 0; i < ids.length; i++) {
             var el = $(ids[i]);
             if (el && el.textContent.trim() !== '') {
@@ -340,6 +348,15 @@
         // list itself, since that list also gates the Reward Decision UI elsewhere.
         var closesCard = TERMINAL_STATUSES.indexOf(selVal) >= 0 || selVal === 'Force Terminated';
         if (closesCard) {
+            // Post-unsuspend deferred closure date (needsClosureDate) and the
+            // CEO/SuperAdmin direct picker (canPickClosureDate): never
+            // auto-fill today's date here - the field must stay blank until a
+            // date is consciously picked, so validateFinal()'s required check
+            // can catch an ignored field (issuer flow) and the field mirrors
+            // the real stored value rather than faking one (CEO/SA flow).
+            if ((CFG.needsClosureDate || CFG.canPickClosureDate) && !closureEl.value) {
+                return;
+            }
             var _recStatusVal = '';
             (CFG.statuses || []).forEach(function (s) {
                 if (String(s.id) === String(REC.atem_status_id)) { _recStatusVal = s.value; }
@@ -1275,6 +1292,7 @@
     function validateFinal() {
         setError('atem-title-error', ''); setError('atem-level-error', ''); setError('atem-rule-error', '');
         setError('tl-start-error', ''); setError('tl-end-error', ''); setError('tl-status-error', '');
+        setError('tl-closure-error', '');
         setError('tl-remarks-error', '');
         setError('reflink-section-error', ''); setError('atem-save-error', ''); setError('tl-reward-decision-error', '');
         setError('atem-am-error', ''); setError('atem-reward-label-error', '');
@@ -1300,6 +1318,20 @@
         if (_tlStatusVal === 'Force Terminated' && !$('tl-remarks').value.trim()) {
             setError('tl-remarks-error', 'A remark is required when force terminating an ATEM.');
             return false;
+        }
+        var COMPLETED_LIKE_STATUSES = ['Completed', 'Completed with Excellence'];
+        if (CFG.needsClosureDate && COMPLETED_LIKE_STATUSES.indexOf(_tlStatusVal) >= 0) {
+            var _closureVal = $('tl-closure').value;
+            if (!_closureVal) {
+                setError('tl-closure-error', 'Please set the closure date before saving.');
+                return false;
+            }
+            // YYYY-MM-DD strings compare correctly as plain strings.
+            var _closureMin = dateOnly(REC.start_date);
+            if ((_closureMin && _closureVal < _closureMin) || _closureVal > localTodayStr()) {
+                setError('tl-closure-error', 'Closure date must be between the start date and today.');
+                return false;
+            }
         }
         var originalStatusValue = (REC.status && REC.status.value) ? REC.status.value : '';
         var MUST_CHANGE = ['Draft'];
@@ -1452,6 +1484,7 @@
             incentive_approved: !!(document.getElementById('tl-incentive-approve-yes') && document.getElementById('tl-incentive-approve-yes').checked),
             atem_status_id: $('tl-status').value ? parseInt($('tl-status').value, 10) : null,
             remarks: $('tl-remarks').value,
+            closure_date: CFG.needsClosureDate ? ($('tl-closure').value || null) : undefined,
             is_deducted: (function () {
                 var checked = document.querySelector('input[name="tl-reward-decision"]:checked');
                 return !!(checked && checked.value === 'deducted');
@@ -1966,6 +1999,52 @@
         ICE_LOCK_FIELDS.forEach(function (id) {
             var el = $(id);
             if (el) { el.removeAttribute('disabled'); }
+        });
+    }
+
+    // Card was restored from suspension back into Completed/Completed with
+    // Excellence with closure_date left blank (see AtemController::unsuspend()).
+    // Unlike every other locked field, Closure Date stays editable here. The
+    // replacement date must fall between the card's Start Date and today -
+    // enforced both by the picker's min/max and by validateFinal(), and
+    // re-checked server-side in AtemController::update().
+    function applyClosureDateUnlock() {
+        var el = $('tl-closure');
+        if (!el) { return; }
+        el.removeAttribute('disabled');
+        if (REC.start_date) { el.setAttribute('min', dateOnly(REC.start_date)); }
+        el.setAttribute('max', localTodayStr());
+    }
+
+    // CEO (grade 5) / SuperAdmin direct closure-date editing (CFG.canPickClosureDate):
+    // available on any status except Draft/Active/Failed/Deleted, saved through its
+    // own endpoint since the page is usually read-only for these viewers. Same
+    // start_date..today range as the post-unsuspend flow.
+    function bindClosureDatePicker() {
+        applyClosureDateUnlock();
+        var btn = $('tl-closure-save-btn');
+        if (!btn) { return; }
+        btn.addEventListener('click', function () {
+            setError('tl-closure-error', '');
+            var v = $('tl-closure').value;
+            if (!v) { setError('tl-closure-error', 'Please select a closure date.'); return; }
+            var minD = dateOnly(REC.start_date);
+            if ((minD && v < minD) || v > localTodayStr()) {
+                setError('tl-closure-error', 'Closure date must be between the start date and today.');
+                return;
+            }
+            btn.disabled = true; btn.textContent = 'Saving...';
+            apiCall('update-closure-date', { id: CFG.atemId, closure_date: v }).then(function (res) {
+                btn.disabled = false; btn.textContent = 'Save Closure Date';
+                if (res && res.success) {
+                    REC.closure_date = v;
+                } else {
+                    setError('tl-closure-error', res && res.message ? res.message : 'Failed to update closure date.');
+                }
+            }).catch(function () {
+                btn.disabled = false; btn.textContent = 'Save Closure Date';
+                setError('tl-closure-error', 'Network error while updating closure date.');
+            });
         });
     }
 
@@ -2489,6 +2568,8 @@
         if (CFG.superadminTerminalEdit) { applyTerminalEditRestrictions(); }
         if (CFG.issuerCompletedEdit) { applyIssuerCompletedLock(); }
         if (CFG.suspendedIssuerEdit) { applySuspendedIssuerUnlock(); }
+        if (CFG.needsClosureDate) { applyClosureDateUnlock(); }
+        if (CFG.canPickClosureDate) { bindClosureDatePicker(); }
         if (!READ && !IS_ISSUER && !CFG.superadminTerminalEdit) {
             // A real SuperAdmin (dev-override aware via CFG.isSuperAdmin) may still
             // change Status and add a Remark on a card they didn't issue; everything

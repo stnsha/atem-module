@@ -375,6 +375,24 @@ $suspended_issuer_edit = $record_is_suspended && $is_issuer_now;
 $can_appeal = $record_is_suspended && $is_issuer_now
     && empty($record['appealed_at']);
 
+// A card unsuspended back into Completed/Completed with Excellence is saved
+// with closure_date deliberately left blank (AtemController::unsuspend()) -
+// the original closure date is not recoverable, so the Issuer must set it
+// explicitly. This state only arises via that restore path; a normal
+// transition into these statuses always has a closure_date already.
+$needs_closure_date = $issuer_completed_edit
+    && in_array($current_status_value, array('Completed', 'Completed with Excellence'), true)
+    && empty($record['closure_date']);
+
+// CEO (grade 5) or real SuperAdmin may directly set/adjust the closure date
+// on a card in any status except Draft, Active, Failed, or Deleted - saved
+// via its own button/endpoint, independent of the page's edit mode (most of
+// these cards render read-only for a non-issuer). Range: start_date..today,
+// enforced by api.php's permission check and atem-api's updateClosureDate().
+$can_pick_closure_date = ($record && !$api_unavailable && !$record_is_actually_deleted && !$payout_is_closed)
+    && ($_is_superadmin || (int)$atem_permission === 5)
+    && !in_array($current_status_value, array('Draft', 'Active', 'Failed', 'Deleted'), true);
+
 // Non-issuers cannot use progress mode — downgrade to read.
 if ($is_progress && !$is_issuer_now) {
     $mode        = 'read';
@@ -418,6 +436,8 @@ $atem_config = array(
     'superadminTerminalEdit' => (bool) $superadmin_terminal_edit,
     'issuerCompletedEdit'    => (bool) $issuer_completed_edit,
     'suspendedIssuerEdit'    => (bool) $suspended_issuer_edit,
+    'needsClosureDate'       => (bool) $needs_closure_date,
+    'canPickClosureDate'     => (bool) $can_pick_closure_date,
 );
 
 $_bd_enabled = false;
@@ -840,8 +860,18 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     <input type="date" class="form-control" id="tl-final-due" disabled>
                 </div>
                 <div class="col-md-4">
-                    <label for="tl-closure" class="form-label">Closure Date</label>
+                    <label for="tl-closure" class="form-label">Closure Date<?php if ($needs_closure_date): ?> <span
+                            class="atem-req">*</span><?php endif; ?></label>
                     <input type="date" class="form-control" id="tl-closure" disabled>
+                    <div class="atem-form-error" id="tl-closure-error"></div>
+                    <?php if ($needs_closure_date): ?>
+                    <div class="atem-card-hint">This card was restored from suspension. Please set the closure date
+                        before saving.</div>
+                    <?php endif; ?>
+                    <?php if ($can_pick_closure_date): ?>
+                    <button type="button" class="btn btn-outline-primary btn-sm mt-1" id="tl-closure-save-btn">Save
+                        Closure Date</button>
+                    <?php endif; ?>
                 </div>
 
                 <!-- Row 4: Remarks -->
@@ -867,8 +897,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <h6 class="atem-card-title" style="color:#856404;"><i class="bi bi-slash-circle"></i> Suspension Details
             </h6>
             <?php if ($record_is_suspended): ?>
-            <p class="atem-card-hint">This card has been suspended. All estimated incentives have been reset to zero.
-            </p>
+            <p class="atem-card-hint">This card has been suspended. The final payable incentive has been reset to
+                zero; the computed incentive breakdown is preserved for reference.</p>
             <?php else: ?>
             <p class="atem-card-hint">This card was previously suspended. Details are kept for reference.</p>
             <?php endif; ?>
@@ -1132,8 +1162,8 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             </div>
             <div class="modal-body">
                 <p style="font-size:13px;" class="mb-3">
-                    Suspending this card will change its status to Suspended and reset all estimated incentives to zero.
-                    The card can be unsuspended later to restore it to its previous status.
+                    Suspending this card will change its status to Suspended and reset the final payable incentive
+                    to zero. The card can be unsuspended later to restore it to its previous status.
                 </p>
                 <div class="mb-2">
                     <label for="suspend-remarks" class="form-label">Reason for Suspension <span

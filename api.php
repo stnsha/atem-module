@@ -929,6 +929,27 @@ function unsuspendAtem($id, $staff_id)
     return array('success' => false, 'message' => $msg);
 }
 
+/**
+ * Directly set the closure date on a card (CEO grade 5 / SuperAdmin only -
+ * caller must check permission first). atem-api rejects Draft/Active/Failed/
+ * Deleted statuses and enforces the start_date..today range itself.
+ */
+function updateAtemClosureDate($id, $closure_date, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/closure-date';
+    $result   = getApiDataWithJWT($endpoint, array(
+        'actor_id'     => (int)$staff_id,
+        'closure_date' => $closure_date,
+    ), 'PUT', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded  = json_decode($result['response'], true);
+    if ($httpCode >= 200 && $httpCode < 300 && !empty($decoded['success'])) {
+        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : null);
+    }
+    $msg = (!empty($decoded['message'])) ? $decoded['message'] : 'Failed to update closure date.';
+    return array('success' => false, 'message' => $msg);
+}
+
 function updatePayoutStatus($id, $status, $remarks, $staff_id)
 {
     $endpoint = 'atem/' . (int)$id . '/payout-status';
@@ -3295,6 +3316,33 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = unsuspendAtem($jsonData['id'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID.');
+                    }
+                    break;
+
+                case 'update-closure-date':
+                    if (isset($jsonData['id']) && !empty($jsonData['closure_date'])) {
+                        // CEO (grade 5) or real SuperAdmin only. $atem_permission is
+                        // only set when api.php is included from a page; the browser
+                        // posts directly here, so resolve the grade fresh - same
+                        // dev-override-aware fallback chain as dashboard-stats.
+                        $cd_perm = 0;
+                        if (isset($atem_permission)) {
+                            $cd_perm = (int)$atem_permission;
+                        } elseif (isset($_SESSION['atem_dev_role_override'])) {
+                            $cd_perm = (int)$_SESSION['atem_dev_role_override'];
+                        } elseif ($staff_id) {
+                            $cd_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                            if ($cd_perm_res && ($cd_perm_row = mysqli_fetch_assoc($cd_perm_res))) {
+                                $cd_perm = ((int)$cd_perm_row['atem'] === 1) ? 6 : (int)$cd_perm_row['grade'];
+                            }
+                        }
+                        if (!$is_api_superadmin && $cd_perm !== 5) {
+                            $response = array('success' => false, 'message' => 'Insufficient permission to update the closure date.');
+                            break;
+                        }
+                        $response = updateAtemClosureDate($jsonData['id'], (string)$jsonData['closure_date'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID or closure date.');
                     }
                     break;
 
