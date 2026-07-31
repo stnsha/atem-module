@@ -50,8 +50,9 @@ $filter_staff_id = isset($_GET['staff_filter_id']) ? (int)$_GET['staff_filter_id
 if (!empty($filter_quarter)) { $filter_month = 0; }
 
 // Whitelist against the 6 selectable statuses (see atem_performance_status_options()
-// in api.php); defaults to Completed + Completed with Excellence, matching the
-// Staff Performance page's own default, if the caller didn't specify any.
+// in api.php); defaults to Completed + Completed with Excellence + Completed with
+// Extension, matching the Staff Performance page's own default, if the caller
+// didn't specify any.
 $filter_statuses = array();
 if ($statuses_raw !== '') {
     foreach (explode(',', $statuses_raw) as $_st) {
@@ -61,7 +62,7 @@ if ($statuses_raw !== '') {
     $filter_statuses = array_values(array_intersect($filter_statuses, atem_performance_status_options()));
 }
 if (empty($filter_statuses)) {
-    $filter_statuses = array('Completed', 'Completed with Excellence');
+    $filter_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
 }
 
 $ids = array();

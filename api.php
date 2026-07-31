@@ -2203,7 +2203,7 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
     $allowedStatuses = atem_performance_status_options();
     $statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
         ? array_values(array_intersect($jsonData['statuses'], $allowedStatuses))
-        : array('Completed', 'Completed with Excellence');
+        : array('Completed', 'Completed with Excellence', 'Completed with Extension');
 
     // Staff Performance is HQ ATEM only (Outlet ATEM removed).
     $live = getStaffPerformanceLive($month, $year, $quarter, $statuses, $staff_id, 1, 0);
@@ -3682,7 +3682,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pl_allowed_statuses = atem_performance_status_options();
                     $pl_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
                         ? array_values(array_intersect($jsonData['statuses'], $pl_allowed_statuses))
-                        : array('Completed', 'Completed with Excellence');
+                        : array('Completed', 'Completed with Excellence', 'Completed with Extension');
 
                     // The page shows HQ ATEM, Outlet ATEM, and OKR Completed counts as
                     // separate columns on the same row - getStaffPerformanceLive() only
@@ -3903,7 +3903,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pyk_allowed_statuses = atem_performance_status_options();
                     $pyk_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
                         ? array_values(array_intersect($jsonData['statuses'], $pyk_allowed_statuses))
-                        : array('Completed', 'Completed with Excellence');
+                        : array('Completed', 'Completed with Excellence', 'Completed with Extension');
 
                     // Lock Payout is ATEM-only, HQ-only (Outlet ATEM removed from
                     // Staff Performance) - OKR has no incentive/payout concept any
@@ -3966,7 +3966,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pyu_allowed_statuses = atem_performance_status_options();
                     $pyu_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
                         ? array_values(array_intersect($jsonData['statuses'], $pyu_allowed_statuses))
-                        : array('Completed', 'Completed with Excellence');
+                        : array('Completed', 'Completed with Excellence', 'Completed with Extension');
 
                     // Unlock Payout is ATEM-only, HQ-only (Outlet ATEM removed from
                     // Staff Performance) - OKR has no incentive/payout concept any

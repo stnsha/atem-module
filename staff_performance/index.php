@@ -90,11 +90,11 @@ for ($y = 2026; $y <= $init_year; $y++) {
 }
 
 // Status filter — exact statuses only (mirrors atem_performance_status_options()
-// in api.php). Defaults to Completed + Completed with Excellence only; every
-// other status (including Completed with Extension) starts unchecked, so its
-// column reads 0 until explicitly selected.
+// in api.php). Defaults to Completed + Completed with Excellence + Completed
+// with Extension; every other status starts unchecked, so its column reads 0
+// until explicitly selected.
 $perf_status_options = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
-$perf_default_statuses = array('Completed', 'Completed with Excellence');
+$perf_default_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
 
 // Staff filter dropdown (searchable, like the one on index.php). Only grade 2
 // (non-SA) is narrowed to their own department overlap here, mirroring
