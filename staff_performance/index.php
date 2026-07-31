@@ -933,15 +933,23 @@ function renderTable(data, payload) {
     renderPerfPager(total);
 }
 
+var _perfReqSeq = 0;
+
 function loadPerformance(payload) {
     _currentPayload = payload;
+    // Guards against out-of-order responses when filters change faster than
+    // the request round-trip (e.g. ticking several Status checkboxes in quick
+    // succession) - only the reply matching the MOST RECENT call is applied,
+    // so the table never gets clobbered back to a stale intermediate filter.
+    var reqSeq = ++_perfReqSeq;
 
     var tbody = document.getElementById('perf-tbody');
     var labelEl = document.getElementById('perf-filter-label');
     var periodEl = document.getElementById('perf-period-label');
     var label = buildLabel(payload);
 
-    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">' +
+        '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Loading...</td></tr>';
     if (labelEl) {
         labelEl.textContent = label;
     }
@@ -971,6 +979,7 @@ function loadPerformance(payload) {
             return r.json();
         })
         .then(function(res) {
+            if (reqSeq !== _perfReqSeq) { return; }
             if (!res.success) {
                 tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-3">' +
                     escHtml(res.message || 'Failed to load records.') + '</td></tr>';
@@ -981,6 +990,7 @@ function loadPerformance(payload) {
             renderTable(_perfAllData, payload);
         })
         .catch(function() {
+            if (reqSeq !== _perfReqSeq) { return; }
             tbody.innerHTML =
                 '<tr><td colspan="11" class="text-center text-danger py-3">Request failed. Please try again.</td></tr>';
         });
