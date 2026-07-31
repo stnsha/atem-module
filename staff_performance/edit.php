@@ -104,7 +104,7 @@ $status_colors = array(
     'Active'                    => '#0d6efd',
     'Completed'                 => '#198754',
     'Completed with Excellence' => '#0dcaf0',
-    'Completed with Extension'  => '#20c997',
+    'Completed with Extension'  => '#495057',
     'Extended'                  => '#fd7e14',
     'Failed'                    => '#dc3545',
 );
@@ -368,6 +368,10 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
         // only for closing statuses and only when the amount was actually approved
         // (final_incentive_amount stays 0 unless approved — a_incentive_amount/
         // r_incentive_amount are always the raw rule-based estimate regardless).
+        // Stays null (rendered as "-") unless this staff is themselves an
+        // incentivised A/R member who actually earns a nonzero share - an
+        // issuer-only/C/I role, or a non-incentivised A/R, shows "-" rather
+        // than a misleading "RM 0.00" even on an approved card.
         $closing_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
         $est_reward = null;
         if (in_array($a_status, $closing_statuses, true)
@@ -382,15 +386,14 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
                 if (isset($_m['role']) && $_m['role'] === 'R') { $incRCount++; }
             }
 
-            $est_reward = 0.0;
             foreach ($a['arci'] as $_m) {
                 if (empty($_m['staff_id']) || (int)$_m['staff_id'] !== $target_sid || empty($_m['is_incentivised'])) {
                     continue;
                 }
                 if ($_m['role'] === 'A' && $incACount > 0) {
-                    $est_reward += (float)(isset($a['a_incentive_amount']) ? $a['a_incentive_amount'] : 0) / $incACount;
+                    $est_reward = ($est_reward === null ? 0.0 : $est_reward) + (float)(isset($a['a_incentive_amount']) ? $a['a_incentive_amount'] : 0) / $incACount;
                 } elseif ($_m['role'] === 'R' && $incRCount > 0) {
-                    $est_reward += (float)(isset($a['r_incentive_amount']) ? $a['r_incentive_amount'] : 0) / $incRCount;
+                    $est_reward = ($est_reward === null ? 0.0 : $est_reward) + (float)(isset($a['r_incentive_amount']) ? $a['r_incentive_amount'] : 0) / $incRCount;
                 }
             }
         }

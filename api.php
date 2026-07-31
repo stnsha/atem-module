@@ -1958,13 +1958,12 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
         $itemIsPayoutTerminal = in_array($statusVal, array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed'), true);
         $itemIsLocked = $itemIsPayoutTerminal && isset($item['payout_status']) && $item['payout_status'] === 'Closed';
 
-        // The 'complete' bucket counts every incentivised A/R member on a
-        // completed-family card regardless of payout approval - completion
-        // stats reflect what actually happened, not the payout workflow.
-        // The reward amount itself stays gated on approval (final_incentive_amount
-        // > 0, same rule as CalculateBonusEligibility.php) - an unapproved card
-        // counts as Completed but contributes RM0 until approved.
-        $incentiveEligibleStaff = array();
+        // The reward amount is strictly limited to incentivised A/R members on
+        // an approved completed-family card (final_incentive_amount > 0, same
+        // rule as CalculateBonusEligibility.php) - an issuer, area manager,
+        // C/I role, non-incentivised A/R, or an unapproved card all
+        // contribute RM0. This does NOT gate the 'complete' COUNT below -
+        // that just reflects participation, same as active/extend/failed.
         $incentivePerStaff = array();
         if ($bucket === 'complete' && isset($item['arci']) && is_array($item['arci'])) {
             $incACount = 0;
@@ -1975,18 +1974,14 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
                 if ($m['role'] === 'R') { $incRCount++; }
             }
             $isApproved = isset($item['final_incentive_amount']) && (float)$item['final_incentive_amount'] > 0;
-            foreach ($item['arci'] as $m) {
-                if (empty($m['staff_id']) || empty($m['is_incentivised'])) { continue; }
-                $sid = (int)$m['staff_id'];
-                if ($m['role'] === 'A' && $incACount > 0) {
-                    $incentiveEligibleStaff[$sid] = true;
-                    if ($isApproved) {
+            if ($isApproved) {
+                foreach ($item['arci'] as $m) {
+                    if (empty($m['staff_id']) || empty($m['is_incentivised'])) { continue; }
+                    $sid = (int)$m['staff_id'];
+                    if ($m['role'] === 'A' && $incACount > 0) {
                         $amt = (float)(isset($item['a_incentive_amount']) ? $item['a_incentive_amount'] : 0) / $incACount;
                         $incentivePerStaff[$sid] = (isset($incentivePerStaff[$sid]) ? $incentivePerStaff[$sid] : 0.0) + $amt;
-                    }
-                } elseif ($m['role'] === 'R' && $incRCount > 0) {
-                    $incentiveEligibleStaff[$sid] = true;
-                    if ($isApproved) {
+                    } elseif ($m['role'] === 'R' && $incRCount > 0) {
                         $amt = (float)(isset($item['r_incentive_amount']) ? $item['r_incentive_amount'] : 0) / $incRCount;
                         $incentivePerStaff[$sid] = (isset($incentivePerStaff[$sid]) ? $incentivePerStaff[$sid] : 0.0) + $amt;
                     }
@@ -2004,16 +1999,13 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
                     'has_locked' => false, 'has_unlocked' => false,
                 );
             }
-            // The 'complete' bucket only counts incentivised A/R members (the
-            // same set $incentiveEligibleStaff was built from, just above) - a
-            // plain issuer, area manager, C/I role, or a non-incentivised A/R
-            // no longer counts as a "Completed ATEM" for themselves, even
-            // though the card itself is Completed. Unlike the reward amount,
-            // this count does NOT wait on payout approval. Active/Extend/Failed
-            // buckets are unaffected and keep counting every involved staff.
-            if ($bucket !== 'complete' || isset($incentiveEligibleStaff[$sid])) {
-                $aggregates[$sid][$bucket]++;
-            }
+            // Every involved staff (issuer, area manager, any ARCI role)
+            // counts toward the 'complete' bucket once the card's status and
+            // period match the filter, same as active/extend/failed -
+            // completion stats reflect participation, not incentive
+            // eligibility. The reward amount (below) stays strictly limited
+            // to incentivised, approved A/R members.
+            $aggregates[$sid][$bucket]++;
             if ($deptId) { $aggregates[$sid]['dept_id'] = $deptId; }
             if (isset($incentivePerStaff[$sid])) {
                 $aggregates[$sid]['total_incentive'] += $incentivePerStaff[$sid];

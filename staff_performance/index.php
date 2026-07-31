@@ -374,7 +374,7 @@ var STATUS_COLOR = {
     'Active': '#0d6efd',
     'Completed': '#198754',
     'Completed with Excellence': '#0dcaf0',
-    'Completed with Extension': '#20c997',
+    'Completed with Extension': '#495057',
     'Extended': '#fd7e14',
     'Failed': '#dc3545'
 };
