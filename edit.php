@@ -288,8 +288,10 @@ $is_issuer_now = ($record && (int)$staff_id === (int) (isset($record['issuer_sta
 // Payout Details card: visible once the ATEM itself reaches a terminal status.
 // Changing payout status is gated separately (SuperAdmin, grade 4/5, or People
 // Management dept-17 staff) and becomes permanently locked once 'Closed'.
+// Feature is currently unused and hidden from everyone; flip this back to the
+// terminal-status check above to re-enable.
 $payout_terminal_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed');
-$show_payout_card    = ($record && in_array($current_status_value, $payout_terminal_statuses, true));
+$show_payout_card    = false;
 $payout_status_value = ($record && isset($record['payout_status'])) ? $record['payout_status'] : null;
 $payout_is_closed    = ($payout_status_value === 'Closed');
 $can_manage_payout   = $show_payout_card && !$payout_is_closed && !$api_unavailable
