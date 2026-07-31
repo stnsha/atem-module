@@ -1014,12 +1014,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    document.addEventListener('change', function(e) {
-        if (e.target && e.target.classList.contains('perf-status-cb')) {
-            updateStatusButtonLabel('perf');
-            loadPerformance(buildPayload());
-        }
-    });
+    if (statusDropdown) {
+        statusDropdown.addEventListener('change', function(e) {
+            if (e.target && e.target.classList.contains('perf-status-cb')) {
+                updateStatusButtonLabel('perf');
+                loadPerformance(buildPayload());
+            }
+        });
+    }
 
     // Quarter filter dropdown (checkbox list, same widget as Status above)
     var quarterBtn = document.getElementById('perf-quarter-btn');

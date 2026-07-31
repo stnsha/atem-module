@@ -256,18 +256,22 @@
     // ------------------------------------------------- status checkbox dropdown
     // baseId is 'vf-status' (HQ tab) or 'vfo-status' (Outlet tab) - each tab
     // has its own independent multi-select so switching tabs doesn't reset it.
+    var DEFAULT_STATUSES = ['Active', 'Extended', 'Suspended'];
+
     function buildStatusOptions(baseId, statusValues) {
         var listEl = $(baseId + '-list');
         if (!listEl) { return; }
         var html = '';
         for (var s = 0; s < statusValues.length; s++) {
             var sv = statusValues[s];
+            var isDefault = DEFAULT_STATUSES.indexOf(sv) !== -1;
             html += '<li class="vf-s2-list-item" style="cursor:default;">' +
                 '<label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">' +
-                '<input type="checkbox" value="' + escapeHtml(sv) + '" checked> ' + escapeHtml(sv) +
+                '<input type="checkbox" value="' + escapeHtml(sv) + '"' + (isDefault ? ' checked' : '') + '> ' + escapeHtml(sv) +
                 '</label></li>';
         }
         listEl.innerHTML = html;
+        updateStatusButtonLabel(baseId);
     }
 
     function allStatusCheckboxes(baseId) {
@@ -302,7 +306,7 @@
 
     function resetStatusDropdown(baseId) {
         var boxes = allStatusCheckboxes(baseId);
-        for (var i = 0; i < boxes.length; i++) { boxes[i].checked = true; }
+        for (var i = 0; i < boxes.length; i++) { boxes[i].checked = (DEFAULT_STATUSES.indexOf(boxes[i].value) !== -1); }
         updateStatusButtonLabel(baseId);
         var dropEl = $(baseId + '-dropdown');
         if (dropEl) { dropEl.classList.remove('open'); }
@@ -373,8 +377,8 @@
         var statuses = getSelectedStatuses('vf-status');
         var allStatusCount = allStatusCheckboxes('vf-status').length;
         var role = $('vf-role').value;
-        var from = $('vf-from').value;
-        var to = $('vf-to').value;
+        var startDate = $('vf-start-date').value;
+        var endDate = $('vf-end-date').value;
         var closureFrom = $('vf-closure-from').value;
         var closureTo = $('vf-closure-to').value;
         var term = $('vf-search').value.toLowerCase().trim();
@@ -385,7 +389,7 @@
             var pDate = periodDateOf(r);
             if (year  && (!pDate || parseInt(pDate.substring(0, 4), 10) !== year))  { return false; }
             if (month && (!pDate || parseInt(pDate.substring(5, 7), 10) !== month)) { return false; }
-            if (issuer && r.issuer_staff_id !== issuer) { return false; }
+            if (issuer && r.issuer_staff_id !== issuer && (!r.arci_staff_ids || r.arci_staff_ids.indexOf(issuer) === -1)) { return false; }
             if (level && r.level_label !== level) { return false; }
             if (dept) {
                 var deptMatches = (r.department_name === dept) ||
@@ -424,8 +428,8 @@
                 var isMyArci  = r.user_arci_roles && r.user_arci_roles.length > 0;
                 if (!isMyIssue && !isMyArci) { return false; }
             }
-            if (from && (!r.start_date || String(r.start_date).substring(0, 10) < from)) { return false; }
-            if (to && (!r.end_date || String(r.end_date).substring(0, 10) > to)) { return false; }
+            if (startDate && (!r.start_date || String(r.start_date).substring(0, 10) !== startDate)) { return false; }
+            if (endDate && (!r.end_date || String(r.end_date).substring(0, 10) !== endDate)) { return false; }
             if (closureFrom && (!r.closure_date || String(r.closure_date).substring(0, 10) < closureFrom)) { return false; }
             if (closureTo && (!r.closure_date || String(r.closure_date).substring(0, 10) > closureTo)) { return false; }
             if (term) {
@@ -445,8 +449,8 @@
         var allStatusCount = allStatusCheckboxes('vfo-status').length;
         var region = $('vfo-region').value;
         var role = $('vfo-role').value;
-        var from = $('vfo-from').value;
-        var to = $('vfo-to').value;
+        var startDate = $('vfo-start-date').value;
+        var endDate = $('vfo-end-date').value;
         var closureFrom = $('vfo-closure-from').value;
         var closureTo = $('vfo-closure-to').value;
         var term = $('vfo-search').value.toLowerCase().trim();
@@ -464,7 +468,7 @@
             var pDate = periodDateOf(r);
             if (year  && (!pDate || parseInt(pDate.substring(0, 4), 10) !== year))  { return false; }
             if (month && (!pDate || parseInt(pDate.substring(5, 7), 10) !== month)) { return false; }
-            if (issuer && r.issuer_staff_id !== issuer) { return false; }
+            if (issuer && r.issuer_staff_id !== issuer && (!r.arci_staff_ids || r.arci_staff_ids.indexOf(issuer) === -1)) { return false; }
             if (statuses.length === 0) { return false; }
             if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
             if (region && (!r.region_names || r.region_names.indexOf(region) < 0)) { return false; }
@@ -490,8 +494,8 @@
                 if (r.status !== 'Active' && r.status !== 'Extended') { return false; }
                 if (!effectiveDue || effectiveDue >= TODAY) { return false; }
             }
-            if (from && (!r.start_date || String(r.start_date).substring(0, 10) < from)) { return false; }
-            if (to && (!r.end_date || String(r.end_date).substring(0, 10) > to)) { return false; }
+            if (startDate && (!r.start_date || String(r.start_date).substring(0, 10) !== startDate)) { return false; }
+            if (endDate && (!r.end_date || String(r.end_date).substring(0, 10) !== endDate)) { return false; }
             if (closureFrom && (!r.closure_date || String(r.closure_date).substring(0, 10) < closureFrom)) { return false; }
             if (closureTo && (!r.closure_date || String(r.closure_date).substring(0, 10) > closureTo)) { return false; }
             if (term) {
@@ -757,7 +761,7 @@
     function bind() {
         // HQ filter bar - always renders the HQ table (it's only visible
         // while that tab is active anyway).
-        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-closure-from', 'vf-closure-to'].forEach(function (id) {
+        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-role', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
@@ -772,7 +776,7 @@
             renderTable('hq', hqRows);
         });
         $('vf-reset').addEventListener('click', function () {
-            ['vf-year', 'vf-level', 'vf-dept', 'vf-role', 'vf-from', 'vf-to', 'vf-closure-from', 'vf-closure-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vf-year', 'vf-level', 'vf-dept', 'vf-role', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
             resetS2Dropdown('vf-issuer', 'All staff');
             resetStatusDropdown('vf-status');
@@ -782,7 +786,7 @@
         });
 
         // Outlet filter bar - always renders the Outlet table.
-        ['vfo-year', 'vfo-month', 'vfo-region', 'vfo-from', 'vfo-to', 'vfo-closure-from', 'vfo-closure-to'].forEach(function (id) {
+        ['vfo-year', 'vfo-month', 'vfo-region', 'vfo-start-date', 'vfo-end-date', 'vfo-closure-from', 'vfo-closure-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
@@ -797,7 +801,7 @@
             renderTable('outlet', outletRows);
         });
         $('vfo-reset').addEventListener('click', function () {
-            ['vfo-year', 'vfo-region', 'vfo-from', 'vfo-to', 'vfo-closure-from', 'vfo-closure-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vfo-year', 'vfo-region', 'vfo-start-date', 'vfo-end-date', 'vfo-closure-from', 'vfo-closure-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl2 = $('vfo-month'); if (monthEl2) { monthEl2.value = '0'; }
             resetS2Dropdown('vfo-issuer', 'All staff');
             resetS2Dropdown('vfo-outlet', 'All outlets');

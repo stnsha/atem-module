@@ -786,6 +786,20 @@ button {
   color: #0a5aa8;
 }
 
+.atem-view-tbl th[data-col="title"] {
+  width: 320px;
+}
+
+.atem-view-tbl th[data-col="issuer_name"] {
+  width: 150px;
+}
+
+.atem-view-tbl th[data-col="start_date"],
+.atem-view-tbl th[data-col="end_date"],
+.atem-view-tbl th[data-col="closure_date"] {
+  width: 110px;
+}
+
 .atem-id {
   font-family: monospace;
   font-size: 12px;

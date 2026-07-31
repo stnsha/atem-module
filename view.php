@@ -381,7 +381,7 @@ $view_config = array(
             <div class="atem-card atem-filter mb-3">
                 <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
 
-                <!-- Row 1: Year/Month | Start - End date (range) | Closure Date | Status -->
+                <!-- Row 1: Year/Month | Start Date | End Date | Closure Date -->
                 <div class="row row-cols-md-4 row-cols-2 g-2 mt-1">
                     <div class="col">
                         <label class="form-label">Year / Month</label>
@@ -410,11 +410,12 @@ $view_config = array(
                         </div>
                     </div>
                     <div class="col">
-                        <label class="form-label">Start - End Date</label>
-                        <div class="d-flex gap-1">
-                            <input type="date" class="form-control form-control-sm" id="vf-from" title="Start Date">
-                            <input type="date" class="form-control form-control-sm" id="vf-to" title="End Date">
-                        </div>
+                        <label class="form-label">Start Date</label>
+                        <input type="date" class="form-control form-control-sm" id="vf-start-date" title="Start Date">
+                    </div>
+                    <div class="col">
+                        <label class="form-label">End Date</label>
+                        <input type="date" class="form-control form-control-sm" id="vf-end-date" title="End Date">
                     </div>
                     <div class="col">
                         <label class="form-label">Closure Date</label>
@@ -423,19 +424,10 @@ $view_config = array(
                             <input type="date" class="form-control form-control-sm" id="vf-closure-to" title="Closure Date To">
                         </div>
                     </div>
-                    <div class="col">
-                        <label class="form-label">Status</label>
-                        <div class="vf-issuer-wrap" id="vf-status-wrap">
-                            <div class="vf-s2-selection" id="vf-status-btn" tabindex="0">All statuses</div>
-                            <div class="vf-s2-dropdown" id="vf-status-dropdown">
-                                <ul class="vf-s2-list" id="vf-status-list" style="padding:4px 0;"></ul>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
-                <!-- Row 2: Level | Department | Staff | Your Role with ARCI/Issuer -->
-                <div class="row row-cols-md-4 row-cols-2 g-2 mt-0">
+                <!-- Row 2: Level | Department | Staff | Your Role with ARCI/Issuer | Status -->
+                <div class="row row-cols-md-5 row-cols-2 g-2 mt-0">
                     <div class="col">
                         <label class="form-label">Level</label>
                         <select class="form-select form-select-sm" id="vf-level">
@@ -467,6 +459,15 @@ $view_config = array(
                         <select class="form-select form-select-sm" id="vf-role">
                             <option value="">All roles</option>
                         </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Status</label>
+                        <div class="vf-issuer-wrap" id="vf-status-wrap">
+                            <div class="vf-s2-selection" id="vf-status-btn" tabindex="0">All statuses</div>
+                            <div class="vf-s2-dropdown" id="vf-status-dropdown">
+                                <ul class="vf-s2-list" id="vf-status-list" style="padding:4px 0;"></ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -512,7 +513,7 @@ $view_config = array(
             <div class="atem-card atem-filter mb-3">
                 <h6 class="atem-card-title"><i class="bi bi-funnel"></i> Filter</h6>
 
-                <!-- Row 1: Year/Month | Start - End date (range) | Closure Date | Status -->
+                <!-- Row 1: Year/Month | Start Date | End Date | Closure Date -->
                 <div class="row row-cols-md-4 row-cols-2 g-2 mt-1">
                     <div class="col">
                         <label class="form-label">Year / Month</label>
@@ -541,11 +542,12 @@ $view_config = array(
                         </div>
                     </div>
                     <div class="col">
-                        <label class="form-label">Start - End Date</label>
-                        <div class="d-flex gap-1">
-                            <input type="date" class="form-control form-control-sm" id="vfo-from" title="Start Date">
-                            <input type="date" class="form-control form-control-sm" id="vfo-to" title="End Date">
-                        </div>
+                        <label class="form-label">Start Date</label>
+                        <input type="date" class="form-control form-control-sm" id="vfo-start-date" title="Start Date">
+                    </div>
+                    <div class="col">
+                        <label class="form-label">End Date</label>
+                        <input type="date" class="form-control form-control-sm" id="vfo-end-date" title="End Date">
                     </div>
                     <div class="col">
                         <label class="form-label">Closure Date</label>
@@ -554,19 +556,10 @@ $view_config = array(
                             <input type="date" class="form-control form-control-sm" id="vfo-closure-to" title="Closure Date To">
                         </div>
                     </div>
-                    <div class="col">
-                        <label class="form-label">Status</label>
-                        <div class="vf-issuer-wrap" id="vfo-status-wrap">
-                            <div class="vf-s2-selection" id="vfo-status-btn" tabindex="0">All statuses</div>
-                            <div class="vf-s2-dropdown" id="vfo-status-dropdown">
-                                <ul class="vf-s2-list" id="vfo-status-list" style="padding:4px 0;"></ul>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
-                <!-- Row 2: Staff | Outlet | Pillar | Role -->
-                <div class="row row-cols-md-4 row-cols-2 g-2 mt-0">
+                <!-- Row 2: Staff | Outlet | Region | Role | Status -->
+                <div class="row row-cols-md-5 row-cols-2 g-2 mt-0">
                     <div class="col">
                         <label class="form-label">Staff</label>
                         <div class="vf-issuer-wrap" id="vfo-issuer-wrap">
@@ -606,6 +599,15 @@ $view_config = array(
                         <select class="form-select form-select-sm" id="vfo-role">
                             <option value="">All roles</option>
                         </select>
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Status</label>
+                        <div class="vf-issuer-wrap" id="vfo-status-wrap">
+                            <div class="vf-s2-selection" id="vfo-status-btn" tabindex="0">All statuses</div>
+                            <div class="vf-s2-dropdown" id="vfo-status-dropdown">
+                                <ul class="vf-s2-list" id="vfo-status-list" style="padding:4px 0;"></ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
