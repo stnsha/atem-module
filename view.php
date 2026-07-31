@@ -493,7 +493,8 @@ $view_config = array(
                             <th class="atem-sortable" data-col="issuer_name">Issuer / Accountable</th>
                             <th>ARCI</th>
                             <th class="atem-sortable" data-col="level_label">Level</th>
-                            <th class="atem-sortable" data-col="start_date">Start / End</th>
+                            <th class="atem-sortable" data-col="start_date">Start</th>
+                            <th class="atem-sortable" data-col="end_date">End</th>
                             <th class="atem-sortable" data-col="closure_date">Closure Date</th>
                             <th class="atem-sortable" data-col="status">Status</th>
                             <th style="width:110px;">Action</th>
@@ -630,7 +631,8 @@ $view_config = array(
                             <th class="atem-sortable" data-col="title">Title</th>
                             <th class="atem-sortable" data-col="issuer_name">Issuer / Accountable</th>
                             <th class="atem-sortable" data-col="pillar_name">Pillars</th>
-                            <th class="atem-sortable" data-col="start_date">Start / End Date</th>
+                            <th class="atem-sortable" data-col="start_date">Start</th>
+                            <th class="atem-sortable" data-col="end_date">End</th>
                             <th class="atem-sortable" data-col="closure_date">Closure Date</th>
                             <th class="atem-sortable" data-col="status">Status</th>
                             <th style="width:110px;">Action</th>

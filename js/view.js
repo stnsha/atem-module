@@ -609,11 +609,6 @@
     // the column.
     var CELL_DIVIDER_HTML = '<div style="text-align:left;color:#6c757d;font-weight:700;font-size:12px;margin:3px 0;">-</div>';
 
-    // Merged Start + End column: Start on top, a "-" divider, then End below.
-    function buildStartEndCell(r) {
-        return fmtDate(r.start_date) + CELL_DIVIDER_HTML + buildEndCell(r);
-    }
-
     function rowStyleFor(r) {
         return ((r.is_deleted && r.status !== 'Suspended') || r.payout_status === 'Closed')
             ? ' style="opacity:0.55;"' : '';
@@ -671,7 +666,8 @@
             + '<td>' + buildIssuerAccountableCell(r) + '</td>'
             + '<td>' + arciCell + '</td>'
             + '<td>' + levelCell + '</td>'
-            + '<td>' + buildStartEndCell(r) + '</td>'
+            + '<td>' + fmtDate(r.start_date) + '</td>'
+            + '<td>' + buildEndCell(r) + '</td>'
             + '<td>' + fmtDateOrDash(r.closure_date) + '</td>'
             + '<td>' + statusCell + '</td>'
             + '<td class="atem-view-actions">' + buildActionCell(r) + '</td></tr>';
@@ -685,7 +681,8 @@
             + '<td>' + escapeHtml(r.title) + '</td>'
             + '<td>' + buildIssuerAccountableCell(r) + '</td>'
             + '<td>' + pillarCell + '</td>'
-            + '<td>' + buildStartEndCell(r) + '</td>'
+            + '<td>' + fmtDate(r.start_date) + '</td>'
+            + '<td>' + buildEndCell(r) + '</td>'
             + '<td>' + fmtDateOrDash(r.closure_date) + '</td>'
             + '<td>' + statusCell + '</td>'
             + '<td class="atem-view-actions">' + buildActionCell(r) + '</td></tr>';
