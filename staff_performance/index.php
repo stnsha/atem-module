@@ -89,12 +89,33 @@ for ($y = 2026; $y <= $init_year; $y++) {
     $year_options[] = $y;
 }
 
-// Status filter — exact statuses only (mirrors atem_performance_status_options()
-// in api.php). Defaults to Completed + Completed with Excellence + Completed
-// with Extension; every other status starts unchecked, so its column reads 0
-// until explicitly selected.
-$perf_status_options = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
-$perf_default_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
+// Status filter — pulled live from atem-api, same source and grade-gating
+// view.php's status filter uses (Deleted/Suspended/Force Terminated only for
+// grade 4+/SuperAdmin; Draft is visible to everyone). Falls back to the
+// always-bucketed statuses if the ATEM API is unreachable. Defaults to
+// Completed + Completed with Excellence + Completed with Extension + Failed +
+// Suspended + Force Terminated; every other status starts unchecked, so its
+// column reads 0 until explicitly selected. See atem_performance_status_options()/
+// atem_status_bucket() in api.php for which statuses actually count toward a
+// bucket - Suspended/Force Terminated both count toward Failed on-screen, but
+// the CSV export always shows each card's real exact status (never collapsed
+// to "Failed") since it reads the raw status value, not the bucket. Draft and
+// Deleted are selectable here but always read 0.
+$_perf_lookups = getAtemLookups($staff_id);
+$_perf_can_see_deleted = ((int)$atem_permission >= 4 || $_is_superadmin);
+$perf_status_options = array();
+if (!empty($_perf_lookups['success']) && !empty($_perf_lookups['data']['statuses'])) {
+    foreach ($_perf_lookups['data']['statuses'] as $_ps) {
+        $_ps_val = isset($_ps['value']) ? $_ps['value'] : '';
+        if ($_ps_val === '') { continue; }
+        if (!$_perf_can_see_deleted && in_array($_ps_val, array('Deleted', 'Suspended', 'Force Terminated'), true)) { continue; }
+        $perf_status_options[] = $_ps_val;
+    }
+}
+if (empty($perf_status_options)) {
+    $perf_status_options = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
+}
+$perf_default_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed', 'Suspended', 'Force Terminated');
 
 // Staff filter dropdown (searchable, like the one on index.php). Only grade 2
 // (non-SA) is narrowed to their own department overlap here, mirroring
@@ -200,35 +221,6 @@ if ($_pso_res) {
                 </div>
             </div>
         </div>
-        <?php if (!empty($dept_filter_options)): ?>
-        <div class="col-md-3 col-sm-6">
-            <label class="form-label">Department</label>
-            <select id="perf-filter-dept" class="form-select form-select-sm">
-                <option value="0">All Department</option>
-                <?php foreach ($dept_filter_options as $did => $dname): ?>
-                <option value="<?php echo $did; ?>"><?php echo htmlspecialchars($dname); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <?php endif; ?>
-        <div class="col-md-3 col-sm-6">
-            <label class="form-label">Grade</label>
-            <select id="perf-filter-grade" class="form-select form-select-sm">
-                <option value="0">All Grade</option>
-                <?php foreach ($grade_labels as $gid => $gname): ?>
-                <option value="<?php echo $gid; ?>"><?php echo htmlspecialchars($gname); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col-md-3 col-sm-6">
-            <label class="form-label">Evaluation Structure</label>
-            <select id="perf-filter-struct" class="form-select form-select-sm">
-                <option value="0">All Evaluation Structure</option>
-                <?php foreach ($struct_labels as $sid2 => $sname): ?>
-                <option value="<?php echo $sid2; ?>"><?php echo htmlspecialchars($sname); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
         <div class="col-md-3 col-sm-6">
             <label class="form-label">Status</label>
             <div class="vf-issuer-wrap" id="perf-status-wrap">
@@ -249,6 +241,35 @@ if ($_pso_res) {
                 </div>
             </div>
         </div>
+        <?php if (!empty($dept_filter_options)): ?>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Department</label>
+            <select id="perf-filter-dept" class="form-select form-select-sm">
+                <option value="0">All Department</option>
+                <?php foreach ($dept_filter_options as $did => $dname): ?>
+                <option value="<?php echo $did; ?>"><?php echo htmlspecialchars($dname); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php endif; ?>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Evaluation Structure</label>
+            <select id="perf-filter-struct" class="form-select form-select-sm">
+                <option value="0">All Evaluation Structure</option>
+                <?php foreach ($struct_labels as $sid2 => $sname): ?>
+                <option value="<?php echo $sid2; ?>"><?php echo htmlspecialchars($sname); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Grade</label>
+            <select id="perf-filter-grade" class="form-select form-select-sm">
+                <option value="0">All Grade</option>
+                <?php foreach ($grade_labels as $gid => $gname): ?>
+                <option value="<?php echo $gid; ?>"><?php echo htmlspecialchars($gname); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <div class="col-md-3 col-sm-6">
             <label class="form-label">Staff</label>
             <div class="vf-issuer-wrap" id="perf-staff-wrap">
@@ -260,6 +281,25 @@ if ($_pso_res) {
                     <ul class="vf-s2-list" id="perf-staff-list"></ul>
                 </div>
                 <input type="hidden" id="perf-staff-value" value="0">
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Your Role with ARCI/Issuer</label>
+            <div class="vf-issuer-wrap" id="perf-role-wrap">
+                <div class="vf-s2-selection" id="perf-role-btn" tabindex="0">All roles</div>
+                <div class="vf-s2-dropdown" id="perf-role-dropdown">
+                    <ul class="vf-s2-list" style="padding:4px 0;">
+                        <?php foreach (array('Issuer', 'A', 'R', 'C', 'I') as $_pro): ?>
+                        <li class="vf-s2-list-item" style="cursor:default;">
+                            <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                <input type="checkbox" class="perf-role-cb" value="<?php echo htmlspecialchars($_pro); ?>"
+                                    <?php echo in_array($_pro, array('A', 'R'), true) ? ' checked' : ''; ?>>
+                                <?php echo htmlspecialchars($_pro); ?>
+                            </label>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
             </div>
         </div>
         <div class="col-auto d-flex align-items-end gap-2 ms-auto">
@@ -362,6 +402,7 @@ var PERF_CFG = <?php echo json_encode(array(
     'initQuarter'     => $init_quarter,
     'initYear'        => $init_year,
     'defaultStatuses' => $perf_default_statuses,
+    'defaultRoles'    => array('A', 'R'),
     'staff'           => $perf_staff_options,
     'isSuperAdmin'    => $_is_superadmin,
     'canLockPayout'   => $_show_lock_ui,
@@ -524,6 +565,46 @@ function resetQuarterDropdown(prefix, checkedValue) {
     }
     updateQuarterButtonLabel(prefix);
     var dropEl = document.getElementById(prefix + '-quarter-dropdown');
+    if (dropEl) {
+        dropEl.classList.remove('open');
+    }
+}
+
+// ------------------------------------------------------------- role filter
+function getSelectedRoles(prefix) {
+    var boxes = document.querySelectorAll('.' + prefix + '-role-cb:checked');
+    var out = [];
+    for (var i = 0; i < boxes.length; i++) {
+        out.push(boxes[i].value);
+    }
+    return out;
+}
+
+function updateRoleButtonLabel(prefix) {
+    var btn = document.getElementById(prefix + '-role-btn');
+    if (!btn) {
+        return;
+    }
+    var selected = getSelectedRoles(prefix);
+    var allBoxes = document.querySelectorAll('.' + prefix + '-role-cb');
+    if (selected.length === 0) {
+        btn.textContent = 'No role selected';
+    } else if (selected.length === allBoxes.length) {
+        btn.textContent = 'All roles';
+    } else if (selected.length <= 2) {
+        btn.textContent = selected.join(', ');
+    } else {
+        btn.textContent = selected.length + ' roles selected';
+    }
+}
+
+function resetRoleDropdown(prefix, defaultValues) {
+    var boxes = document.querySelectorAll('.' + prefix + '-role-cb');
+    for (var i = 0; i < boxes.length; i++) {
+        boxes[i].checked = (defaultValues || []).indexOf(boxes[i].value) !== -1;
+    }
+    updateRoleButtonLabel(prefix);
+    var dropEl = document.getElementById(prefix + '-role-dropdown');
     if (dropEl) {
         dropEl.classList.remove('open');
     }
@@ -696,7 +777,8 @@ function buildPayload() {
         grade: grade,
         struct: struct,
         staff_id: staffId,
-        statuses: getSelectedStatuses('perf')
+        statuses: getSelectedStatuses('perf'),
+        roles: getSelectedRoles('perf')
     };
 }
 
@@ -763,13 +845,15 @@ function selectedStaffIds(prefix) {
 // removed) - export.php no longer accepts an atem_type/outlet_id override.
 function perfExportUrl(payload, ids) {
     var statuses = (payload.statuses || []).join(',');
+    var roles = (payload.roles || []).join(',');
     var qs = 'type=performance' +
         (ids && ids.length ? '&ids=' + ids.join(',') : '') +
         '&month=' + (payload.month || 0) + '&year=' + (payload.year || PERF_CFG.initYear) + '&quarter=' + (payload
             .quarter || []).join(',') +
         '&dept=' + (payload.dept || 0) + '&grade=' + (payload.grade || 0) + '&struct=' + (payload.struct || 0) +
         '&staff_filter_id=' + (payload.staff_id || 0) +
-        '&statuses=' + encodeURIComponent(statuses);
+        '&statuses=' + encodeURIComponent(statuses) +
+        '&roles=' + encodeURIComponent(roles);
     return window.ATEM_MODULE_BASE + 'staff_performance/export.php?' + qs;
 }
 
@@ -785,11 +869,13 @@ function updateActionUrls(payload) {
     var exportBtn = document.getElementById('perf-export-all-btn');
     if (exportBtn) {
         var statuses = (payload.statuses || []).join(',');
+        var roles = (payload.roles || []).join(',');
         exportBtn.href = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance' +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
             '&staff_filter_id=' + staffId +
-            '&statuses=' + encodeURIComponent(statuses);
+            '&statuses=' + encodeURIComponent(statuses) +
+            '&roles=' + encodeURIComponent(roles);
     }
 }
 
@@ -883,17 +969,19 @@ function renderTable(data, payload) {
     var struct = (payload && payload.struct) ? payload.struct : 0;
     var statuses = (payload && payload.statuses) ? payload.statuses : [];
     var statusesQs = encodeURIComponent(statuses.join(','));
+    var roles = (payload && payload.roles) ? payload.roles : [];
+    var rolesQs = encodeURIComponent(roles.join(','));
 
     var html = '';
     for (var i = 0; i < pageData.length; i++) {
         var rec = pageData[i];
 
         var editUrl = window.ATEM_MODULE_BASE + 'staff_performance/edit.php?id=' + rec.id + '&sid=' + rec.staff_id +
-            '&month=' + month + '&year=' + year + '&quarter=' + quarter + '&statuses=' + statusesQs;
+            '&month=' + month + '&year=' + year + '&quarter=' + quarter + '&statuses=' + statusesQs + '&roles=' + rolesQs;
         var exportUrl = window.ATEM_MODULE_BASE + 'staff_performance/export.php?type=performance&ids=' + rec.id +
             '&month=' + month + '&year=' + year + '&quarter=' + quarter +
             '&dept=' + dept + '&grade=' + grade + '&struct=' + struct +
-            '&statuses=' + statusesQs;
+            '&statuses=' + statusesQs + '&roles=' + rolesQs;
 
         html += '<tr>' +
             '<td><input type="checkbox" class="perf-row-cb" value="' + rec.id + '"></td>' +
@@ -1080,6 +1168,39 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Role filter dropdown (checkbox list, same widget as Status above)
+    var roleBtn = document.getElementById('perf-role-btn');
+    var roleDropdown = document.getElementById('perf-role-dropdown');
+    var roleWrap = document.getElementById('perf-role-wrap');
+    updateRoleButtonLabel('perf');
+    syncS2ButtonSize(roleBtn, document.getElementById('perf-filter-year'));
+
+    if (roleBtn && roleDropdown) {
+        roleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            roleDropdown.classList.toggle('open');
+        });
+        roleBtn.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                roleDropdown.classList.toggle('open');
+            }
+        });
+        document.addEventListener('click', function(e) {
+            if (roleWrap && !roleWrap.contains(e.target)) {
+                roleDropdown.classList.remove('open');
+            }
+        });
+    }
+    if (roleDropdown) {
+        roleDropdown.addEventListener('change', function(e) {
+            if (e.target && e.target.classList.contains('perf-role-cb')) {
+                updateRoleButtonLabel('perf');
+                loadPerformance(buildPayload());
+            }
+        });
+    }
+
     // Initial load
     loadPerformance(buildPayload());
 
@@ -1106,6 +1227,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .value) !== -1;
         }
         updateStatusButtonLabel('perf');
+        resetRoleDropdown('perf', PERF_CFG.defaultRoles);
         resetStaffDropdown();
         loadPerformance(buildPayload());
     });

@@ -1773,11 +1773,22 @@ function atem_matches_period_column($status, $start_date, $closure_date, $col, $
     }
 }
 
-// The 6 exact ATEM statuses selectable on the Staff Performance status filter.
-// Draft/Suspended/Deleted are never relevant to performance tracking.
+// Whitelist for the Staff Performance status filter - mirrors the full
+// atem_statuses table (same universe view.php's status filter offers), not
+// just the 6 that bucket into a count. Kept as a static list (rather than a
+// live atem-api call) since it's only ever used to sanitize an incoming
+// $jsonData['statuses']/$_GET['statuses'] value, not to render options -
+// the frontend's own checkbox list (staff_performance/index.php) is what
+// pulls the live, grade-gated set. Draft and Deleted are selectable here but
+// never bucket into a count (see atem_status_bucket()) - a Draft hasn't
+// started anything to measure, and a Deleted card was withdrawn, not
+// necessarily a performance failure.
 function atem_performance_status_options()
 {
-    return array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Active', 'Extended', 'Failed');
+    return array(
+        'Draft', 'Active', 'Completed', 'Completed with Excellence', 'Completed with Extension',
+        'Extended', 'Failed', 'Suspended', 'Force Terminated', 'Deleted',
+    );
 }
 
 // Quarter-opening month (Jan/Apr/Jul/Oct) -> the quarter number that just
@@ -1841,15 +1852,22 @@ function atem_status_bucket($status)
     }
     if ($status === 'Active')   { return 'active'; }
     if ($status === 'Extended') { return 'extend'; }
-    if ($status === 'Failed')   { return 'failed'; }
+    // Suspended/Force Terminated never resolve into a completion - both count
+    // toward Failed, same as an outright Failed card. Draft and Deleted stay
+    // unbucketed (null): a Draft hasn't started anything to measure yet, and a
+    // Deleted card was withdrawn, not necessarily a performance failure.
+    if (in_array($status, array('Failed', 'Suspended', 'Force Terminated'), true)) { return 'failed'; }
     return null;
 }
 
 // Mirrors CalculateBonusEligibility.php's date basis: completed-family/extended/
-// failed are matched by closure_date, active by start_date.
+// failed are matched by closure_date, active by start_date. Suspended/Force
+// Terminated also key off start_date - they're soft-deleted without ever
+// actually closing, so they never have a closure_date (mirrors js/view.js's
+// periodDateOf(), which uses the same start_date fallback for these statuses).
 function atem_status_period_field($status)
 {
-    return ($status === 'Active') ? 'start_date' : 'closure_date';
+    return in_array($status, array('Active', 'Suspended', 'Force Terminated'), true) ? 'start_date' : 'closure_date';
 }
 
 // Live, per-status equivalent of the old atem_bonus_eligibilities snapshot table.
@@ -1857,7 +1875,7 @@ function atem_status_period_field($status)
 // directly from current ATEM records, counting ONLY the caller-selected exact
 // statuses — any status not in $selectedStatuses contributes nothing anywhere,
 // so its bucket reads 0 rather than a stale/mismatched snapshot value.
-function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $staff_id, $filterAtemType = 0, $filterOutletId = 0)
+function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $staff_id, $filterAtemType = 0, $filterOutletId = 0, $filterRoles = null)
 {
     $listResult = getAtemList($staff_id);
     if (!$listResult['success']) {
@@ -1895,21 +1913,43 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
         // both for the raw "ATEM" total below and the status-selected bucket
         // counts further down.
         $involved = array();
+        $involvedRoles = array();
         $issuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
         if ($issuerId) {
             $involved[$issuerId] = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
+            $involvedRoles[$issuerId][] = 'Issuer';
         }
         if (isset($item['area_managers']) && is_array($item['area_managers'])) {
             foreach ($item['area_managers'] as $am) {
                 if (!empty($am['staff_id'])) {
-                    $involved[(int)$am['staff_id']] = 0;
+                    $amId = (int)$am['staff_id'];
+                    $involved[$amId] = 0;
+                    if (!isset($involvedRoles[$amId])) { $involvedRoles[$amId] = array(); }
                 }
             }
         }
         if (isset($item['arci']) && is_array($item['arci'])) {
             foreach ($item['arci'] as $m) {
                 if (!empty($m['staff_id'])) {
-                    $involved[(int)$m['staff_id']] = isset($m['staff_dept_id']) ? (int)$m['staff_dept_id'] : 0;
+                    $mid = (int)$m['staff_id'];
+                    $involved[$mid] = isset($m['staff_dept_id']) ? (int)$m['staff_dept_id'] : 0;
+                    if (!isset($involvedRoles[$mid])) { $involvedRoles[$mid] = array(); }
+                    if (isset($m['role'])) { $involvedRoles[$mid][] = $m['role']; }
+                }
+            }
+        }
+
+        // "Your Role" filter (Issuer/A/R/C/I) - null means unfiltered (every
+        // caller that predates this param); an array (even empty) restricts
+        // $involved to staff holding at least one of the given roles on this
+        // card. Area managers hold no filterable role, so they drop out of a
+        // narrowed selection - mirrors view.php's role filter, which has no
+        // Area Manager option either.
+        if ($filterRoles !== null) {
+            foreach ($involved as $sid => $deptId) {
+                $sidRoles = isset($involvedRoles[$sid]) ? $involvedRoles[$sid] : array();
+                if (!array_intersect($filterRoles, $sidRoles)) {
+                    unset($involved[$sid]);
                 }
             }
         }
@@ -1931,6 +1971,7 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
                     $aggregates[$sid] = array(
                         'dept_id' => $deptId,
                         'total_all' => 0,
+                        'matched' => 0,
                         'complete' => 0, 'active' => 0, 'extend' => 0, 'failed' => 0,
                         'total_incentive' => 0.0,
                         'has_locked' => false, 'has_unlocked' => false,
@@ -1943,12 +1984,16 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
 
         if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
 
-        $bucket = atem_status_bucket($statusVal);
-        if ($bucket === null) { continue; }
-
         $dateField = atem_status_period_field($statusVal);
         $dateStr   = isset($item[$dateField]) ? $item[$dateField] : '';
         if (!atem_date_in_period($dateStr, $months, $year)) { continue; }
+
+        // Bucket is null for a selected-but-unbucketed status (Draft/Deleted) -
+        // 'matched' below still counts it (it feeds the on-screen HQ ATEM/
+        // Outlet ATEM column, which reflects the raw Status-filter selection),
+        // it just never increments 'complete'/'active'/'extend'/'failed'
+        // (which feed Total Completed/Failed - see atem_status_bucket()).
+        $bucket = atem_status_bucket($statusVal);
 
         // Payout lock state — only terminal statuses are ever payout-eligible
         // (mirrors edit.php's $payout_terminal_statuses); 'complete' also
@@ -1994,18 +2039,25 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
                 $aggregates[$sid] = array(
                     'dept_id' => $deptId,
                     'total_all' => 0,
+                    'matched' => 0,
                     'complete' => 0, 'active' => 0, 'extend' => 0, 'failed' => 0,
                     'total_incentive' => 0.0,
                     'has_locked' => false, 'has_unlocked' => false,
                 );
             }
-            // Every involved staff (issuer, area manager, any ARCI role)
-            // counts toward the 'complete' bucket once the card's status and
-            // period match the filter, same as active/extend/failed -
-            // completion stats reflect participation, not incentive
-            // eligibility. The reward amount (below) stays strictly limited
-            // to incentivised, approved A/R members.
-            $aggregates[$sid][$bucket]++;
+            // 'matched' is every involved staff on a card whose exact status
+            // is checked in the Status filter and whose period matches,
+            // regardless of bucket - feeds the on-screen HQ ATEM/Outlet ATEM
+            // column directly. The bucket increment below (skipped when
+            // $bucket is null, e.g. Draft/Deleted) still feeds Total
+            // Completed/Failed exactly as before - completion stats reflect
+            // participation, not incentive eligibility. The reward amount
+            // (below) stays strictly limited to incentivised, approved A/R
+            // members.
+            $aggregates[$sid]['matched']++;
+            if ($bucket !== null) {
+                $aggregates[$sid][$bucket]++;
+            }
             if ($deptId) { $aggregates[$sid]['dept_id'] = $deptId; }
             if (isset($incentivePerStaff[$sid])) {
                 $aggregates[$sid]['total_incentive'] += $incentivePerStaff[$sid];
@@ -2196,9 +2248,16 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
     $statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
         ? array_values(array_intersect($jsonData['statuses'], $allowedStatuses))
         : array('Completed', 'Completed with Excellence', 'Completed with Extension');
+    // "Your Role" filter - same null-vs-empty-array convention as
+    // get-performance-list, so a bar-level "lock all filtered" action never
+    // locks payout for staff outside the currently role-filtered view.
+    $allowedRoles = array('Issuer', 'A', 'R', 'C', 'I');
+    $roleFilter = (isset($jsonData['roles']) && is_array($jsonData['roles']))
+        ? array_values(array_intersect($jsonData['roles'], $allowedRoles))
+        : null;
 
     // Staff Performance is HQ ATEM only (Outlet ATEM removed).
-    $live = getStaffPerformanceLive($month, $year, $quarter, $statuses, $staff_id, 1, 0);
+    $live = getStaffPerformanceLive($month, $year, $quarter, $statuses, $staff_id, 1, 0, $roleFilter);
     if (empty($live['success'])) {
         return array();
     }
@@ -3668,26 +3727,39 @@ if (!defined('API_JWT_INCLUDED')) {
                     if (!empty($pl_quarter)) { $pl_month = 0; }
                     if ($pl_month < 1 || $pl_month > 12) { $pl_month = 0; }
 
-                    // Whitelist against the 6 selectable statuses — anything not
+                    // Whitelist against the full known status set — anything not
                     // selected contributes 0 to every bucket, never a stale/mismatched
-                    // count, since it's excluded before any aggregation happens.
+                    // count, since it's excluded before any aggregation happens. Mirrors
+                    // staff_performance/index.php's $perf_default_statuses when the
+                    // caller omits 'statuses' entirely.
                     $pl_allowed_statuses = atem_performance_status_options();
                     $pl_statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
                         ? array_values(array_intersect($jsonData['statuses'], $pl_allowed_statuses))
-                        : array('Completed', 'Completed with Excellence', 'Completed with Extension');
+                        : array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed', 'Suspended', 'Force Terminated');
+
+                    // "Your Role" filter (Issuer/A/R/C/I), same checkbox widget as
+                    // view.php's role filter. null (key absent) means unfiltered; an
+                    // explicit empty array (every checkbox unchecked) matches no one,
+                    // same convention as $pl_statuses' checkbox widget.
+                    $pl_allowed_roles = array('Issuer', 'A', 'R', 'C', 'I');
+                    $pl_roles = (isset($jsonData['roles']) && is_array($jsonData['roles']))
+                        ? array_values(array_intersect($jsonData['roles'], $pl_allowed_roles))
+                        : null;
 
                     // The page shows HQ ATEM, Outlet ATEM, and OKR Completed counts as
                     // separate columns on the same row - getStaffPerformanceLive() only
                     // ever returns one atem_type's bucket per call, so it's called once
                     // per type and merged below. Reward/incentive and Lock Payout stay
                     // HQ-only - Outlet ATEM and OKR no longer carry any incentive concept
-                    // (see staff_performance/index.php's column comment).
-                    $pl_live_hq = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 1, 0);
+                    // (see staff_performance/index.php's column comment). OKR has no
+                    // ARCI/Issuer role concept of its own, so $pl_roles only narrows the
+                    // HQ/Outlet calls - OKR's Completed/Failed counts stay owner-only.
+                    $pl_live_hq = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 1, 0, $pl_roles);
                     if (empty($pl_live_hq['success'])) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;
                     }
-                    $pl_live_outlet = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 2, 0);
+                    $pl_live_outlet = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 2, 0, $pl_roles);
                     if (empty($pl_live_outlet['success'])) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;
@@ -3792,10 +3864,10 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($pl_struct > 0 && $pl_struct_id !== $pl_struct) { continue; }
                         if ($pl_staff  > 0 && $pl_sid        !== $pl_staff)  { continue; }
 
-                        // "HQ ATEM"/"Outlet ATEM"/"OKR" totals are the raw, all-status/
-                        // all-role, period-filtered counts - used only to decide whether
-                        // this staff member has any activity at all this period, never
-                        // displayed themselves (only each type's Completed count is).
+                        // 'total_all' is the raw, ALL-status/all-role, period-filtered
+                        // count (ignores the Status filter entirely) - used only to
+                        // decide whether this staff member has any activity at all this
+                        // period; never displayed itself.
                         $pl_hq_total     = $pl_hq_rec     ? $pl_hq_rec['total_all']     : 0;
                         $pl_outlet_total = $pl_outlet_rec ? $pl_outlet_rec['total_all'] : 0;
                         $pl_okr_total    = $pl_okr_rec    ? $pl_okr_rec['total_all']    : 0;
@@ -3827,13 +3899,20 @@ if (!defined('API_JWT_INCLUDED')) {
                             'struct_id'    => $pl_struct_id,
                             'struct_label' => ($pl_struct_id !== null && isset($pl_struct_labels[$pl_struct_id])) ? $pl_struct_labels[$pl_struct_id] : '-',
                             'struct_period' => isset($pl_struct_period[$pl_sid]) ? $pl_struct_period[$pl_sid] : '',
-                            'complete_hq_count'     => $pl_hq_rec     ? $pl_hq_rec['complete']     : 0,
-                            'complete_outlet_count' => $pl_outlet_rec ? $pl_outlet_rec['complete'] : 0,
+                            // "HQ ATEM"/"Outlet ATEM" are a raw count: every HQ/Outlet card
+                            // whose exact status is checked in the Status filter and whose
+                            // period matches, regardless of bucket (so checking only
+                            // "Active" shows the matching Active count here, not 0). "OKR"
+                            // stays Completed-bucket only for now - getOkrPerformanceLive()
+                            // doesn't track a raw matched count.
+                            'complete_hq_count'     => $pl_hq_rec     ? $pl_hq_rec['matched']     : 0,
+                            'complete_outlet_count' => $pl_outlet_rec ? $pl_outlet_rec['matched'] : 0,
                             'complete_okr_count'    => $pl_okr_rec    ? $pl_okr_rec['complete']    : 0,
-                            // Sums of the three Completed-family columns / three Failed
-                            // counts above - not independently filtered/scoped, so they
-                            // always equal HQ + Outlet + OKR for the row's current Status
-                            // filter selection.
+                            // Total Completed/Failed stay strictly bucket-specific
+                            // (Completed-family / Failed-family only) - independent of
+                            // whatever HQ ATEM/Outlet ATEM show above, so they no longer
+                            // necessarily equal HQ + Outlet + OKR once a non-Completed/
+                            // non-Failed status is checked.
                             'complete_total_count' => ($pl_hq_rec ? $pl_hq_rec['complete'] : 0) + ($pl_outlet_rec ? $pl_outlet_rec['complete'] : 0) + ($pl_okr_rec ? $pl_okr_rec['complete'] : 0),
                             'failed_total_count'   => ($pl_hq_rec ? $pl_hq_rec['failed']   : 0) + ($pl_outlet_rec ? $pl_outlet_rec['failed']   : 0) + ($pl_okr_rec ? $pl_okr_rec['failed']   : 0),
                             'total_incentive' => round($pl_total_reward, 2),

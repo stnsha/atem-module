@@ -49,10 +49,12 @@ $filter_staff_id = isset($_GET['staff_filter_id']) ? (int)$_GET['staff_filter_id
 
 if (!empty($filter_quarter)) { $filter_month = 0; }
 
-// Whitelist against the 6 selectable statuses (see atem_performance_status_options()
+// Whitelist against the full known status set (see atem_performance_status_options()
 // in api.php); defaults to Completed + Completed with Excellence + Completed with
-// Extension, matching the Staff Performance page's own default, if the caller
-// didn't specify any.
+// Extension + Failed + Suspended + Force Terminated, matching the Staff Performance
+// page's own default, if the caller didn't specify any. Suspended/Force Terminated
+// both count toward the on-screen Failed bucket, but each CSV row still shows the
+// card's real exact status (never collapsed to "Failed") - see ex_status_val().
 $filter_statuses = array();
 if ($statuses_raw !== '') {
     foreach (explode(',', $statuses_raw) as $_st) {
@@ -62,7 +64,24 @@ if ($statuses_raw !== '') {
     $filter_statuses = array_values(array_intersect($filter_statuses, atem_performance_status_options()));
 }
 if (empty($filter_statuses)) {
-    $filter_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension');
+    $filter_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed', 'Suspended', 'Force Terminated');
+}
+
+// "Your Role" filter (Issuer/A/R/C/I), same checkbox widget as view.php/
+// staff_performance/index.php. Absent key means unfiltered (e.g. legacy
+// links, or the 'staff-atem' export type which never sends this param); an
+// explicit empty string (every checkbox unchecked) matches no one.
+$filter_roles = null;
+if (isset($_GET['roles'])) {
+    $filter_roles = array();
+    $_roles_raw = trim($_GET['roles']);
+    if ($_roles_raw !== '') {
+        foreach (explode(',', $_roles_raw) as $_rl) {
+            $_rl = trim($_rl);
+            if ($_rl !== '') { $filter_roles[] = $_rl; }
+        }
+    }
+    $filter_roles = array_values(array_intersect($filter_roles, array('Issuer', 'A', 'R', 'C', 'I')));
 }
 
 $ids = array();
@@ -133,7 +152,14 @@ function ex_level_val($a) {
 // stays HQ-only), so the Est. Reward column is left blank instead of 0.00.
 // 'Record Type' is always 'ATEM' here - shares the same column layout as
 // emit_okr_rows() below so ATEM and OKR rows can sit in one flat CSV.
-function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a, $blank_reward = false) {
+// $roleFilter mirrors api.php's getStaffPerformanceLive() convention: null
+// (default) emits every role-row for this staff on this card, unfiltered -
+// used by the 'staff-atem' single-staff export, which intentionally ignores
+// the Staff Performance page's Your Role filter. An array (even empty)
+// restricts emission to roles present in the filter; when that leaves
+// nothing to emit (this person's only involvement here doesn't match any
+// selected role), the function emits no row at all for this card.
+function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a, $blank_reward = false, $roleFilter = null) {
     $atem_id   = '#AT' . (int)(isset($a['id']) ? $a['id'] : 0);
     $title     = isset($a['title']) ? $a['title'] : '';
     $level     = ex_level_val($a);
@@ -181,6 +207,14 @@ function emit_atem_rows($out, $sid, $name, $dept, $grade, $struct, $a, $blank_re
                 $roles[] = array('role' => $m['role'], 'is_incentivised' => !empty($m['is_incentivised']));
             }
         }
+    }
+
+    if ($roleFilter !== null) {
+        $roles = array_values(array_filter($roles, function ($r) use ($roleFilter) {
+            return in_array($r['role'], $roleFilter, true);
+        }));
+        $emitIssuerRow = $is_issuer && in_array('Issuer', $roleFilter, true);
+        if (empty($roles) && !$emitIssuerRow) { return; }
     }
 
     if (!empty($roles)) {
@@ -318,8 +352,8 @@ if ($type === 'performance') {
     // anyone visible on the on-screen table (which does the same union) is
     // exportable too. Est. Reward stays HQ ATEM only - Outlet ATEM and OKR
     // rows are emitted further below with a blank Est. Reward.
-    $live = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 1, 0);
-    $live_outlet = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 2, 0);
+    $live = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 1, 0, $filter_roles);
+    $live_outlet = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 2, 0, $filter_roles);
     if (empty($live['success']) || empty($live_outlet['success'])) {
         http_response_code(502);
         exit('Unable to reach the ATEM API. Please try again later.');
@@ -475,7 +509,7 @@ if ($type === 'performance') {
             $_dateStr   = isset($_a[$_dateField]) ? $_a[$_dateField] : null;
             if (!atem_date_in_period($_dateStr, $period_months, $filter_year)) { continue; }
 
-            emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a);
+            emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a, false, $filter_roles);
         }
 
         if (!empty($outlet_okr_statuses)) {
@@ -502,7 +536,7 @@ if ($type === 'performance') {
                 $_dateStr   = isset($_a[$_dateField]) ? $_a[$_dateField] : null;
                 if (!atem_date_in_period($_dateStr, $period_months, $filter_year)) { continue; }
 
-                emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a, true);
+                emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a, true, $filter_roles);
             }
 
             foreach ($all_okrs as $_o) {

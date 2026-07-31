@@ -41,6 +41,17 @@ if ($filter_statuses_raw !== '') {
         if ($_fs !== '') { $filter_statuses_init[] = $_fs; }
     }
 }
+// Carries over the Your Role checkboxes selected on the Staff Performance
+// summary page, same pattern as Status above. Empty means no carry-over —
+// falls back to the default A/R selection.
+$filter_roles_raw = isset($_GET['roles']) ? trim($_GET['roles']) : '';
+$filter_roles_init = array();
+if ($filter_roles_raw !== '') {
+    foreach (explode(',', $filter_roles_raw) as $_fr) {
+        $_fr = trim($_fr);
+        if ($_fr !== '') { $filter_roles_init[] = $_fr; }
+    }
+}
 $_edit_cur_year = max(2026, (int)date('Y'));
 $year_options   = array();
 for ($y = 2026; $y <= $_edit_cur_year; $y++) {
@@ -275,10 +286,13 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
             </div>
         </div>
         <div class="col-md-3">
-            <label class="form-label">Role</label>
-            <select class="form-select form-select-sm" id="ef-role">
-                <option value="">All roles</option>
-            </select>
+            <label class="form-label">Your Role with ARCI/Issuer</label>
+            <div class="vf-issuer-wrap" id="ef-role-wrap">
+                <div class="vf-s2-selection" id="ef-role-btn" tabindex="0">All roles</div>
+                <div class="vf-s2-dropdown" id="ef-role-dropdown">
+                    <ul class="vf-s2-list" id="ef-role-list" style="padding:4px 0;"></ul>
+                </div>
+            </div>
         </div>
         <div class="col-md-3">
             <label class="form-label">Search title</label>
@@ -482,6 +496,7 @@ window.EDIT_ATEM_ROWS = [];
 <?php endif; ?>
 window.EDIT_LOOKUPS = <?php echo json_encode($edit_lookups); ?>;
 window.EDIT_INIT_STATUSES = <?php echo json_encode($filter_statuses_init); ?>;
+window.EDIT_INIT_ROLES = <?php echo json_encode($filter_roles_init); ?>;
 
 var QUARTER_MONTHS = { 1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12] };
 var QUARTERS_LABEL = { 1: 'Q1 (Jan-Mar)', 2: 'Q2 (Apr-Jun)', 3: 'Q3 (Jul-Sep)', 4: 'Q4 (Oct-Dec)' };
@@ -542,14 +557,22 @@ function buildEditFilters() {
         buildEditStatusDropdown();
     }
 
-    var roleEl = document.getElementById('ef-role');
-    if (roleEl) {
+    var roleListEl = document.getElementById('ef-role-list');
+    if (roleListEl) {
         var roleOrder = ['Issuer', 'A', 'R', 'C', 'I'];
-        var rh = '<option value="">All roles</option>';
+        var initRoles = window.EDIT_INIT_ROLES || [];
+        var defaultRoles = initRoles.length ? initRoles : ['A', 'R'];
+        var rh = '';
         for (var roi = 0; roi < roleOrder.length; roi++) {
-            rh += '<option value="' + editEsc(roleOrder[roi]) + '">' + editEsc(roleOrder[roi]) + '</option>';
+            var rv = roleOrder[roi];
+            var rChecked = defaultRoles.indexOf(rv) !== -1;
+            rh += '<li class="vf-s2-list-item" style="cursor:default;">' +
+                '<label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">' +
+                '<input type="checkbox" class="ef-role-cb" value="' + editEsc(rv) + '"' + (rChecked ? ' checked' : '') + '> ' + editEsc(rv) +
+                '</label></li>';
         }
-        roleEl.innerHTML = rh;
+        roleListEl.innerHTML = rh;
+        buildEditRoleDropdown();
     }
 }
 
@@ -627,6 +650,74 @@ function buildEditStatusDropdown() {
     document.addEventListener('change', function (e) {
         if (e.target && e.target.classList.contains('ef-status-cb')) {
             updateEditStatusButtonLabel();
+            applyEditFilters();
+        }
+    });
+}
+
+// --------------------------------------------------- role checkbox dropdown
+function getSelectedEditRoles() {
+    var boxes = document.querySelectorAll('.ef-role-cb:checked');
+    var out = [];
+    for (var i = 0; i < boxes.length; i++) { out.push(boxes[i].value); }
+    return out;
+}
+
+function allEditRoleCheckboxes() { return document.querySelectorAll('.ef-role-cb'); }
+
+function updateEditRoleButtonLabel() {
+    var btn = document.getElementById('ef-role-btn');
+    if (!btn) { return; }
+    var selected = getSelectedEditRoles();
+    var all = allEditRoleCheckboxes();
+    if (selected.length === 0) {
+        btn.textContent = 'No role selected';
+    } else if (selected.length === all.length) {
+        btn.textContent = 'All roles';
+    } else if (selected.length <= 2) {
+        btn.textContent = selected.join(', ');
+    } else {
+        btn.textContent = selected.length + ' roles selected';
+    }
+}
+
+function resetEditRoleDropdown() {
+    var defaultRoles = ['A', 'R'];
+    var boxes = allEditRoleCheckboxes();
+    for (var i = 0; i < boxes.length; i++) { boxes[i].checked = (defaultRoles.indexOf(boxes[i].value) !== -1); }
+    updateEditRoleButtonLabel();
+    var dropEl = document.getElementById('ef-role-dropdown');
+    if (dropEl) { dropEl.classList.remove('open'); }
+}
+
+var _efRoleDropdownBuilt = false;
+function buildEditRoleDropdown() {
+    var btnEl  = document.getElementById('ef-role-btn');
+    var dropEl = document.getElementById('ef-role-dropdown');
+    var wrapEl = document.getElementById('ef-role-wrap');
+    if (!btnEl || !dropEl) { return; }
+
+    var refEl = document.getElementById('ef-year');
+    if (refEl) { syncS2ButtonSizeEdit(btnEl, refEl); }
+
+    updateEditRoleButtonLabel();
+
+    if (_efRoleDropdownBuilt) { return; }
+    _efRoleDropdownBuilt = true;
+
+    btnEl.addEventListener('click', function (e) {
+        e.stopPropagation();
+        dropEl.classList.toggle('open');
+    });
+    btnEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dropEl.classList.toggle('open'); }
+    });
+    document.addEventListener('click', function (e) {
+        if (wrapEl && !wrapEl.contains(e.target)) { dropEl.classList.remove('open'); }
+    });
+    document.addEventListener('change', function (e) {
+        if (e.target && e.target.classList.contains('ef-role-cb')) {
+            updateEditRoleButtonLabel();
             applyEditFilters();
         }
     });
@@ -727,7 +818,8 @@ function applyEditFilters() {
     var level  = document.getElementById('ef-level')  ? document.getElementById('ef-level').value  : '';
     var statuses = getSelectedEditStatuses();
     var allStatusCount = allEditStatusCheckboxes().length;
-    var role   = document.getElementById('ef-role')   ? document.getElementById('ef-role').value   : '';
+    var roles = getSelectedEditRoles();
+    var allRoleCount = allEditRoleCheckboxes().length;
     var from   = document.getElementById('ef-from')   ? document.getElementById('ef-from').value   : '';
     var to     = document.getElementById('ef-to')     ? document.getElementById('ef-to').value     : '';
     var term   = document.getElementById('ef-search') ? document.getElementById('ef-search').value.toLowerCase().trim() : '';
@@ -737,7 +829,16 @@ function applyEditFilters() {
         if (level  && r.level  !== level)  { return false; }
         if (statuses.length === 0) { return false; }
         if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
-        if (role && (!r.roles || r.roles.indexOf(role) < 0)) { return false; }
+        if (roles.length === 0) { return false; }
+        if (roles.length < allRoleCount) {
+            var roleMatch = false;
+            if (r.roles) {
+                for (var rri = 0; rri < roles.length; rri++) {
+                    if (r.roles.indexOf(roles[rri]) >= 0) { roleMatch = true; break; }
+                }
+            }
+            if (!roleMatch) { return false; }
+        }
         if (from && (!r.start_date || r.start_date.substring(0, 10) < from)) { return false; }
         if (to   && (!r.start_date || r.start_date.substring(0, 10) > to))   { return false; }
         if (term && String(r.title).toLowerCase().indexOf(term) < 0) { return false; }
@@ -900,7 +1001,7 @@ document.addEventListener('DOMContentLoaded', function() {
     applyEditFilters();
 
     // Filter events
-    var _efIds = ['ef-year', 'ef-level', 'ef-role', 'ef-from', 'ef-to'];
+    var _efIds = ['ef-year', 'ef-level', 'ef-from', 'ef-to'];
     for (var _efi = 0; _efi < _efIds.length; _efi++) {
         var _efEl = document.getElementById(_efIds[_efi]);
         if (_efEl) { _efEl.addEventListener('change', applyEditFilters); }
@@ -920,7 +1021,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var efReset = document.getElementById('ef-reset');
     if (efReset) {
         efReset.addEventListener('click', function() {
-            ['ef-year', 'ef-level', 'ef-role', 'ef-from', 'ef-to', 'ef-search'].forEach(function(id) {
+            ['ef-year', 'ef-level', 'ef-from', 'ef-to', 'ef-search'].forEach(function(id) {
                 var el = document.getElementById(id);
                 if (el) { el.value = ''; }
             });
@@ -928,6 +1029,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (efMonth) { efMonth.value = '0'; }
             resetEditQuarterDropdown();
             resetEditStatusDropdown();
+            resetEditRoleDropdown();
             applyEditFilters();
         });
     }

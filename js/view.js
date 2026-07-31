@@ -121,9 +121,15 @@
             tabState.outlet.page = 1; renderTable('outlet', outletRows);
         });
 
-        var roleOptions = ['Issuer', 'A', 'R', 'C', 'I', 'ARCI', 'Not Applicable'];
-        fillSelect($('vf-role'), 'All roles', roleOptions);
-        fillSelect($('vfo-role'), 'All roles', roleOptions);
+        var roleOptions = ['Issuer', 'A', 'R', 'C', 'I'];
+        buildRoleOptions('vf-role', roleOptions);
+        buildRoleOptions('vfo-role', roleOptions);
+        buildRoleDropdown('vf-role', 'vf-year', function () {
+            tabState.hq.page = 1; renderTable('hq', hqRows);
+        });
+        buildRoleDropdown('vfo-role', 'vfo-year', function () {
+            tabState.outlet.page = 1; renderTable('outlet', outletRows);
+        });
 
         var issuers = (CFG.issuers || []).map(function (i) { return { id: i.id, label: i.name }; });
         buildS2Dropdown('vf-issuer', issuers, 'All staff', 'vf-year', function () {
@@ -352,6 +358,115 @@
         });
     }
 
+    // --------------------------------------------------- role checkbox dropdown
+    // baseId is 'vf-role' (HQ tab) or 'vfo-role' (Outlet tab) - same widget
+    // shape as the status checkbox dropdown above, own independent state.
+    var DEFAULT_ROLES = ['Issuer', 'A', 'R', 'C', 'I'];
+
+    function buildRoleOptions(baseId, roleValues) {
+        var listEl = $(baseId + '-list');
+        if (!listEl) { return; }
+        var html = '';
+        for (var s = 0; s < roleValues.length; s++) {
+            var rv = roleValues[s];
+            var isDefault = DEFAULT_ROLES.indexOf(rv) !== -1;
+            html += '<li class="vf-s2-list-item" style="cursor:default;">' +
+                '<label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">' +
+                '<input type="checkbox" value="' + escapeHtml(rv) + '"' + (isDefault ? ' checked' : '') + '> ' + escapeHtml(rv) +
+                '</label></li>';
+        }
+        listEl.innerHTML = html;
+        updateRoleButtonLabel(baseId);
+    }
+
+    function allRoleCheckboxes(baseId) {
+        var listEl = $(baseId + '-list');
+        return listEl ? listEl.querySelectorAll('input[type=checkbox]') : [];
+    }
+
+    function getSelectedRoles(baseId) {
+        var listEl = $(baseId + '-list');
+        if (!listEl) { return []; }
+        var boxes = listEl.querySelectorAll('input[type=checkbox]:checked');
+        var out = [];
+        for (var i = 0; i < boxes.length; i++) { out.push(boxes[i].value); }
+        return out;
+    }
+
+    function updateRoleButtonLabel(baseId) {
+        var btn = $(baseId + '-btn');
+        if (!btn) { return; }
+        var selected = getSelectedRoles(baseId);
+        var all = allRoleCheckboxes(baseId);
+        if (selected.length === 0) {
+            btn.textContent = 'No role selected';
+        } else if (selected.length === all.length) {
+            btn.textContent = 'All roles';
+        } else if (selected.length <= 2) {
+            btn.textContent = selected.join(', ');
+        } else {
+            btn.textContent = selected.length + ' roles selected';
+        }
+    }
+
+    function resetRoleDropdown(baseId) {
+        var boxes = allRoleCheckboxes(baseId);
+        for (var i = 0; i < boxes.length; i++) { boxes[i].checked = (DEFAULT_ROLES.indexOf(boxes[i].value) !== -1); }
+        updateRoleButtonLabel(baseId);
+        var dropEl = $(baseId + '-dropdown');
+        if (dropEl) { dropEl.classList.remove('open'); }
+    }
+
+    function buildRoleDropdown(baseId, sizeRefId, onChange) {
+        var btnEl  = $(baseId + '-btn');
+        var dropEl = $(baseId + '-dropdown');
+        var wrapEl = $(baseId + '-wrap');
+        if (!btnEl || !dropEl) { return; }
+
+        var refEl = $(sizeRefId);
+        if (refEl) {
+            var refStyle = window.getComputedStyle(refEl);
+            btnEl.style.height       = refEl.offsetHeight + 'px';
+            btnEl.style.border       = refStyle.border;
+            btnEl.style.borderRadius = refStyle.borderRadius;
+            btnEl.style.fontSize     = refStyle.fontSize;
+            btnEl.style.color        = refStyle.color;
+        }
+
+        updateRoleButtonLabel(baseId);
+
+        btnEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+            dropEl.classList.toggle('open');
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dropEl.classList.toggle('open'); }
+        });
+        document.addEventListener('click', function (e) {
+            if (wrapEl && !wrapEl.contains(e.target)) { dropEl.classList.remove('open'); }
+        });
+        dropEl.addEventListener('change', function (e) {
+            if (e.target && e.target.type === 'checkbox') {
+                updateRoleButtonLabel(baseId);
+                if (onChange) { onChange(); }
+            }
+        });
+    }
+
+    // Shared role-match test: a row matches if it holds ANY of the selected
+    // roles (Issuer via issuer_staff_id, A/R/C/I via user_arci_roles).
+    function rowMatchesRoles(r, selectedRoles, staffId) {
+        for (var i = 0; i < selectedRoles.length; i++) {
+            var rv = selectedRoles[i];
+            if (rv === 'Issuer') {
+                if (staffId && r.issuer_staff_id == staffId) { return true; }
+            } else if (r.user_arci_roles && r.user_arci_roles.indexOf(rv) >= 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // --------------------------------------------------------------- filtering
     // Active/Draft cards haven't closed yet, so the Year/Month/From-To filters
     // go by when they started; every other status (Completed family, Extended,
@@ -376,7 +491,8 @@
         var dept = $('vf-dept').value;
         var statuses = getSelectedStatuses('vf-status');
         var allStatusCount = allStatusCheckboxes('vf-status').length;
-        var role = $('vf-role').value;
+        var roles = getSelectedRoles('vf-role');
+        var allRoleCount = allRoleCheckboxes('vf-role').length;
         var startDate = $('vf-start-date').value;
         var endDate = $('vf-end-date').value;
         var closureFrom = $('vf-closure-from').value;
@@ -412,17 +528,8 @@
                 var levelNum = parseInt(String(r.level_label || '').replace(/[^0-9]/g, ''), 10) || 0;
                 if (levelNum < minLevelId) { return false; }
             }
-            if (role) {
-                if (role === 'Issuer') {
-                    if (!(CFG.staffId && r.issuer_staff_id == CFG.staffId)) { return false; }
-                } else if (role === 'ARCI') {
-                    if (!r.user_arci_roles || r.user_arci_roles.length === 0) { return false; }
-                } else if (role === 'Not Applicable') {
-                    if (r.user_arci_roles && r.user_arci_roles.length > 0) { return false; }
-                } else {
-                    if (!r.user_arci_roles || r.user_arci_roles.indexOf(role) < 0) { return false; }
-                }
-            }
+            if (roles.length === 0) { return false; }
+            if (roles.length < allRoleCount && !rowMatchesRoles(r, roles, CFG.staffId)) { return false; }
             if (mineFilter) {
                 var isMyIssue = CFG.staffId && r.issuer_staff_id == CFG.staffId;
                 var isMyArci  = r.user_arci_roles && r.user_arci_roles.length > 0;
@@ -448,7 +555,8 @@
         var statuses = getSelectedStatuses('vfo-status');
         var allStatusCount = allStatusCheckboxes('vfo-status').length;
         var region = $('vfo-region').value;
-        var role = $('vfo-role').value;
+        var roles = getSelectedRoles('vfo-role');
+        var allRoleCount = allRoleCheckboxes('vfo-role').length;
         var startDate = $('vfo-start-date').value;
         var endDate = $('vfo-end-date').value;
         var closureFrom = $('vfo-closure-from').value;
@@ -473,17 +581,8 @@
             if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
             if (region && (!r.region_names || r.region_names.indexOf(region) < 0)) { return false; }
             if (outletCode && (!r.outlet_codes || r.outlet_codes.indexOf(outletCode) < 0)) { return false; }
-            if (role) {
-                if (role === 'Issuer') {
-                    if (!(CFG.staffId && r.issuer_staff_id == CFG.staffId)) { return false; }
-                } else if (role === 'ARCI') {
-                    if (!r.user_arci_roles || r.user_arci_roles.length === 0) { return false; }
-                } else if (role === 'Not Applicable') {
-                    if (r.user_arci_roles && r.user_arci_roles.length > 0) { return false; }
-                } else {
-                    if (!r.user_arci_roles || r.user_arci_roles.indexOf(role) < 0) { return false; }
-                }
-            }
+            if (roles.length === 0) { return false; }
+            if (roles.length < allRoleCount && !rowMatchesRoles(r, roles, CFG.staffId)) { return false; }
             if (presetClosed) {
                 if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
             }
@@ -761,7 +860,7 @@
     function bind() {
         // HQ filter bar - always renders the HQ table (it's only visible
         // while that tab is active anyway).
-        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-role', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to'].forEach(function (id) {
+        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
@@ -776,10 +875,11 @@
             renderTable('hq', hqRows);
         });
         $('vf-reset').addEventListener('click', function () {
-            ['vf-year', 'vf-level', 'vf-dept', 'vf-role', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vf-year', 'vf-level', 'vf-dept', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
             resetS2Dropdown('vf-issuer', 'All staff');
             resetStatusDropdown('vf-status');
+            resetRoleDropdown('vf-role');
             presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false;
             tabState.hq.page = 1;
             renderTable('hq', hqRows);
@@ -806,6 +906,7 @@
             resetS2Dropdown('vfo-issuer', 'All staff');
             resetS2Dropdown('vfo-outlet', 'All outlets');
             resetStatusDropdown('vfo-status');
+            resetRoleDropdown('vfo-role');
             presetClosed = false; overdueFilter = false; mineFilter = false;
             tabState.outlet.page = 1;
             renderTable('outlet', outletRows);
@@ -928,6 +1029,7 @@
                 syncS2ButtonSize('vfo-issuer', 'vfo-year');
                 syncS2ButtonSize('vfo-outlet', 'vfo-year');
                 syncS2ButtonSize('vfo-status', 'vfo-year');
+                syncS2ButtonSize('vfo-role', 'vfo-year');
                 renderActiveTab();
             });
         }
@@ -995,7 +1097,12 @@
                 obEl.textContent = outletCode;
             }
         }
-        if (params.get('role'))  { var ro = $(_tabPrefix + '-role'); if (ro) { ro.value = params.get('role'); } }
+        if (params.get('role')) {
+            var wantedRole = params.get('role');
+            var boxesRole = allRoleCheckboxes(_tabPrefix + '-role');
+            for (var rbi = 0; rbi < boxesRole.length; rbi++) { boxesRole[rbi].checked = (boxesRole[rbi].value === wantedRole); }
+            updateRoleButtonLabel(_tabPrefix + '-role');
+        }
         if (params.get('from'))  { var fr = $(_tabPrefix + '-from'); if (fr) { fr.value = params.get('from'); } }
         if (params.get('to'))    { var to = $(_tabPrefix + '-to');   if (to) { to.value = params.get('to'); } }
         if (params.get('preset')        === 'closed') { presetClosed  = true; }

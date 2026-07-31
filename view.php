@@ -456,9 +456,12 @@ $view_config = array(
                     </div>
                     <div class="col">
                         <label class="form-label">Your Role with ARCI/Issuer</label>
-                        <select class="form-select form-select-sm" id="vf-role">
-                            <option value="">All roles</option>
-                        </select>
+                        <div class="vf-issuer-wrap" id="vf-role-wrap">
+                            <div class="vf-s2-selection" id="vf-role-btn" tabindex="0">All roles</div>
+                            <div class="vf-s2-dropdown" id="vf-role-dropdown">
+                                <ul class="vf-s2-list" id="vf-role-list" style="padding:4px 0;"></ul>
+                            </div>
+                        </div>
                     </div>
                     <div class="col">
                         <label class="form-label">Status</label>
@@ -596,9 +599,12 @@ $view_config = array(
                     </div>
                     <div class="col">
                         <label class="form-label">Your Role with ARCI/Issuer</label>
-                        <select class="form-select form-select-sm" id="vfo-role">
-                            <option value="">All roles</option>
-                        </select>
+                        <div class="vf-issuer-wrap" id="vfo-role-wrap">
+                            <div class="vf-s2-selection" id="vfo-role-btn" tabindex="0">All roles</div>
+                            <div class="vf-s2-dropdown" id="vfo-role-dropdown">
+                                <ul class="vf-s2-list" id="vfo-role-list" style="padding:4px 0;"></ul>
+                            </div>
+                        </div>
                     </div>
                     <div class="col">
                         <label class="form-label">Status</label>
