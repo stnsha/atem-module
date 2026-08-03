@@ -181,10 +181,10 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
         if (!v) { return ''; }
         var d = new Date(String(v).replace(' ', 'T'));
         if (isNaN(d.getTime())) { return v; }
-        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var m = d.getMonth() + 1, day = d.getDate();
         var hh = String(d.getHours()).padStart(2, '0');
         var mm = String(d.getMinutes()).padStart(2, '0');
-        return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() + ', ' + hh + ':' + mm;
+        return d.getFullYear() + '-' + (m < 10 ? '0' + m : '' + m) + '-' + (day < 10 ? '0' + day : '' + day) + ' ' + hh + ':' + mm;
     }
 
     function setBadge(count) {

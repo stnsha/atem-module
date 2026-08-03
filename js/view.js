@@ -67,8 +67,7 @@
 
     function fmtDate(v) {
         if (!v) { return '-'; }
-        var p = String(v).substring(0, 10).split('-'); // YYYY-MM-DD
-        return (p.length === 3) ? (p[2] + '-' + p[1] + '-' + p[0]) : v;
+        return String(v).substring(0, 10);
     }
 
     // Same muted em-dash style used for empty ARCI cells.

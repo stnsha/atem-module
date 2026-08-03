@@ -128,29 +128,17 @@ $closed_by_id    = (int) (isset($record['payout_closed_by']) ? $record['payout_c
 $updated_by_name = $updated_by_id ? (isset($staff_names[$updated_by_id]) ? $staff_names[$updated_by_id] : ('Staff #' . $updated_by_id)) : '-';
 $closed_by_name  = $closed_by_id ? (isset($staff_names[$closed_by_id]) ? $staff_names[$closed_by_id] : ('Staff #' . $closed_by_id)) : '-';
 
-function pp_ordinal_day($day)
-{
-    if (in_array($day % 100, array(11, 12, 13), true)) {
-        return $day . 'th';
-    }
-    switch ($day % 10) {
-        case 1:  return $day . 'st';
-        case 2:  return $day . 'nd';
-        case 3:  return $day . 'rd';
-        default: return $day . 'th';
-    }
-}
 function pp_date($v)
 {
     if (!$v) { return '-'; }
     $ts = strtotime($v);
-    return pp_ordinal_day((int) date('j', $ts)) . ' ' . date('F Y', $ts);
+    return $ts ? date('Y-m-d', $ts) : '-';
 }
 function pp_datetime($v)
 {
     if (!$v) { return '-'; }
     $ts = strtotime($v);
-    return pp_ordinal_day((int) date('j', $ts)) . ' ' . date('F Y, H:i', $ts);
+    return $ts ? date('Y-m-d H:i', $ts) : '-';
 }
 function pp_money($v)
 {
@@ -172,7 +160,7 @@ class PayoutPDF extends tFPDF
     {
         $this->SetY(-15);
         $this->SetFont('helvetica', 'I', 8);
-        $this->Cell(0, 10, 'Generated ' . date('d-m-Y H:i'), 0, 0, 'L');
+        $this->Cell(0, 10, 'Generated ' . date('Y-m-d H:i'), 0, 0, 'L');
         $this->Cell(0, 10, 'Page ' . $this->PageNo(), 0, 0, 'R');
     }
 

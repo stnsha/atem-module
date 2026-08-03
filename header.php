@@ -101,6 +101,21 @@ if ((int)$atem_permission === 0 && !$_is_superadmin) {
     }
     exit;
 }
+
+// Dev "act as issuer" override (edit.php's dev-toggle-issuer.php box): while
+// active for the card in the URL, drop SuperAdmin status too - the point is
+// to see the card exactly as its real issuer would, not as a SuperAdmin who
+// also happens to match the issuer id. Applied after the login-redirect gate
+// above so a SuperAdmin whose real staff.grade is 0 doesn't get bounced to
+// login by their own dev toggle. api.php's own copy of this check already
+// swaps the actor identity for save/delete/chat calls; this half only needs
+// to suppress the SuperAdmin UI/permission gates on this page.
+if ($_is_superadmin && isset($_GET['id'])) {
+    $_dev_issuer_page_id = (int) $_GET['id'];
+    if ($_dev_issuer_page_id > 0 && !empty($_SESSION['atem_dev_issuer_override'][$_dev_issuer_page_id])) {
+        $_is_superadmin = false;
+    }
+}
 ?>
 
 <body>

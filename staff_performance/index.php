@@ -468,11 +468,7 @@ function formatDate(s) {
     if (!s) {
         return '-';
     }
-    var parts = s.split('-');
-    if (parts.length === 3) {
-        return parts[2] + '-' + parts[1] + '-' + parts[0];
-    }
-    return s;
+    return String(s).substring(0, 10);
 }
 
 function formatNumber(n) {
@@ -494,7 +490,7 @@ function formatDateTime(s) {
     function pad(n) {
         return (n < 10 ? '0' : '') + n;
     }
-    return pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(
         d.getMinutes());
 }
 

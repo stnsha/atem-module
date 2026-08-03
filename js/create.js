@@ -1059,6 +1059,14 @@
         return arciState.A.concat(arciState.R, arciState.C, arciState.I);
     }
 
+    // The issuer (whoever is filing this ATEM) must be one of the ARCI members
+    // on their own card - not merely the filer with no accountability role.
+    function issuerInArci() {
+        var issuerId = CFG.issuer && CFG.issuer.id ? parseInt(CFG.issuer.id, 10) : null;
+        if (!issuerId) { return true; }
+        return flattenArci().some(function (m) { return parseInt(m.staff_id, 10) === issuerId; });
+    }
+
     function validateFinal() {
         clearFormErrors();
         var title = $('atem-title').value.trim();
@@ -1088,6 +1096,10 @@
         if (!endDate) { setError('tl-end-error', 'End Date is required.'); $('tl-end').focus(); return false; }
         if (!arciState.A || arciState.A.length === 0) {
             setError('arci-error', 'An Accountable (A) member is mandatory.');
+            return false;
+        }
+        if (!issuerInArci()) {
+            setError('arci-error', 'The issuer must also be assigned one of the ARCI roles (Accountable, Responsible, Consulted, or Informed).');
             return false;
         }
         if (staffType !== 'outlet') {

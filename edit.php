@@ -349,7 +349,7 @@ if (!empty($record['audit_logs']) && is_array($record['audit_logs'])) {
         }
     }
 }
-$suspended_at_fmt = $suspended_at_raw ? date('d-m-Y H:i', strtotime($suspended_at_raw)) : '';
+$suspended_at_fmt = $suspended_at_raw ? date('Y-m-d H:i', strtotime($suspended_at_raw)) : '';
 
 $can_add_progress = ($is_issuer_now || $is_arci_member)
     && !$record_is_deleted
@@ -389,6 +389,9 @@ $needs_closure_date = $issuer_completed_edit
 // via its own button/endpoint, independent of the page's edit mode (most of
 // these cards render read-only for a non-issuer). Range: start_date..today,
 // enforced by api.php's permission check and atem-api's updateClosureDate().
+// Suppressed whenever $needs_closure_date applies instead - that post-unsuspend
+// flow is the issuer actively editing the card, so the date is saved together
+// with everything else via the main Save ATEM button, not this separate one.
 $can_pick_closure_date = ($record && !$api_unavailable && !$record_is_actually_deleted && !$payout_is_closed)
     && ($_is_superadmin || (int)$atem_permission === 5)
     && !in_array($current_status_value, array('Draft', 'Active', 'Failed', 'Deleted'), true);
@@ -438,6 +441,11 @@ $atem_config = array(
     'suspendedIssuerEdit'    => (bool) $suspended_issuer_edit,
     'needsClosureDate'       => (bool) $needs_closure_date,
     'canPickClosureDate'     => (bool) $can_pick_closure_date,
+    // CEO/SuperAdmin closure-date picker on an otherwise fully read-only page
+    // (no other edit path active) - the Save ATEM button is rendered purely
+    // to save the closure date, not the rest of the card. See edit.js's
+    // atem-save-btn handler.
+    'closureOnlySave'        => (bool) ($can_pick_closure_date && $is_read),
 );
 
 $_bd_enabled = false;
@@ -447,6 +455,39 @@ if ($_bd_result && ($r = mysqli_fetch_assoc($_bd_result))) {
 }
 $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 ?>
+
+<?php
+// Dev "act as issuer" toggle (localhost + real SuperAdmin only, independent
+// of any active grade dev-override - mirrors navbar.php's dev toolbar gate).
+// Lets the SuperAdmin temporarily assume this card's issuer identity so
+// issuer-only edit/save/delete/chat paths can be tested without logging in
+// as that staff member. api.php reads the resulting session flag and swaps
+// $staff_id (and everything derived from it, including $is_issuer_now below)
+// for the remainder of this request.
+$_devIssuerServerName = isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : '';
+$_devIssuerHttpHost   = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+$_devIssuerIsLocal    = in_array($_devIssuerServerName, array('localhost', '127.0.0.1'))
+    || strpos($_devIssuerServerName, 'localhost') !== false
+    || strpos($_devIssuerHttpHost,   'localhost') !== false
+    || strpos($_devIssuerHttpHost,   '127.0.0.1') !== false;
+$_devIssuerEligible = $_devIssuerIsLocal && isset($atem) && (int)$atem === 1 && $atem_id > 0 && $record;
+$_devIssuerActive    = $_devIssuerEligible && !empty($_SESSION['atem_dev_issuer_override'][$atem_id]);
+if ($_devIssuerEligible):
+?>
+<div style="background:#12122a;color:#d0d0f0;padding:5px 14px;font-size:11px;font-family:monospace;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid #333;margin-bottom:10px;">
+    <span style="color:#888;letter-spacing:.05em;">DEV ISSUER</span>
+    <strong style="color:#f0c040;">[<?php echo $_devIssuerActive ? 'Acting as ' . htmlspecialchars($issuer_name) : 'Real identity'; ?>]</strong>
+    <form method="POST" action="<?php echo ATEM_BASE; ?>dev-toggle-issuer.php" style="display:inline;margin:0;">
+        <input type="hidden" name="id" value="<?php echo (int) $atem_id; ?>">
+        <input type="hidden" name="action" value="<?php echo $_devIssuerActive ? 'off' : 'on'; ?>">
+        <input type="hidden" name="redirect" value="<?php echo htmlspecialchars(isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : ''); ?>">
+        <button type="submit"
+            style="background:<?php echo $_devIssuerActive ? '#3a1010' : '#1e1e3e'; ?>;color:<?php echo $_devIssuerActive ? '#ff8888' : '#aaa'; ?>;border:1px solid <?php echo $_devIssuerActive ? '#a44' : '#333'; ?>;padding:2px 7px;font-size:11px;cursor:pointer;border-radius:3px;font-family:monospace;">
+            <?php echo $_devIssuerActive ? 'Stop acting as Issuer' : 'Act as Issuer'; ?>
+        </button>
+    </form>
+</div>
+<?php endif; ?>
 
 <?php if ($api_unavailable): ?>
 <div class="alert alert-warning" role="alert" style="font-size:13px;">
@@ -464,7 +505,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
         $deleted_by_id = isset($record['closed_by']) ? (int)$record['closed_by'] : 0;
         $deleted_by_name = ($deleted_by_id && isset($staff_names[$deleted_by_id])) ? $staff_names[$deleted_by_id] : ('Staff #' . $deleted_by_id);
         $deleted_at_raw  = isset($record['deleted_at']) ? $record['deleted_at'] : '';
-        $deleted_at_fmt  = $deleted_at_raw ? date('d-m-Y H:i', strtotime($deleted_at_raw)) : '';
+        $deleted_at_fmt  = $deleted_at_raw ? date('Y-m-d H:i', strtotime($deleted_at_raw)) : '';
         if ($deleted_by_id || $deleted_at_fmt):
         ?>
         <span class="ms-2 text-muted" style="font-size:12px;">
@@ -477,9 +518,9 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
 <?php endif; ?>
 
 <?php if ($record_is_suspended): ?>
-<div class="alert alert-warning d-flex align-items-center gap-2" role="alert" style="font-size:13px;">
+<div class="alert alert-warning d-flex align-items-center gap-2" role="alert" style="font-size:12px;">
     <i class="bi bi-slash-circle flex-shrink-0"></i>
-    <div>
+    <div style="font-size:12px;">
         <strong>This ATEM card has been suspended.</strong>
         <?php if ($can_unsuspend): ?>
         Unsuspending it will restore the card to its previous status.
@@ -506,7 +547,11 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <!-- ATEM Details -->
     <div class="atem-bento-item atem-span-8">
         <div class="atem-card h-100">
-            <h6 class="atem-card-title"><i class="bi bi-file-earmark-text"></i> ATEM Details</h6>
+            <h6 class="atem-card-title"><i class="bi bi-file-earmark-text"></i> ATEM Details
+                <?php if ($atem_id > 0): ?>
+                <span class="atem-id" style="font-size:15px;font-weight:normal;">#AT<?php echo (int) $atem_id; ?></span>
+                <?php endif; ?>
+            </h6>
             <p class="atem-card-hint">
                 <?php if ($suspended_issuer_edit): ?>
                 This card is suspended. You may still update the Title and Description below.
@@ -868,9 +913,9 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                     <div class="atem-card-hint">This card was restored from suspension. Please set the closure date
                         before saving.</div>
                     <?php endif; ?>
-                    <?php if ($can_pick_closure_date): ?>
-                    <button type="button" class="btn btn-outline-primary btn-sm mt-1" id="tl-closure-save-btn">Save
-                        Closure Date</button>
+                    <?php if ($can_pick_closure_date && !$needs_closure_date): ?>
+                    <div class="atem-card-hint">Use the <strong>Save ATEM</strong> button below to save the closure
+                        date.</div>
                     <?php endif; ?>
                 </div>
 
@@ -953,7 +998,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
                 <div class="col-md-6">
                     <label class="form-label">Appealed On</label>
                     <div style="font-size:13px;"><?php
-                        echo htmlspecialchars(date('d-m-Y H:i', strtotime($record['appealed_at'])));
+                        echo htmlspecialchars(date('Y-m-d H:i', strtotime($record['appealed_at'])));
                     ?></div>
                 </div>
                 <div class="col-12">
@@ -993,7 +1038,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
     <?php endif; ?>
     <!-- Unsuspend/Appeal buttons now live on the Suspension Details / Appeal
          Details cards above (see $show_suspension_history block), not here. -->
-    <?php if (!$is_read): ?>
+    <?php if (!$is_read || $can_pick_closure_date): ?>
     <button type="button" class="btn btn-primary" id="atem-save-btn"
         <?php echo $api_unavailable ? 'disabled' : ''; ?>>Save ATEM</button>
     <?php endif; ?>
@@ -1042,7 +1087,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <label class="form-label">Last Updated On</label>
             <div style="font-size:13px;"><?php
                 $pu_at = isset($record['payout_updated_at']) ? $record['payout_updated_at'] : '';
-                echo htmlspecialchars($pu_at ? date('d-m-Y H:i', strtotime($pu_at)) : '—');
+                echo htmlspecialchars($pu_at ? date('Y-m-d H:i', strtotime($pu_at)) : '—');
             ?></div>
         </div>
         <div class="col-12">
@@ -1063,7 +1108,7 @@ $atem_config['backdate'] = array('enabled' => $_bd_enabled);
             <label class="form-label">Closed On</label>
             <div style="font-size:13px;"><?php
                 $pc_at = isset($record['payout_closed_at']) ? $record['payout_closed_at'] : '';
-                echo htmlspecialchars($pc_at ? date('d-m-Y H:i', strtotime($pc_at)) : '—');
+                echo htmlspecialchars($pc_at ? date('Y-m-d H:i', strtotime($pc_at)) : '—');
             ?></div>
         </div>
         <?php endif; ?>

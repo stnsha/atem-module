@@ -121,7 +121,7 @@ if ($str_r) { while ($r = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$r['
 function fmt_ex_date($d) {
     if (!$d) { return ''; }
     $ts = strtotime(substr($d, 0, 10));
-    return $ts ? date('j/n/Y', $ts) : '';
+    return $ts ? date('Y-m-d', $ts) : '';
 }
 
 function ex_status_val($a) {

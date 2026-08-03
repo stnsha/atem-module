@@ -81,6 +81,52 @@ if (isset($_SESSION['atem_dev_role_override']) && isset($_SESSION['atem_dev_view
 // Mirrors header.php logic: dev override suppresses SuperAdmin.
 $is_api_superadmin = (!isset($_SESSION['atem_dev_role_override']) && !empty($atem_flag) && (int)$atem_flag === 1);
 
+// Dev "act as issuer" override (localhost + real SuperAdmin only, toggled via
+// dev-toggle-issuer.php): lets a SuperAdmin temporarily assume a specific
+// ATEM card's issuer identity, so issuer-only edit/save/delete/chat paths can
+// be exercised without logging in as that staff member. Scoped to the atem id
+// being acted on right now - from ?id= on a GET page load (edit.php), or the
+// JSON body's id on a POST action (update-atem, delete-atem, chat-send, etc.);
+// stale entries left on for other cards are simply never matched. Swaps
+// $staff_id and the identity fields derived from it to the issuer's own row,
+// so both this page's own checks (edit.php's $is_issuer_now) and atem-api's
+// server-side actorId===issuer_staff_id checks see the same person.
+if (getEnvironment() === 'local' && !empty($atem_flag) && (int)$atem_flag === 1 && !empty($_SESSION['atem_dev_issuer_override'])) {
+    $_dev_issuer_atem_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+    if (!$_dev_issuer_atem_id) {
+        $_dev_issuer_body = json_decode(file_get_contents('php://input'), true);
+        if (is_array($_dev_issuer_body) && isset($_dev_issuer_body['id'])) {
+            $_dev_issuer_atem_id = (int)$_dev_issuer_body['id'];
+        }
+    }
+    if ($_dev_issuer_atem_id && !empty($_SESSION['atem_dev_issuer_override'][$_dev_issuer_atem_id])) {
+        $_dev_issuer_card = getAtem($_dev_issuer_atem_id, $staff_id);
+        $_dev_issuer_id = (!empty($_dev_issuer_card['success']) && isset($_dev_issuer_card['data']['issuer_staff_id']))
+            ? (int)$_dev_issuer_card['data']['issuer_staff_id']
+            : 0;
+        if ($_dev_issuer_id) {
+            $_dev_issuer_row_q = mysqli_query($conn, "SELECT id, nama_staff, department, outlet, grade FROM staff WHERE id = " . $_dev_issuer_id);
+            if ($_dev_issuer_row_q && ($_dev_issuer_row = mysqli_fetch_assoc($_dev_issuer_row_q))) {
+                $staff_id   = (string)$_dev_issuer_row['id'];
+                $nama_staff = $_dev_issuer_row['nama_staff'];
+                $department = $_dev_issuer_row['department'];
+                $outlet     = $_dev_issuer_row['outlet'];
+                // Test the issuer's own (limited) capabilities authentically -
+                // don't also carry over the real actor's SuperAdmin powers
+                // (e.g. deleting a terminal card, which a real issuer cannot) or
+                // grade-gated ones tied to the real actor's own staff.grade
+                // (e.g. edit.php's $can_unsuspend, which also passes at grade 4+
+                // regardless of issuer status - header.php only suppresses
+                // $_is_superadmin, it never touched $atem_permission). Included
+                // here (not header.php) because header.php runs before this file
+                // and has no way to resolve the card's issuer_staff_id itself.
+                $is_api_superadmin = false;
+                $atem_permission   = (int) $_dev_issuer_row['grade'];
+            }
+        }
+    }
+}
+
 /**
  * Log JWT API operations for monitoring and debugging
  * @param string $operation Operation name (e.g., 'getJWTToken')

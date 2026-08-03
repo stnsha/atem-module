@@ -243,6 +243,15 @@
         return map[code] || { maxA: 2, maxR: 2 };
     }
 
+    // The issuer must be one of the ARCI members on their own card - not merely
+    // the filer with no accountability role.
+    function issuerInArci() {
+        var issuerId = REC && REC.issuer_staff_id ? parseInt(REC.issuer_staff_id, 10) : null;
+        if (!issuerId) { return true; }
+        var all = (arciState.A || []).concat(arciState.R || [], arciState.C || [], arciState.I || []);
+        return all.some(function (m) { return parseInt(m.staff_id, 10) === issuerId; });
+    }
+
     function validateArciIncentive() {
         var level = selectedLevel();
         if (!level || Number(level.incentive_value) === 0) { return null; }
@@ -348,22 +357,24 @@
         // list itself, since that list also gates the Reward Decision UI elsewhere.
         var closesCard = TERMINAL_STATUSES.indexOf(selVal) >= 0 || selVal === 'Force Terminated';
         if (closesCard) {
-            // Post-unsuspend deferred closure date (needsClosureDate) and the
-            // CEO/SuperAdmin direct picker (canPickClosureDate): never
-            // auto-fill today's date here - the field must stay blank until a
-            // date is consciously picked, so validateFinal()'s required check
-            // can catch an ignored field (issuer flow) and the field mirrors
-            // the real stored value rather than faking one (CEO/SA flow).
-            if ((CFG.needsClosureDate || CFG.canPickClosureDate) && !closureEl.value) {
-                return;
-            }
-            var _recStatusVal = '';
-            (CFG.statuses || []).forEach(function (s) {
-                if (String(s.id) === String(REC.atem_status_id)) { _recStatusVal = s.value; }
-            });
-            if (!closureEl.value || _recStatusVal === 'Extended') {
-                var _cd = new Date();
-                closureEl.value = _cd.getFullYear() + '-' + (_cd.getMonth() + 1 < 10 ? '0' + (_cd.getMonth() + 1) : '' + (_cd.getMonth() + 1)) + '-' + (_cd.getDate() < 10 ? '0' + _cd.getDate() : '' + _cd.getDate());
+            // A record with no closure_date yet never gets one auto-filled -
+            // covers the post-unsuspend flow (needsClosureDate), the CEO/
+            // SuperAdmin direct picker (canPickClosureDate), and a normal
+            // Issuer completion (any closing status, first time closing).
+            // The field unlocks and stays blank until a date is consciously
+            // picked, so validateFinal()/AtemController::update() can both
+            // catch it being left empty and enforce the start_date..today
+            // range. An already-closed record keeps its stored value and the
+            // field stays locked - re-saving it (e.g. SuperAdmin editing
+            // Level/Rule on a Completed card) must never disturb it.
+            // superadminTerminalEdit is excluded here: saveTerminalEdit()
+            // doesn't submit closure_date at all (its own Level/Rule/Status
+            // save is a separate, narrower endpoint call), so unlocking the
+            // field there would look editable while silently doing nothing.
+            if (!REC.closure_date && !CFG.superadminTerminalEdit) {
+                closureEl.removeAttribute('disabled');
+                if (REC.start_date) { closureEl.setAttribute('min', dateOnly(REC.start_date)); }
+                closureEl.setAttribute('max', localTodayStr());
             }
         } else {
             closureEl.value = '';
@@ -416,6 +427,7 @@
     // Start Date and End Date cannot be changed once the card has been created
     // (i.e. once a value exists) - matches lockDateFields()'s Start Date rule.
     function syncEndDateLock() {
+        if (CFG.isSuperAdmin) { return; }
         var endEl = $('tl-end');
         if (!endEl || !endEl.value) { return; }
         endEl.setAttribute('disabled', 'disabled');
@@ -1052,11 +1064,7 @@
     }
 
     function formatDate(v) {
-        if (!v) { return ''; }
-        var d = new Date(v + 'T00:00:00');
-        if (isNaN(d.getTime())) { return v; }
-        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+        return dateOnly(v);
     }
 
     function progressStatusBtnsHtml(containerId, selectedVal) {
@@ -1319,8 +1327,13 @@
             setError('tl-remarks-error', 'A remark is required when force terminating an ATEM.');
             return false;
         }
-        var COMPLETED_LIKE_STATUSES = ['Completed', 'Completed with Excellence'];
-        if (CFG.needsClosureDate && COMPLETED_LIKE_STATUSES.indexOf(_tlStatusVal) >= 0) {
+        // A record with no closure_date yet requires one to be picked whenever
+        // the save is closing it (covers the post-unsuspend flow and a normal
+        // Issuer completion alike - see recalcClosureDate()). An already-closed
+        // record (REC.closure_date set) skips this - its value is preserved
+        // server-side regardless of what the disabled field shows.
+        var _closesCardOnSave = TERMINAL_STATUSES.indexOf(_tlStatusVal) >= 0 || _tlStatusVal === 'Force Terminated';
+        if (_closesCardOnSave && !REC.closure_date) {
             var _closureVal = $('tl-closure').value;
             if (!_closureVal) {
                 setError('tl-closure-error', 'Please set the closure date before saving.');
@@ -1361,6 +1374,10 @@
         }
         if (!arciState.A || arciState.A.length === 0) {
             setError('arci-error', 'An Accountable (A) member is mandatory.');
+            return false;
+        }
+        if (!issuerInArci()) {
+            setError('arci-error', 'The issuer must also be assigned one of the ARCI roles (Accountable, Responsible, Consulted, or Informed).');
             return false;
         }
         if (!isOutletType && level && Number(level.incentive_value) > 0 && $('atem-rule').value) {
@@ -1484,7 +1501,11 @@
             incentive_approved: !!(document.getElementById('tl-incentive-approve-yes') && document.getElementById('tl-incentive-approve-yes').checked),
             atem_status_id: $('tl-status').value ? parseInt($('tl-status').value, 10) : null,
             remarks: $('tl-remarks').value,
-            closure_date: CFG.needsClosureDate ? ($('tl-closure').value || null) : undefined,
+            // Covers both the post-unsuspend flow and a normal first-time
+            // completion alike - see recalcClosureDate()/validateFinal(). An
+            // already-closed record (REC.closure_date set) omits the field so
+            // AtemController::update() leaves the existing value untouched.
+            closure_date: !REC.closure_date ? ($('tl-closure').value || null) : undefined,
             is_deducted: (function () {
                 var checked = document.querySelector('input[name="tl-reward-decision"]:checked');
                 return !!(checked && checked.value === 'deducted');
@@ -1521,10 +1542,10 @@
         if (!v) { return ''; }
         var d = new Date(v.replace(' ', 'T'));
         if (isNaN(d.getTime())) { return v; }
-        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var m = d.getMonth() + 1, day = d.getDate();
         var hh = String(d.getHours()).padStart(2, '0');
         var mm = String(d.getMinutes()).padStart(2, '0');
-        return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() + ', ' + hh + ':' + mm;
+        return d.getFullYear() + '-' + (m < 10 ? '0' + m : '' + m) + '-' + (day < 10 ? '0' + day : '' + day) + ' ' + hh + ':' + mm;
     }
 
     var CHAT_EDIT_WINDOW_MS = 60000;
@@ -1915,7 +1936,9 @@
 
     function lockDateFields() {
         if (READ) { return; }
-        if ($('tl-start') && $('tl-start').value) { $('tl-start').setAttribute('disabled', 'disabled'); }
+        // A real SuperAdmin may always edit Start Date and End Date, regardless
+        // of status - everyone else can only set them once (matches syncEndDateLock()).
+        if (!CFG.isSuperAdmin && $('tl-start') && $('tl-start').value) { $('tl-start').setAttribute('disabled', 'disabled'); }
         syncEndDateLock();
         var ext1El = $('tl-ext1');
         if (ext1El && REC.extended_date_1) {
@@ -1969,11 +1992,13 @@
         });
     }
 
-    // Locks all fields except Level, Rule, and Status for SuperAdmin editing a terminal card.
+    // Locks all fields except Level, Rule, Status, Start Date, and End Date for
+    // SuperAdmin editing a terminal card - Start/End Date stay editable for a
+    // real SuperAdmin regardless of status.
     function applyTerminalEditRestrictions() {
         if (quillEditor) { quillEditor.disable(); }
         ['atem-title', 'atem-issuer', 'atem-department',
-         'tl-start', 'tl-end', 'tl-extended', 'tl-ext1',
+         'tl-extended', 'tl-ext1',
          'tl-remarks', 'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
             var el = $(id);
             if (el) { el.setAttribute('disabled', 'disabled'); }
@@ -1990,6 +2015,8 @@
     function applyIssuerCompletedLock() {
         if (quillEditor) { quillEditor.disable(); }
         ICE_LOCK_FIELDS.forEach(function (id) {
+            // A real SuperAdmin may always edit Start Date and End Date, regardless of status.
+            if (CFG.isSuperAdmin && (id === 'tl-start' || id === 'tl-end')) { return; }
             var el = $(id);
             if (el) { el.setAttribute('disabled', 'disabled'); }
         });
@@ -2018,34 +2045,64 @@
 
     // CEO (grade 5) / SuperAdmin direct closure-date editing (CFG.canPickClosureDate):
     // available on any status except Draft/Active/Failed/Deleted, saved through its
-    // own endpoint since the page is usually read-only for these viewers. Same
-    // start_date..today range as the post-unsuspend flow.
+    // own endpoint since the rest of the page is usually read-only for these
+    // viewers. Same start_date..today range as the post-unsuspend flow.
     function bindClosureDatePicker() {
         applyClosureDateUnlock();
-        var btn = $('tl-closure-save-btn');
-        if (!btn) { return; }
-        btn.addEventListener('click', function () {
-            setError('tl-closure-error', '');
-            var v = $('tl-closure').value;
-            if (!v) { setError('tl-closure-error', 'Please select a closure date.'); return; }
-            var minD = dateOnly(REC.start_date);
-            if ((minD && v < minD) || v > localTodayStr()) {
-                setError('tl-closure-error', 'Closure date must be between the start date and today.');
-                return;
+    }
+
+    // update-atem only ever honors a submitted closure_date in the narrow
+    // post-unsuspend window (AtemController::update()'s $pendingClosureDateEntry) -
+    // any other status change through that endpoint silently keeps the existing
+    // closure_date (or, for a non-closing status like Suspended, forces it back
+    // to null). So an actual CEO/SuperAdmin adjustment always has to go through
+    // the dedicated update-closure-date endpoint instead. onSuccess/onError are
+    // both required; the caller owns button state either way.
+    function postClosureDate(v, onSuccess, onError) {
+        setError('tl-closure-error', '');
+        var minD = dateOnly(REC.start_date);
+        if ((minD && v < minD) || v > localTodayStr()) {
+            setError('tl-closure-error', 'Closure date must be between the start date and today.');
+            onError();
+            return;
+        }
+        apiCall('update-closure-date', { id: CFG.atemId, closure_date: v }).then(function (res) {
+            if (res && res.success) {
+                REC.closure_date = v;
+                onSuccess();
+            } else {
+                setError('tl-closure-error', res && res.message ? res.message : 'Failed to update closure date.');
+                onError();
             }
-            btn.disabled = true; btn.textContent = 'Saving...';
-            apiCall('update-closure-date', { id: CFG.atemId, closure_date: v }).then(function (res) {
-                btn.disabled = false; btn.textContent = 'Save Closure Date';
-                if (res && res.success) {
-                    REC.closure_date = v;
-                } else {
-                    setError('tl-closure-error', res && res.message ? res.message : 'Failed to update closure date.');
-                }
-            }).catch(function () {
-                btn.disabled = false; btn.textContent = 'Save Closure Date';
-                setError('tl-closure-error', 'Network error while updating closure date.');
-            });
+        }).catch(function () {
+            setError('tl-closure-error', 'Network error while updating closure date.');
+            onError();
         });
+    }
+
+    // Fires from the atem-save-btn click handler when CFG.closureOnlySave is
+    // set (page otherwise fully read-only, button exists only for this field).
+    // Stays on the page on success, unlike the full update-atem save.
+    function saveClosureDateOnly() {
+        var v = $('tl-closure').value;
+        if (!v) { setError('tl-closure-error', 'Please select a closure date.'); return; }
+        var btn = $('atem-save-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+        var reset = function () { if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; } };
+        postClosureDate(v, reset, reset);
+    }
+
+    // Fires from the atem-save-btn click handler when CFG.canPickClosureDate is
+    // set but the rest of the card is also being saved (superadminTerminalEdit
+    // or issuerCompletedEdit combined with the CEO/SuperAdmin picker). Only
+    // touches the closure date if it was actually changed - this button is
+    // also the normal save for the rest of the form, so an untouched picker
+    // must not block or no-op the save.
+    function trySaveClosureDate(onSuccess) {
+        var v = $('tl-closure').value;
+        var current = dateOnly(REC.closure_date);
+        if (!v || v === current) { onSuccess(); return; }
+        postClosureDate(v, onSuccess, function () {});
     }
 
     // --------------------------------------------------------------- wiring
@@ -2221,56 +2278,71 @@
 
         if ($('atem-save-btn')) {
             $('atem-save-btn').addEventListener('click', function () {
-                if (CFG.superadminTerminalEdit) {
-                    saveTerminalEdit();
+                if (CFG.closureOnlySave) {
+                    saveClosureDateOnly();
                     return;
                 }
-                var selId = $('tl-status') ? $('tl-status').value : '';
-                var selVal = '';
-                (CFG.statuses || []).forEach(function (s) {
-                    if (String(s.id) === String(selId)) { selVal = s.value; }
-                });
-                if (CFG.issuerCompletedEdit
-                        && selId
-                        && String(selId) !== String(REC.atem_status_id)
-                        && TERMINAL_STATUSES.indexOf(selVal) === -1) {
-                    var msgEl = $('atem-terminal-warn-msg');
-                    if (msgEl) {
-                        msgEl.textContent = 'You are reverting this ATEM from "' + (REC.status && REC.status.value ? REC.status.value : 'Completed') + '" to "' + selVal + '". The closure date will be cleared and the ATEM will be open for editing again. Proceed?';
-                    }
-                    var revertModal = new bootstrap.Modal($('atem-terminal-warn-modal'));
-                    var okBtn = $('atem-terminal-warn-ok');
-                    if (okBtn) {
-                        var revertHandler = function () {
-                            okBtn.removeEventListener('click', revertHandler);
-                            revertModal.hide();
-                            saveAtem();
-                        };
-                        okBtn.addEventListener('click', revertHandler);
-                    }
-                    revertModal.show();
+                // CFG.canPickClosureDate here means the picker is combined with
+                // another active edit path (superadminTerminalEdit or
+                // issuerCompletedEdit) - save the closure date first, then fall
+                // through to whichever save that path normally performs.
+                if (CFG.canPickClosureDate) {
+                    trySaveClosureDate(proceedMainSave);
                     return;
                 }
-                if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
-                    var msgEl = $('atem-terminal-warn-msg');
-                    if (msgEl) {
-                        msgEl.textContent = 'You are about to set this ATEM to "' + selVal + '". Once saved, the ATEM will be locked and cannot be edited further. Do you want to proceed?';
-                    }
-                    var warnModal = new bootstrap.Modal($('atem-terminal-warn-modal'));
-                    var okBtn = $('atem-terminal-warn-ok');
-                    if (okBtn) {
-                        var handler = function () {
-                            okBtn.removeEventListener('click', handler);
-                            warnModal.hide();
-                            saveAtem();
-                        };
-                        okBtn.addEventListener('click', handler);
-                    }
-                    warnModal.show();
-                } else {
-                    saveAtem();
-                }
+                proceedMainSave();
             });
+        }
+        function proceedMainSave() {
+            if (CFG.superadminTerminalEdit) {
+                saveTerminalEdit();
+                return;
+            }
+            var selId = $('tl-status') ? $('tl-status').value : '';
+            var selVal = '';
+            (CFG.statuses || []).forEach(function (s) {
+                if (String(s.id) === String(selId)) { selVal = s.value; }
+            });
+            if (CFG.issuerCompletedEdit
+                    && selId
+                    && String(selId) !== String(REC.atem_status_id)
+                    && TERMINAL_STATUSES.indexOf(selVal) === -1) {
+                var msgEl = $('atem-terminal-warn-msg');
+                if (msgEl) {
+                    msgEl.textContent = 'You are reverting this ATEM from "' + (REC.status && REC.status.value ? REC.status.value : 'Completed') + '" to "' + selVal + '". The closure date will be cleared and the ATEM will be open for editing again. Proceed?';
+                }
+                var revertModal = new bootstrap.Modal($('atem-terminal-warn-modal'));
+                var okBtn = $('atem-terminal-warn-ok');
+                if (okBtn) {
+                    var revertHandler = function () {
+                        okBtn.removeEventListener('click', revertHandler);
+                        revertModal.hide();
+                        saveAtem();
+                    };
+                    okBtn.addEventListener('click', revertHandler);
+                }
+                revertModal.show();
+                return;
+            }
+            if (TERMINAL_STATUSES.indexOf(selVal) >= 0) {
+                var msgEl = $('atem-terminal-warn-msg');
+                if (msgEl) {
+                    msgEl.textContent = 'You are about to set this ATEM to "' + selVal + '". Once saved, the ATEM will be locked and cannot be edited further. Do you want to proceed?';
+                }
+                var warnModal = new bootstrap.Modal($('atem-terminal-warn-modal'));
+                var okBtn = $('atem-terminal-warn-ok');
+                if (okBtn) {
+                    var handler = function () {
+                        okBtn.removeEventListener('click', handler);
+                        warnModal.hide();
+                        saveAtem();
+                    };
+                    okBtn.addEventListener('click', handler);
+                }
+                warnModal.show();
+            } else {
+                saveAtem();
+            }
         }
 
         if ($('atem-delete-btn')) { $('atem-delete-btn').addEventListener('click', deleteAtem); }
@@ -2569,15 +2641,19 @@
         if (CFG.issuerCompletedEdit) { applyIssuerCompletedLock(); }
         if (CFG.suspendedIssuerEdit) { applySuspendedIssuerUnlock(); }
         if (CFG.needsClosureDate) { applyClosureDateUnlock(); }
-        if (CFG.canPickClosureDate) { bindClosureDatePicker(); }
+        // The post-unsuspend flow (needsClosureDate) saves the closure date
+        // together with the rest of the card via the main Save ATEM button -
+        // don't also wire up the standalone picker/button for it.
+        if (CFG.canPickClosureDate && !CFG.needsClosureDate) { bindClosureDatePicker(); }
         if (!READ && !IS_ISSUER && !CFG.superadminTerminalEdit) {
             // A real SuperAdmin (dev-override aware via CFG.isSuperAdmin) may still
-            // change Status and add a Remark on a card they didn't issue; everything
-            // else in this list stays locked for them.
+            // change Status, add a Remark, and edit Start/End Date (regardless of
+            // status) on a card they didn't issue; everything else in this list
+            // stays locked for them.
             var SA_STATUS_UNLOCK = !!CFG.isSuperAdmin;
             ['tl-start', 'tl-end', 'tl-status', 'tl-extended', 'tl-ext1', 'tl-remarks',
              'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
-                if (SA_STATUS_UNLOCK && (id === 'tl-status' || id === 'tl-remarks')) { return; }
+                if (SA_STATUS_UNLOCK && (id === 'tl-status' || id === 'tl-remarks' || id === 'tl-start' || id === 'tl-end')) { return; }
                 var el = document.getElementById(id);
                 if (el) { el.disabled = true; }
             });
