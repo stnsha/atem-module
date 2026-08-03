@@ -3359,6 +3359,25 @@ if (!defined('API_JWT_INCLUDED')) {
 
                 case 'unsuspend-atem':
                     if (isset($jsonData['id'])) {
+                        // CEO (grade 5) or real SuperAdmin only. $atem_permission is
+                        // only set when api.php is included from a page; the browser
+                        // posts directly here, so resolve the grade fresh - same
+                        // dev-override-aware fallback chain as update-closure-date.
+                        $us_perm = 0;
+                        if (isset($atem_permission)) {
+                            $us_perm = (int)$atem_permission;
+                        } elseif (isset($_SESSION['atem_dev_role_override'])) {
+                            $us_perm = (int)$_SESSION['atem_dev_role_override'];
+                        } elseif ($staff_id) {
+                            $us_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                            if ($us_perm_res && ($us_perm_row = mysqli_fetch_assoc($us_perm_res))) {
+                                $us_perm = ((int)$us_perm_row['atem'] === 1) ? 6 : (int)$us_perm_row['grade'];
+                            }
+                        }
+                        if (!$is_api_superadmin && $us_perm !== 5) {
+                            $response = array('success' => false, 'message' => 'Insufficient permission to unsuspend this ATEM card.');
+                            break;
+                        }
                         $response = unsuspendAtem($jsonData['id'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID.');

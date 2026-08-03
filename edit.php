@@ -329,7 +329,7 @@ $can_suspend = ($record && !$record_is_deleted && !$api_unavailable && !$payout_
     && ($_is_superadmin || (int)$atem_permission >= 4);
 
 $can_unsuspend = $record_is_suspended
-    && ($_is_superadmin || (int)$atem_permission >= 4 || $is_issuer_now);
+    && ($_is_superadmin || (int)$atem_permission === 5);
 
 $show_suspension_history = ($record && !empty($record['suspended_by']))
     && ($is_issuer_now || $_is_superadmin || (int)$atem_permission >= 4);
