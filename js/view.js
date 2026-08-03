@@ -107,7 +107,7 @@
 
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
         var statuses = (CFG.statuses || [])
-            .filter(function (s) { return canSeeDeleted || (s.value !== 'Deleted' && s.value !== 'Suspended' && s.value !== 'Force Terminated'); })
+            .filter(function (s) { return canSeeDeleted || s.value !== 'Deleted'; })
             .map(function (s) { return s.value; });
         buildStatusOptions('vf-status', statuses);
         buildStatusOptions('vfo-status', statuses);
