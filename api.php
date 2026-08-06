@@ -651,86 +651,6 @@ function getAtemLookups($staff_id)
 }
 
 /**
- * Reward Masterlist page-view gate: same audience as the "Masterlist" nav
- * link (navbar.php: $_is_superadmin || $atem_permission >= 4). Resolved
- * fresh from DB when api.php is hit directly (no $atem_permission in
- * scope), mirroring the fallback already used by bulk-lock-payout/
- * dashboard-stats.
- */
-function canViewRewardMasterlist($staff_id, $conn)
-{
-    if (isset($GLOBALS['_is_superadmin']) && $GLOBALS['_is_superadmin']) {
-        return true;
-    }
-    if (isset($GLOBALS['atem_permission'])) {
-        return (int)$GLOBALS['atem_permission'] >= 4;
-    }
-    if (isset($_SESSION['atem_dev_role_override'])) {
-        return (int)$_SESSION['atem_dev_role_override'] >= 4;
-    }
-    if ($staff_id) {
-        $res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
-        if ($res && ($row = mysqli_fetch_assoc($res))) {
-            return ((int)$row['atem'] === 1) || ((int)$row['grade'] >= 4);
-        }
-    }
-    return false;
-}
-
-/**
- * Reward Masterlist write gate: SuperAdmin only, matching the existing
- * grade/struct library's addLibrary/updateLibrary precedent in
- * access_control/backend.php (guarded by $requester_is_superadmin, not
- * just grade >= 4). Dev-role-override suppresses SA, mirroring header.php.
- */
-function isRewardMasterlistSuperAdmin($staff_id, $conn)
-{
-    if (isset($GLOBALS['_is_superadmin'])) {
-        return (bool)$GLOBALS['_is_superadmin'];
-    }
-    if (isset($_SESSION['atem_dev_role_override'])) {
-        return false;
-    }
-    if ($staff_id) {
-        $res = mysqli_query($conn, "SELECT atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
-        if ($res && ($row = mysqli_fetch_assoc($res))) {
-            return (int)$row['atem'] === 1;
-        }
-    }
-    return false;
-}
-
-function getRewardMasterlist($staff_id)
-{
-    $result = getApiDataWithJWT('reward-masterlist', null, 'GET', $staff_id);
-    $decoded = json_decode($result['response'], true);
-    if ($result['httpCode'] == 200) {
-        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : array());
-    }
-    return array('success' => false, 'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to retrieve Reward Masterlist');
-}
-
-function addRewardMasterlist($reward_value, $staff_id)
-{
-    $result = getApiDataWithJWT('reward-masterlist', array('reward_value' => $reward_value), 'POST', $staff_id);
-    $decoded = json_decode($result['response'], true);
-    if ($result['httpCode'] == 200 || $result['httpCode'] == 201) {
-        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : null);
-    }
-    return array('success' => false, 'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to add Reward Masterlist entry');
-}
-
-function updateRewardMasterlist($id, $data, $staff_id)
-{
-    $result = getApiDataWithJWT('reward-masterlist/' . (int)$id, $data, 'PUT', $staff_id);
-    $decoded = json_decode($result['response'], true);
-    if ($result['httpCode'] == 200) {
-        return array('success' => true, 'data' => isset($decoded['data']) ? $decoded['data'] : null);
-    }
-    return array('success' => false, 'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to update Reward Masterlist entry');
-}
-
-/**
  * Create a draft ATEM card
  * @param array $data Issuer snapshot data
  * @param int $staff_id Staff ID for authentication
@@ -3467,44 +3387,6 @@ if (!defined('API_JWT_INCLUDED')) {
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or role');
                     }
-                    break;
-
-                case 'get-reward-masterlist':
-                    if (!canViewRewardMasterlist($staff_id, $conn)) {
-                        $response = array('success' => false, 'message' => 'Insufficient permission to view the Reward Masterlist.');
-                        break;
-                    }
-                    // Admin page needs every entry (active and inactive) to list/toggle
-                    // them - the create-form dropdown gets active-only entries separately
-                    // via getAtemLookups()'s 'reward_masterlist' key.
-                    $response = getRewardMasterlist($staff_id);
-                    break;
-
-                case 'add-reward-masterlist':
-                    if (!isRewardMasterlistSuperAdmin($staff_id, $conn)) {
-                        $response = array('success' => false, 'message' => 'Insufficient permission to manage the Reward Masterlist.');
-                        break;
-                    }
-                    if (!isset($jsonData['reward_value']) || trim((string)$jsonData['reward_value']) === '') {
-                        $response = array('success' => false, 'message' => 'A reward value is required.');
-                        break;
-                    }
-                    $response = addRewardMasterlist($jsonData['reward_value'], $staff_id);
-                    break;
-
-                case 'update-reward-masterlist':
-                    if (!isRewardMasterlistSuperAdmin($staff_id, $conn)) {
-                        $response = array('success' => false, 'message' => 'Insufficient permission to manage the Reward Masterlist.');
-                        break;
-                    }
-                    if (!isset($jsonData['id'])) {
-                        $response = array('success' => false, 'message' => 'Missing id.');
-                        break;
-                    }
-                    $rml_update = array();
-                    if (isset($jsonData['reward_value'])) { $rml_update['reward_value'] = $jsonData['reward_value']; }
-                    if (isset($jsonData['is_active'])) { $rml_update['is_active'] = (bool)$jsonData['is_active']; }
-                    $response = updateRewardMasterlist($jsonData['id'], $rml_update, $staff_id);
                     break;
 
                 case 'arci-set-incentivised':

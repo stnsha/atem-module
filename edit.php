@@ -134,7 +134,7 @@ if (isset($department) && $department !== '') {
     }
 }
 
-$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => [], 'reward_masterlist' => []];
+$lookups = ['levels' => [], 'rules' => [], 'statuses' => [], 'pillars' => []];
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
@@ -580,14 +580,7 @@ if ($_devIssuerEligible):
                 </div>
                 <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-label-group">
                     <label for="atem-reward-label" class="form-label">Reward</label>
-                    <select class="form-select" id="atem-reward-label">
-                        <option value="" selected>None</option>
-                        <?php foreach ($lookups['reward_masterlist'] as $_rm): ?>
-                        <option value="<?php echo htmlspecialchars((string)$_rm['reward_value']); ?>">
-                            <?php echo htmlspecialchars((string)$_rm['reward_value']); ?>
-                        </option>
-                        <?php endforeach; ?>
-                    </select>
+                    <input type="text" class="form-control" id="atem-reward-label" placeholder="e.g. Free Ticket">
                     <div class="atem-form-error" id="atem-reward-label-error"></div>
                 </div>
                 <div class="col-md-6 atem-hq-only" id="atem-level-group">
