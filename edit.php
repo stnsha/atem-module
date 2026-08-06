@@ -675,6 +675,13 @@ if ($_devIssuerEligible):
         <div class="atem-card mb-3">
             <h6 class="atem-card-title"><i class="bi bi-paperclip"></i> Attachment</h6>
             <p class="atem-card-hint">Files stored with this ATEM.</p>
+            <?php if (!$is_read): ?>
+            <p class="atem-card-hint" style="color:#b45309;">
+                <i class="bi bi-exclamation-triangle"></i>
+                Saving as Completed, Completed with Excellence, or Completed with Extension requires at least one
+                attachment marked as the <strong>Reference Outcome</strong>. You'll be asked when you upload a file.
+            </p>
+            <?php endif; ?>
             <?php if ($suspended_issuer_edit || (!$is_read && !$issuer_completed_edit)): ?>
             <div id="atem-dropzone" class="atem-dropzone">
                 <input type="file" id="atem-file-input" multiple
@@ -701,14 +708,6 @@ if ($_devIssuerEligible):
                 <?php endif; ?>
             </div>
             <p class="atem-card-hint">Named links to related documents or resources.</p>
-            <?php if (!$is_read): ?>
-            <p class="atem-card-hint" style="color:#b45309;">
-                <i class="bi bi-exclamation-triangle"></i>
-                Saving as Completed, Completed with Excellence, or Completed with Extension requires a
-                Reference Link titled <strong>"Outcome Attachment"</strong> — if it's missing, you'll be prompted to
-                attach it when you save.
-            </p>
-            <?php endif; ?>
             <div id="atem-reflink-list" class="atem-reflink-list">
                 <div class="atem-empty-state">No Reference Link added.</div>
             </div>
@@ -1164,29 +1163,23 @@ if ($_devIssuerEligible):
     </div>
 </div>
 
-<!-- Outcome Attachment modal (prompted on save when completing an ATEM) -->
-<div class="modal fade" id="atem-outcome-attachment-modal" tabindex="-1" aria-hidden="true">
+<!-- Reference Outcome modal (prompted right after each attachment upload) -->
+<div class="modal fade" id="atem-reference-outcome-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Attach Outcome</h5>
+                <h5 class="modal-title">Mark as Reference Outcome?</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p class="atem-card-hint">A Reference Link titled <strong>"Outcome Attachment"</strong> is required to
-                    complete this ATEM. Paste the link to the outcome below and it will be added automatically.</p>
-                <div class="mb-2">
-                    <label for="outcome-attachment-url" class="form-label">Outcome Link <span
-                            class="atem-req">*</span></label>
-                    <input type="url" class="form-control" id="outcome-attachment-url"
-                        placeholder="https://example.com">
-                </div>
-                <div class="atem-form-error" id="outcome-attachment-error"></div>
+                <p class="atem-card-hint">Is <strong id="reference-outcome-file-name"></strong> the reference outcome
+                    for this ATEM? At least one attachment must be marked as the reference outcome before this ATEM
+                    can be saved as Completed, Completed with Excellence, or Completed with Extension.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="outcome-attachment-save-btn">Attach &amp;
-                    Save</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Not this one</button>
+                <button type="button" class="btn btn-primary" id="reference-outcome-confirm-btn">Mark as Reference
+                    Outcome</button>
             </div>
         </div>
     </div>

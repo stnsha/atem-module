@@ -1307,6 +1307,35 @@ function removeAtemAttachment($id, $att_id, $staff_id)
 }
 
 /**
+ * Toggle whether an attachment is marked as the reference outcome
+ * @param int $id ATEM ID
+ * @param int $att_id Attachment ID
+ * @param bool $is_outcome New flag value
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the updated attachment collection
+ */
+function markAtemAttachmentOutcome($id, $att_id, $is_outcome, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/attachments/' . (int)$att_id;
+    $result = getApiDataWithJWT($endpoint, array('is_reference_outcome' => (bool)$is_outcome, 'actor_id' => (int)$staff_id), 'PATCH', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Attachment updated successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to update attachment'
+        );
+    }
+}
+
+/**
  * Resolve created_by IDs to staff names in a progress list.
  */
 function resolveProgressCreatorNames($progressList, $conn)
@@ -3450,6 +3479,14 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = removeAtemAttachment($jsonData['id'], $jsonData['att_id'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or att_id');
+                    }
+                    break;
+
+                case 'attachment-mark-outcome':
+                    if (isset($jsonData['id']) && isset($jsonData['att_id']) && isset($jsonData['is_reference_outcome'])) {
+                        $response = markAtemAttachmentOutcome($jsonData['id'], $jsonData['att_id'], $jsonData['is_reference_outcome'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID, att_id or is_reference_outcome');
                     }
                     break;
 

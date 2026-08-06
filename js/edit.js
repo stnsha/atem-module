@@ -975,18 +975,43 @@
         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     }
     function fileExt(name) { var i = name.lastIndexOf('.'); return i >= 0 ? name.substr(i + 1).toLowerCase() : ''; }
+    function hasReferenceOutcomeAttachment() {
+        return (attachments || []).some(function (a) { return !!a.is_reference_outcome; });
+    }
     function renderAttachments() {
         var wrap = $('atem-attachment-list');
         if (!attachments.length) { wrap.innerHTML = '<div class="atem-empty-state">No attachments.</div>'; return; }
+        var canEdit = !(READ && !CFG.suspendedIssuerEdit);
         var html = '';
         for (var i = 0; i < attachments.length; i++) {
             var a = attachments[i];
             var dl = CFG.apiUrl + '?action=attachment-download&id=' + parseInt(CFG.atemId, 10) + '&att=' + parseInt(a.id, 10);
+            var isOutcome = !!a.is_reference_outcome;
+            var badgeClass = 'atem-reference-outcome-badge' + (isOutcome ? ' atem-reference-outcome-active' : '') + (canEdit ? '' : ' atem-reference-outcome-disabled');
+            var badgeTitle = canEdit ? (isOutcome ? 'Marked as Reference Outcome - click to unmark' : 'Mark as Reference Outcome') : '';
             html += '<div class="atem-attachment-row"><a class="atem-file-name" href="' + dl + '" target="_blank" rel="noopener">' + escapeHtml(a.name) + '</a> '
                 + '<span class="atem-file-size">(' + formatFileSize(a.size) + ')</span>'
-                + ((READ && !CFG.suspendedIssuerEdit) ? '' : '<span class="atem-file-remove" data-att="' + parseInt(a.id, 10) + '" title="Remove">&times;</span>') + '</div>';
+                + '<span class="' + badgeClass + '" data-att="' + parseInt(a.id, 10) + '" data-marked="' + (isOutcome ? '1' : '0') + '" title="' + badgeTitle + '">'
+                + (isOutcome ? '<i class="bi bi-bookmark-star-fill"></i> Reference Outcome' : '<i class="bi bi-bookmark"></i> Mark Outcome') + '</span>'
+                + (canEdit ? '<span class="atem-file-remove" data-att="' + parseInt(a.id, 10) + '" title="Remove">&times;</span>' : '') + '</div>';
         }
         wrap.innerHTML = html;
+    }
+    function markAttachmentOutcome(attId, isOutcome) {
+        apiCall('attachment-mark-outcome', { id: CFG.atemId, att_id: attId, is_reference_outcome: !!isOutcome }).then(function (res) {
+            if (res && res.success) { attachments = res.data || []; renderAttachments(); }
+        });
+    }
+    var _referenceOutcomeModal = null, _referenceOutcomeAttId = null;
+    function getReferenceOutcomeModal() {
+        if (!_referenceOutcomeModal && typeof bootstrap !== 'undefined') { _referenceOutcomeModal = new bootstrap.Modal($('atem-reference-outcome-modal')); }
+        return _referenceOutcomeModal;
+    }
+    function promptReferenceOutcome(att) {
+        _referenceOutcomeAttId = att.id;
+        if ($('reference-outcome-file-name')) { $('reference-outcome-file-name').textContent = att.name; }
+        var m = getReferenceOutcomeModal();
+        if (m) { m.show(); }
     }
     function uploadFiles(fileList) {
         setError('atem-file-error', '');
@@ -1002,7 +1027,13 @@
             var f = queue.shift();
             var fd = new FormData(); fd.append('action', 'attachment-upload'); fd.append('id', CFG.atemId); fd.append('file', f);
             uploadCall(fd).then(function (res) {
-                if (res && res.success) { attachments = res.data || []; renderAttachments(); }
+                if (res && res.success) {
+                    var prevIds = attachments.map(function (a) { return a.id; });
+                    attachments = res.data || [];
+                    renderAttachments();
+                    var newAtt = attachments.filter(function (a) { return prevIds.indexOf(a.id) < 0; })[0];
+                    if (newAtt) { promptReferenceOutcome(newAtt); }
+                }
                 else { setError('atem-file-error', (res && res.message) ? res.message : 'Upload failed.'); }
                 next();
             }).catch(function () { setError('atem-file-error', 'Network error during upload.'); next(); });
@@ -1030,7 +1061,21 @@
                 if (e.target.classList.contains('atem-file-remove')) {
                     var attId = parseInt(e.target.getAttribute('data-att'), 10);
                     confirmAction('Remove this attachment?', function () { deleteAttachment(attId); });
+                    return;
                 }
+                var badge = e.target.closest ? e.target.closest('.atem-reference-outcome-badge') : null;
+                if (badge && !badge.classList.contains('atem-reference-outcome-disabled')) {
+                    var badgeAttId = parseInt(badge.getAttribute('data-att'), 10);
+                    var marked = badge.getAttribute('data-marked') === '1';
+                    markAttachmentOutcome(badgeAttId, !marked);
+                }
+            });
+        }
+        if ($('reference-outcome-confirm-btn')) {
+            $('reference-outcome-confirm-btn').addEventListener('click', function () {
+                if (_referenceOutcomeAttId !== null) { markAttachmentOutcome(_referenceOutcomeAttId, true); }
+                _referenceOutcomeAttId = null;
+                var m = getReferenceOutcomeModal(); if (m) { m.hide(); }
             });
         }
     }
@@ -1428,46 +1473,13 @@
         (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(selId)) { selVal = s.value; } });
         return selVal;
     }
-    function hasOutcomeAttachmentLink() {
-        return (reflinks || []).some(function (r) { return (r.name || '').trim().toLowerCase() === 'outcome attachment'; });
-    }
-    var _outcomeAttachmentModal = null;
-    function getOutcomeAttachmentModal() {
-        if (!_outcomeAttachmentModal && typeof bootstrap !== 'undefined') { _outcomeAttachmentModal = new bootstrap.Modal($('atem-outcome-attachment-modal')); }
-        return _outcomeAttachmentModal;
-    }
-    function openOutcomeAttachmentModal() {
-        setError('outcome-attachment-error', '');
-        if ($('outcome-attachment-url')) { $('outcome-attachment-url').value = ''; }
-        var m = getOutcomeAttachmentModal();
-        if (m) { m.show(); } else { performSaveAtem(); }
-    }
-    function attachOutcomeAndSave() {
-        setError('outcome-attachment-error', '');
-        var url = $('outcome-attachment-url') ? $('outcome-attachment-url').value.trim() : '';
-        if (!url) { setError('outcome-attachment-error', 'Please enter the outcome link.'); return; }
-        try { new URL(url); } catch (e) { setError('outcome-attachment-error', 'Please enter a valid URL.'); return; }
-        var btn = $('outcome-attachment-save-btn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Attaching...'; }
-        apiCall('reflink-add', { id: CFG.atemId, data: { name: 'Outcome Attachment', url: url } }).then(function (res) {
-            if (btn) { btn.disabled = false; btn.textContent = 'Attach & Save'; }
-            if (res && res.success) {
-                reflinks = res.data || [];
-                renderReferenceLinks();
-                var m = getOutcomeAttachmentModal(); if (m) { m.hide(); }
-                performSaveAtem();
-            } else {
-                setError('outcome-attachment-error', (res && res.message) ? res.message : 'Failed to attach outcome link.');
-            }
-        }).catch(function () {
-            if (btn) { btn.disabled = false; btn.textContent = 'Attach & Save'; }
-            setError('outcome-attachment-error', 'Network error while attaching outcome link.');
-        });
-    }
     function saveAtem() {
+        setError('atem-file-error', '');
         if (!validateFinal()) { scrollToFirstError(); return; }
-        if (COMPLETION_STATUSES.indexOf(getSelectedStatusValue()) >= 0 && !hasOutcomeAttachmentLink()) {
-            openOutcomeAttachmentModal();
+        if (COMPLETION_STATUSES.indexOf(getSelectedStatusValue()) >= 0 && !hasReferenceOutcomeAttachment()) {
+            setError('atem-file-error', 'At least one attachment must be marked as Reference Outcome before saving as ' + getSelectedStatusValue() + '.');
+            var el = $('atem-file-error');
+            if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
             return;
         }
         performSaveAtem();
@@ -2239,7 +2251,6 @@
         if ($('atem-suspended-save-btn')) { $('atem-suspended-save-btn').addEventListener('click', saveSuspendedFields); }
         if ($('atem-add-reflink-btn')) { $('atem-add-reflink-btn').addEventListener('click', openReflinkModal); }
         if ($('reflink-save-btn')) { $('reflink-save-btn').addEventListener('click', saveReferenceLink); }
-        if ($('outcome-attachment-save-btn')) { $('outcome-attachment-save-btn').addEventListener('click', attachOutcomeAndSave); }
         var rl = $('atem-reflink-list');
         if (rl) {
             rl.addEventListener('click', function (e) {
