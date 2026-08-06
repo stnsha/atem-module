@@ -365,13 +365,9 @@
             // picked, so validateFinal()/AtemController::update() can both
             // catch it being left empty and enforce the start_date..today
             // range. An already-closed record keeps its stored value and the
-            // field stays locked - re-saving it (e.g. SuperAdmin editing
-            // Level/Rule on a Completed card) must never disturb it.
-            // superadminTerminalEdit is excluded here: saveTerminalEdit()
-            // doesn't submit closure_date at all (its own Level/Rule/Status
-            // save is a separate, narrower endpoint call), so unlocking the
-            // field there would look editable while silently doing nothing.
-            if (!REC.closure_date && !CFG.superadminTerminalEdit) {
+            // field stays locked - re-saving it (e.g. SuperAdmin editing a
+            // Completed card via the normal save path) must never disturb it.
+            if (!REC.closure_date) {
                 closureEl.removeAttribute('disabled');
                 if (REC.start_date) { closureEl.setAttribute('min', dateOnly(REC.start_date)); }
                 closureEl.setAttribute('max', localTodayStr());
@@ -1352,12 +1348,8 @@
             setError('tl-status-error', 'The current status is "' + originalStatusValue + '". Please change the status before saving.');
             return false;
         }
-        // Non-issuer SuperAdmin changing status on a non-terminal card must explain why.
-        // Terminal-original-status cards go through applyTerminalEditRestrictions() instead,
-        // which locks tl-remarks entirely, so they're excluded here.
-        var SA_TERMINAL_STATUSES = ['Completed', 'Failed', 'Completed with Extension'];
+        // Non-issuer SuperAdmin changing status on a card must explain why.
         var isNonIssuerSuperAdminStatusEdit = !!CFG.isSuperAdmin && !IS_ISSUER
-            && SA_TERMINAL_STATUSES.indexOf(originalStatusValue) < 0
             && String($('tl-status').value) !== String(REC.atem_status_id);
         if (isNonIssuerSuperAdminStatusEdit && !$('tl-remarks').value.trim()) {
             setError('tl-remarks-error', 'A remark is required when changing the status of an ATEM you did not issue.');
@@ -1992,20 +1984,6 @@
         });
     }
 
-    // Locks all fields except Level, Rule, Status, Start Date, and End Date for
-    // SuperAdmin editing a terminal card - Start/End Date stay editable for a
-    // real SuperAdmin regardless of status.
-    function applyTerminalEditRestrictions() {
-        if (quillEditor) { quillEditor.disable(); }
-        ['atem-title', 'atem-issuer', 'atem-department',
-         'tl-extended', 'tl-ext1',
-         'tl-remarks', 'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
-            var el = $(id);
-            if (el) { el.setAttribute('disabled', 'disabled'); }
-        });
-        // tl-final-due and tl-closure are already disabled in HTML.
-    }
-
     // Locks all editable fields except the status dropdown while the issuer's
     // Completed card still shows the original Completed/Excellence status.
     var ICE_LOCK_FIELDS = ['atem-title', 'atem-level', 'atem-rule',
@@ -2294,10 +2272,6 @@
             });
         }
         function proceedMainSave() {
-            if (CFG.superadminTerminalEdit) {
-                saveTerminalEdit();
-                return;
-            }
             var selId = $('tl-status') ? $('tl-status').value : '';
             var selVal = '';
             (CFG.statuses || []).forEach(function (s) {
@@ -2535,58 +2509,6 @@
         }());
     }
 
-    function saveTerminalEdit() {
-        var levelVal  = parseInt(($('atem-level') || {}).value, 10) || null;
-        var ruleVal   = parseInt(($('atem-rule')  || {}).value, 10) || null;
-        var statusVal = parseInt(($('tl-status')  || {}).value, 10) || null;
-
-        if (!levelVal)  { setError('atem-save-error', 'Please select a complexity level.'); return; }
-        if (!statusVal) { setError('atem-save-error', 'Please select a status.'); return; }
-
-        var statusStrVal = '';
-        (CFG.statuses || []).forEach(function (s) { if (String(s.id) === String(statusVal)) { statusStrVal = s.value; } });
-        var remarksVal = $('tl-remarks') ? $('tl-remarks').value.trim() : '';
-        if (statusStrVal === 'Force Terminated' && !remarksVal) {
-            setError('tl-remarks-error', 'A remark is required when force terminating an ATEM.');
-            return;
-        }
-        setError('atem-save-error', '');
-        setError('tl-remarks-error', '');
-
-        var btn = $('atem-save-btn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-
-        apiCall('update-atem', {
-            id: CFG.atemId,
-            data: {
-                title:              REC.title,
-                description:        REC.description        || null,
-                level_structure_id: levelVal,
-                incentive_rule_id:  ruleVal,
-                start_date:         REC.start_date          ? dateOnly(REC.start_date)      : null,
-                end_date:           REC.end_date             ? dateOnly(REC.end_date)         : null,
-                is_extended:        REC.is_extended          || false,
-                extended_date_1:    REC.extended_date_1      ? dateOnly(REC.extended_date_1) : null,
-                atem_status_id:     statusVal,
-                // Was previously REC.remarks (the stale pre-edit value) - the
-                // typed-in Remarks box was silently discarded on every save
-                // through this SuperAdmin-terminal-edit path.
-                remarks:            remarksVal || null,
-                incentive_approved: false
-            }
-        }).then(function (res) {
-            if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
-            if (res && res.success) {
-                window.location.href = (window.ATEM_MODULE_BASE || 'atem/') + 'view.php';
-            } else {
-                setError('atem-save-error', res && res.message ? res.message : 'Failed to save.');
-            }
-        }).catch(function () {
-            if (btn) { btn.disabled = false; btn.textContent = 'Save ATEM'; }
-            setError('atem-save-error', 'Network error. Please try again.');
-        });
-    }
-
     function deleteAtem() {
         var okBtn = $('atem-confirm-ok');
         if (okBtn) { okBtn.textContent = 'Delete'; }
@@ -2637,7 +2559,6 @@
         lockDateFields();
         injectBadge();
         applyReadMode();
-        if (CFG.superadminTerminalEdit) { applyTerminalEditRestrictions(); }
         if (CFG.issuerCompletedEdit) { applyIssuerCompletedLock(); }
         if (CFG.suspendedIssuerEdit) { applySuspendedIssuerUnlock(); }
         if (CFG.needsClosureDate) { applyClosureDateUnlock(); }
@@ -2645,15 +2566,11 @@
         // together with the rest of the card via the main Save ATEM button -
         // don't also wire up the standalone picker/button for it.
         if (CFG.canPickClosureDate && !CFG.needsClosureDate) { bindClosureDatePicker(); }
-        if (!READ && !IS_ISSUER && !CFG.superadminTerminalEdit) {
-            // A real SuperAdmin (dev-override aware via CFG.isSuperAdmin) may still
-            // change Status, add a Remark, and edit Start/End Date (regardless of
-            // status) on a card they didn't issue; everything else in this list
-            // stays locked for them.
-            var SA_STATUS_UNLOCK = !!CFG.isSuperAdmin;
+        // Accountable ARCI members editing a card they didn't issue keep the
+        // timeline locked. A real SuperAdmin is exempt - full edit on behalf of the issuer.
+        if (!READ && !IS_ISSUER && !CFG.superadminTerminalEdit && !CFG.isSuperAdmin) {
             ['tl-start', 'tl-end', 'tl-status', 'tl-extended', 'tl-ext1', 'tl-remarks',
              'tl-incentive-approve-yes', 'tl-incentive-approve-no'].forEach(function (id) {
-                if (SA_STATUS_UNLOCK && (id === 'tl-status' || id === 'tl-remarks' || id === 'tl-start' || id === 'tl-end')) { return; }
                 var el = document.getElementById(id);
                 if (el) { el.disabled = true; }
             });

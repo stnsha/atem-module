@@ -267,8 +267,8 @@ if ($record_is_deleted) {
         }
     }
     // Force read-only — soft-deleted cards cannot be edited by anyone. Exception:
-    // a real SuperAdmin may edit a merely-suspended (not actually soft-deleted)
-    // card, restricted to Level/Rule/Status only via $superadmin_terminal_edit below.
+    // a real SuperAdmin may fully edit a merely-suspended (not actually
+    // soft-deleted) card — see $superadmin_terminal_edit below.
     if (!($_is_superadmin && $record_is_suspended && !$record_is_actually_deleted)) {
         $mode        = 'read';
         $is_read     = true;
@@ -297,10 +297,11 @@ $payout_is_closed    = ($payout_status_value === 'Closed');
 $can_manage_payout   = $show_payout_card && !$payout_is_closed && !$api_unavailable
     && ($_is_superadmin || (int)$atem_permission >= 4 || in_array(17, $requester_dept_ids, true));
 
-// SuperAdmin may edit Completed, Failed, or Suspended cards — but only Level,
-// Rule, and Status (-> Draft). Not available once payout has been marked
+// SuperAdmin may fully edit any terminal-status card (all fields, not just
+// Level/Rule/Status — see js/edit.js's applyTerminalEditRestrictions removal)
+// on behalf of the issuer. Not available once payout has been marked
 // Closed/Paid, or for a genuinely (soft-)deleted card.
-$superadmin_terminal_statuses = array('Completed', 'Failed', 'Completed with Extension', 'Suspended');
+$superadmin_terminal_statuses = array('Completed', 'Failed', 'Completed with Extension', 'Suspended', 'Completed with Excellence', 'Force Terminated');
 $superadmin_terminal_edit = $_is_superadmin
     && !$record_is_actually_deleted
     && !$payout_is_closed
@@ -351,7 +352,7 @@ if (!empty($record['audit_logs']) && is_array($record['audit_logs'])) {
 }
 $suspended_at_fmt = $suspended_at_raw ? date('Y-m-d H:i', strtotime($suspended_at_raw)) : '';
 
-$can_add_progress = ($is_issuer_now || $is_arci_member)
+$can_add_progress = ($is_issuer_now || $is_arci_member || $_is_superadmin)
     && !$record_is_deleted
     && !in_array($current_status_value, $terminal_statuses);
 
@@ -396,8 +397,9 @@ $can_pick_closure_date = ($record && !$api_unavailable && !$record_is_actually_d
     && ($_is_superadmin || (int)$atem_permission === 5)
     && !in_array($current_status_value, array('Draft', 'Active', 'Failed', 'Deleted'), true);
 
-// Non-issuers cannot use progress mode — downgrade to read.
-if ($is_progress && !$is_issuer_now) {
+// Non-issuers cannot use progress mode — downgrade to read. Real SuperAdmin
+// is exempt, acting on behalf of the issuer.
+if ($is_progress && !$is_issuer_now && !$_is_superadmin) {
     $mode        = 'read';
     $is_progress = false;
     $is_read     = true;
@@ -615,7 +617,7 @@ if ($_devIssuerEligible):
                     <label class="form-label">Outlet Staff(s) <span class="atem-req">*</span></label>
                     <div class="row g-2">
                         <div class="col-md-6">
-                            <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
+                            <?php if ($suspended_issuer_edit || (!$is_read && !$issuer_completed_edit)): ?>
                             <div class="atem-outlet-picker" id="atem-am-picker-wrap">
                                 <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select outlet
                                     staff(s)...</div>
@@ -680,7 +682,7 @@ if ($_devIssuerEligible):
         <div class="atem-card mb-3">
             <h6 class="atem-card-title"><i class="bi bi-paperclip"></i> Attachment</h6>
             <p class="atem-card-hint">Files stored with this ATEM.</p>
-            <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
+            <?php if ($suspended_issuer_edit || (!$is_read && !$issuer_completed_edit)): ?>
             <div id="atem-dropzone" class="atem-dropzone">
                 <input type="file" id="atem-file-input" multiple
                     accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt" hidden>
@@ -700,7 +702,7 @@ if ($_devIssuerEligible):
             <div class="atem-card-title-row">
                 <h6 class="atem-card-title"><i class="bi bi-link-45deg"></i> Reference Link <span
                         class="atem-req">*</span></h6>
-                <?php if ($suspended_issuer_edit || (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit)): ?>
+                <?php if ($suspended_issuer_edit || (!$is_read && !$issuer_completed_edit)): ?>
                 <button type="button" class="btn btn-primary btn-sm" id="atem-add-reflink-btn">Add Reference
                     Link</button>
                 <?php endif; ?>
@@ -731,7 +733,7 @@ if ($_devIssuerEligible):
                 <span id="atem-arci-orphan-warning-text"></span>
                 <button type="button" class="btn-close" id="atem-arci-orphan-warning-close" aria-label="Close"></button>
             </div>
-            <?php if (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit): ?>
+            <?php if (!$is_read && !$issuer_completed_edit): ?>
             <div class="atem-arci-add">
                 <div class="atem-arci-add-grid">
                     <div>
@@ -785,7 +787,7 @@ if ($_devIssuerEligible):
                 <div class="atem-arci-col">
                     <div class="atem-arci-col-head">
                         <span><strong><?php echo $rkey; ?></strong> - <?php echo $rlabel; ?></span>
-                        <?php if (!$is_read && !$superadmin_terminal_edit && !$issuer_completed_edit): ?>
+                        <?php if (!$is_read && !$issuer_completed_edit): ?>
                         <button type="button" class="btn btn-outline-secondary btn-sm atem-arci-clear"
                             data-role="<?php echo $rkey; ?>">Delete All</button>
                         <?php endif; ?>
@@ -1029,7 +1031,7 @@ if ($_devIssuerEligible):
 </div>
 <div class="atem-save-bar">
     <a href="<?php echo ATEM_BASE; ?>view.php" class="btn btn-outline-secondary">Back to list</a>
-    <?php if (!$is_read && $is_draft && $is_issuer_now): ?>
+    <?php if (!$is_read && $is_draft && ($is_issuer_now || $_is_superadmin)): ?>
     <button type="button" class="btn btn-outline-danger" id="atem-delete-btn"
         <?php echo $api_unavailable ? 'disabled' : ''; ?>>Delete</button>
     <?php endif; ?>
