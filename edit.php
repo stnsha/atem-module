@@ -998,7 +998,7 @@ if ($_devIssuerEligible):
                 </div>
                 <div class="col-12">
                     <label class="form-label">Appeal Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;"><?php
+                    <div style="font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;"><?php
                         $ap_remark = isset($record['appeal_remark']) ? (string)$record['appeal_remark'] : '';
                         echo ($ap_remark !== '') ? htmlspecialchars($ap_remark) : '&mdash;';
                     ?></div>
