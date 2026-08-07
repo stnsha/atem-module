@@ -582,6 +582,20 @@ if ($action === 'addLibrary' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['R
     $max_row = mysqli_fetch_assoc($max_result);
     $next_id = $max_row ? (int)$max_row['next_id'] : 0;
 
+    // staff_grade ids aren't just display labels - every $atem_permission
+    // threshold check across the app (page guards, dept scoping, edit/view
+    // backstops) is hardcoded to the 0-5 range. A new grade id beyond 5 would
+    // display fine but has undefined permission behavior (it passes every
+    // ">= N" check as an accident of integer comparison). Block it here;
+    // relabel an existing grade (0-5) via the Edit button instead.
+    if ($type === 'grade' && $next_id > 5) {
+        echo json_encode(array(
+            'success' => false,
+            'message' => 'Grade ids are capped at 0-5 (permission logic throughout the app is hardcoded to this range). Rename an existing grade instead of adding a new one.'
+        ));
+        exit;
+    }
+
     $insert = "INSERT INTO `$table` (id, `$col`) VALUES ($next_id, '$label_escaped')";
 
     if (mysqli_query($conn, $insert)) {

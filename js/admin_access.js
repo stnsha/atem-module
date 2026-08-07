@@ -4,6 +4,7 @@
     var selectedStaffId = null;
     var STRUCT_OPTIONS  = [];   // [{id, label, grade}]
     var STRUCT_LABELS   = {};   // id -> label
+    var GRADE_OPTIONS   = [];   // [{id, label}]
 
     function debounce(fn, wait) {
         var t;
@@ -107,7 +108,10 @@
     }
 
     // -----------------------------------------------------------------------
-    // Struct options: load from getLibrary and populate radio buttons + mgmt
+    // Grade + struct options: load from getLibrary (staff_grade / staff_struct)
+    // and populate radio buttons + mgmt. Both lists come from the same tables
+    // masterlist.php's "+ Add Grade" / "+ Add Structure" write to, so newly
+    // added rows show up here without a code change.
     // -----------------------------------------------------------------------
     function loadAllStructData(callback) {
         $.ajax({
@@ -119,16 +123,37 @@
                 STRUCT_OPTIONS = [];
                 STRUCT_LABELS  = {};
                 $.each(response.structs, function (i, s) {
-                    STRUCT_OPTIONS.push({ id: s.id, label: s.label });
+                    STRUCT_OPTIONS.push({ id: s.id, label: s.label, is_active: !!s.is_active });
                     STRUCT_LABELS[s.id] = s.label;
+                });
+                GRADE_OPTIONS = [];
+                GRADE_LABELS  = {};
+                $.each(response.grades, function (i, g) {
+                    GRADE_OPTIONS.push({ id: g.id, label: g.label, is_active: !!g.is_active });
+                    GRADE_LABELS[g.id] = g.label;
                 });
                 if (typeof callback === 'function') { callback(); }
             }
         });
     }
 
+    // Deactivated grades/structs stay assigned to whoever already has them
+    // (masterlist's own confirmation text promises this: "Staff currently
+    // assigned to it will keep it, but it will no longer be selectable for
+    // new assignments"), so the currently-selected id is always kept in the
+    // list even when inactive - every other inactive id is dropped.
+    function visibleOptions(options, selectedId) {
+        var out = [];
+        for (var i = 0; i < options.length; i++) {
+            var o = options[i];
+            if (o.is_active || o.id === selectedId) { out.push(o); }
+        }
+        return out;
+    }
+
     function renderStructRadios(selectedStructId) {
-        if (STRUCT_OPTIONS.length === 0) {
+        var visible = visibleOptions(STRUCT_OPTIONS, selectedStructId);
+        if (visible.length === 0) {
             $('#struct-radio-list').html('');
             $('#struct-none-msg').show();
             return;
@@ -136,15 +161,38 @@
 
         $('#struct-none-msg').hide();
         var html = '';
-        for (var j = 0; j < STRUCT_OPTIONS.length; j++) {
-            var s       = STRUCT_OPTIONS[j];
-            var checked = (s.id === selectedStructId) ? ' checked' : '';
+        for (var j = 0; j < visible.length; j++) {
+            var s        = visible[j];
+            var checked  = (s.id === selectedStructId) ? ' checked' : '';
+            var inactive = !s.is_active ? ' <span class="text-muted">(inactive)</span>' : '';
             html += '<div class="form-check">' +
                 '<input class="form-check-input" type="radio" name="struct" id="struct-' + s.id + '" value="' + s.id + '"' + checked + '>' +
-                '<label class="form-check-label" for="struct-' + s.id + '">' + $('<span>').text(s.label).html() + '</label>' +
+                '<label class="form-check-label" for="struct-' + s.id + '">' + $('<span>').text(s.label).html() + inactive + '</label>' +
                 '</div>';
         }
         $('#struct-radio-list').html(html);
+    }
+
+    function renderGradeRadios(selectedGrade) {
+        var visible = visibleOptions(GRADE_OPTIONS, selectedGrade);
+        if (visible.length === 0) {
+            $('#grade-radio-list').html('');
+            $('#grade-none-msg').show();
+            return;
+        }
+
+        $('#grade-none-msg').hide();
+        var html = '';
+        for (var k = 0; k < visible.length; k++) {
+            var g        = visible[k];
+            var checked  = (g.id === selectedGrade) ? ' checked' : '';
+            var inactive = !g.is_active ? ' <span class="text-muted">(inactive)</span>' : '';
+            html += '<div class="form-check">' +
+                '<input class="form-check-input" type="radio" name="grade" id="grade-' + g.id + '" value="' + g.id + '"' + checked + '>' +
+                '<label class="form-check-label" for="grade-' + g.id + '">' + $('<span>').text(g.label).html() + ' (' + g.id + ')' + inactive + '</label>' +
+                '</div>';
+        }
+        $('#grade-radio-list').html(html);
     }
 
     // -----------------------------------------------------------------------
@@ -286,7 +334,7 @@
         $('#info-struct').text(structName);
         $('#staff-info').show();
 
-        $('input[name="grade"][value="' + grade + '"]').prop('checked', true);
+        renderGradeRadios(grade);
         $('#grade-section').show();
 
         renderStructRadios(structId);

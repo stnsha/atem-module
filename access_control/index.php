@@ -14,16 +14,10 @@ if ($atem_permission < 1 && !$_is_superadmin) {
 
 ob_end_flush();
 
-$grade_labels = array(
-    0 => 'Non-Graded',
-    1 => 'Frontline / Operational Staff',
-    2 => 'Middle management',
-    3 => 'Senior management',
-    4 => 'C suite executive',
-    5 => 'CEO/board',
-    6 => 'SuperAdmin'
-);
-
+// Grade labels are no longer hardcoded here - they're loaded client-side
+// from staff_grade via getLibrary (see js/admin_access.js), the same table
+// masterlist.php's "+ Add Grade" writes to, so newly added grades show up
+// in the edit form without a code change.
 $grade_badges = array(
     0 => 'bg-secondary',
     1 => 'bg-success',
@@ -375,15 +369,9 @@ if ($atem_permission >= 2 || $_is_superadmin) {
 
             <div class="mb-3 grade-list" id="grade-section" style="display:none;">
                 <label class="form-label" style="font-size: 12px;">Grade</label>
-                <?php foreach ($grade_labels as $val => $label): ?>
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="grade" id="grade-<?php echo $val; ?>"
-                        value="<?php echo $val; ?>">
-                    <label class="form-check-label" for="grade-<?php echo $val; ?>">
-                        <?php echo htmlspecialchars($label); ?> (<?php echo $val; ?>)
-                    </label>
-                </div>
-                <?php endforeach; ?>
+                <div id="grade-radio-list"></div>
+                <p id="grade-none-msg" class="text-muted mb-0" style="display:none; font-size:12px; margin-top:4px;">No
+                    grades defined.</p>
             </div>
 
             <div id="struct-lock-notice" class="mb-2" style="display:none; font-size:12px; color:#dc3545;"></div>
@@ -408,7 +396,7 @@ if ($atem_permission >= 2 || $_is_superadmin) {
 </div><!-- /.atem-container -->
 
 <script>
-var GRADE_LABELS = <?php echo json_encode($grade_labels); ?>;
+var GRADE_LABELS = {};
 var GRADE_BADGES = <?php echo json_encode($grade_badges); ?>;
 var REQUESTER_GRADE = <?php echo (int)$atem_permission; ?>;
 var REQUESTER_DEPT_IDS = <?php echo json_encode(array_values($requester_dept_ids)); ?>;

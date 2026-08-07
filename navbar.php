@@ -15,11 +15,16 @@ $_navbar_isLocal    = in_array($_navbar_serverName, array('localhost', '127.0.0.
     || strpos($_navbar_httpHost,   'localhost') !== false
     || strpos($_navbar_httpHost,   '127.0.0.1') !== false;
 
+// staff_grade masterlist rows can now go beyond id 5 (see access_control's
+// dynamic grade list), so a real (non-SuperAdmin) staff.grade value of 6+
+// must never be mistaken for the SuperAdmin sentinel below - track the real
+// SuperAdmin flag on its own instead of overloading $_navbar_realRole.
 $_navbar_realRole = isset($grade) ? (int)$grade : $atem_role;
-if (isset($atem) && (int)$atem === 1) {
+$_navbar_isRealSuperAdmin = isset($atem) && (int)$atem === 1;
+if ($_navbar_isRealSuperAdmin) {
     $_navbar_realRole = 6;
 }
-if ($_navbar_isLocal && $_navbar_realRole === 6) {
+if ($_navbar_isLocal && $_navbar_isRealSuperAdmin) {
     if (session_id() == '') {
         session_start();
     }
