@@ -29,13 +29,17 @@ if ($_navbar_isLocal && $_navbar_isRealSuperAdmin) {
         session_start();
     }
 
-    $_navbar_gradeLabels = array(
-        1 => 'Frontline / Operational Staff',
-        2 => 'Middle management',
-        3 => 'Senior management',
-        4 => 'C suite executive',
-        5 => 'CEO/board'
-    );
+    // Pulled from staff_grade (masterlist-editable) instead of a hardcoded
+    // list, so renamed labels AND masterlist-added grades (e.g. id 6+) both
+    // show up here. Only active grades are offered for simulation; id 0
+    // (Non-Graded) is excluded since there's nothing to simulate there.
+    $_navbar_gradeLabels = array();
+    $_navbar_gr = mysqli_query($conn, "SELECT id, grade_name FROM staff_grade WHERE id >= 1 AND is_active = 1 ORDER BY id ASC");
+    if ($_navbar_gr) {
+        while ($_navbar_grRow = mysqli_fetch_assoc($_navbar_gr)) {
+            $_navbar_gradeLabels[(int)$_navbar_grRow['id']] = $_navbar_grRow['grade_name'];
+        }
+    }
 
     $_navbar_activeRole      = isset($_SESSION['atem_dev_role_override']) ? (int)$_SESSION['atem_dev_role_override'] : null;
     $_navbar_activeRoleLabel = ($_navbar_activeRole !== null && isset($_navbar_gradeLabels[$_navbar_activeRole]))
