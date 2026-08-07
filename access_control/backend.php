@@ -375,9 +375,21 @@ if ($action === 'updateAccess' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER[
     $grade     = isset($_POST['grade'])     ? (int)$_POST['grade']     : -1;
     $struct_id = isset($_POST['struct_id']) ? (int)$_POST['struct_id'] : 0;
 
-    $valid_grades = array(0, 1, 2, 3, 4, 5);
+    // Valid grade ids come from staff_grade (masterlist-editable) instead of
+    // a hardcoded list, so masterlist-added grades (e.g. id 6+) are
+    // assignable here too. Only active grades are accepted for new
+    // assignments - a deactivated grade a staff member already has is left
+    // alone (this endpoint never runs for an unchanged value in practice,
+    // and the edit form itself excludes inactive ids from re-selection).
+    $valid_grades = array(0);
+    $grade_check  = mysqli_query($conn, "SELECT id FROM staff_grade WHERE id > 0 AND is_active = 1");
+    if ($grade_check) {
+        while ($grade_row = mysqli_fetch_assoc($grade_check)) {
+            $valid_grades[] = (int)$grade_row['id'];
+        }
+    }
 
-    if ($target_id <= 0 || !in_array($grade, $valid_grades)) {
+    if ($target_id <= 0 || !in_array($grade, $valid_grades, true)) {
         echo json_encode(array('success' => false, 'message' => 'Invalid input.'));
         exit;
     }
