@@ -679,7 +679,8 @@ if ($_devIssuerEligible):
             <p class="atem-card-hint" style="color:#b45309;">
                 <i class="bi bi-exclamation-triangle"></i>
                 Saving as Completed, Completed with Excellence, or Completed with Extension requires at least one
-                attachment marked as the <strong>Reference Outcome</strong>. You'll be asked when you upload a file.
+                attachment or reference link marked as the <strong>Reference Outcome</strong>. You'll be asked when
+                you upload a file or add a link.
             </p>
             <?php endif; ?>
             <?php if ($suspended_issuer_edit || (!$is_read && !$issuer_completed_edit)): ?>
@@ -708,6 +709,14 @@ if ($_devIssuerEligible):
                 <?php endif; ?>
             </div>
             <p class="atem-card-hint">Named links to related documents or resources.</p>
+            <?php if (!$is_read): ?>
+            <p class="atem-card-hint" style="color:#b45309;">
+                <i class="bi bi-exclamation-triangle"></i>
+                Saving as Completed, Completed with Excellence, or Completed with Extension requires at least one
+                attachment or reference link marked as the <strong>Reference Outcome</strong>. You'll be asked when
+                you add a link.
+            </p>
+            <?php endif; ?>
             <div id="atem-reflink-list" class="atem-reflink-list">
                 <div class="atem-empty-state">No Reference Link added.</div>
             </div>
@@ -1163,7 +1172,7 @@ if ($_devIssuerEligible):
     </div>
 </div>
 
-<!-- Reference Outcome modal (prompted right after each attachment upload) -->
+<!-- Reference Outcome modal (prompted right after each attachment upload / reference link add) -->
 <div class="modal fade" id="atem-reference-outcome-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -1173,8 +1182,9 @@ if ($_devIssuerEligible):
             </div>
             <div class="modal-body">
                 <p class="atem-card-hint">Is <strong id="reference-outcome-file-name"></strong> the reference outcome
-                    for this ATEM? At least one attachment must be marked as the reference outcome before this ATEM
-                    can be saved as Completed, Completed with Excellence, or Completed with Extension.</p>
+                    for this ATEM? At least one attachment or reference link must be marked as the reference outcome
+                    before this ATEM can be saved as Completed, Completed with Excellence, or Completed with
+                    Extension.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Not this one</button>

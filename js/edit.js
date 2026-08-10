@@ -47,14 +47,6 @@
     function money(n) { return 'RM' + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
     function dateOnly(v) { return v ? String(v).substring(0, 10) : ''; }
 
-    // Today as a local-timezone YYYY-MM-DD string (toISOString() would shift
-    // the date across midnight UTC).
-    function localTodayStr() {
-        var d = new Date();
-        var m = d.getMonth() + 1, day = d.getDate();
-        return d.getFullYear() + '-' + (m < 10 ? '0' + m : '' + m) + '-' + (day < 10 ? '0' + day : '' + day);
-    }
-
     function escapeHtml(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -363,14 +355,12 @@
             // Issuer completion (any closing status, first time closing).
             // The field unlocks and stays blank until a date is consciously
             // picked, so validateFinal()/AtemController::update() can both
-            // catch it being left empty and enforce the start_date..today
-            // range. An already-closed record keeps its stored value and the
-            // field stays locked - re-saving it (e.g. SuperAdmin editing a
+            // catch it being left empty - freely, no start_date..today range
+            // restriction. An already-closed record keeps its stored value and
+            // the field stays locked - re-saving it (e.g. SuperAdmin editing a
             // Completed card via the normal save path) must never disturb it.
             if (!REC.closure_date) {
                 closureEl.removeAttribute('disabled');
-                if (REC.start_date) { closureEl.setAttribute('min', dateOnly(REC.start_date)); }
-                closureEl.setAttribute('max', localTodayStr());
             }
         } else {
             closureEl.value = '';
@@ -939,10 +929,17 @@
     function renderReferenceLinks() {
         var wrap = $('atem-reflink-list');
         if (!reflinks.length) { wrap.innerHTML = '<div class="atem-empty-state">No Reference Link added.</div>'; return; }
+        var canEdit = !(READ && !CFG.suspendedIssuerEdit);
         var html = '<ol class="atem-reflink-ol">';
         for (var i = 0; i < reflinks.length; i++) {
-            html += '<li><div class="atem-reflink-row"><a href="' + escapeHtml(reflinks[i].url) + '" target="_blank" rel="noopener">' + escapeHtml(reflinks[i].name) + '</a>'
-                + ((READ && !CFG.suspendedIssuerEdit) ? '' : '<span class="atem-reflink-remove" data-id="' + parseInt(reflinks[i].id, 10) + '" title="Remove">&times;</span>') + '</div></li>';
+            var l = reflinks[i];
+            var isOutcome = !!l.is_reference_outcome;
+            var badgeClass = 'atem-reference-outcome-badge' + (isOutcome ? ' atem-reference-outcome-active' : '') + (canEdit ? '' : ' atem-reference-outcome-disabled');
+            var badgeTitle = canEdit ? (isOutcome ? 'Marked as Reference Outcome - click to unmark' : 'Mark as Reference Outcome') : '';
+            html += '<li><div class="atem-reflink-row"><a href="' + escapeHtml(l.url) + '" target="_blank" rel="noopener">' + escapeHtml(l.name) + '</a>'
+                + '<span class="' + badgeClass + '" data-link-id="' + parseInt(l.id, 10) + '" data-marked="' + (isOutcome ? '1' : '0') + '" title="' + badgeTitle + '">'
+                + (isOutcome ? '<i class="bi bi-bookmark-star-fill"></i> Reference Outcome' : '<i class="bi bi-bookmark"></i> Mark Outcome') + '</span>'
+                + (canEdit ? '<span class="atem-reflink-remove" data-id="' + parseInt(l.id, 10) + '" title="Remove">&times;</span>' : '') + '</div></li>';
         }
         html += '</ol>';
         wrap.innerHTML = html;
@@ -956,12 +953,24 @@
         if (!name || !url) { setError('reflink-error', 'Please fill in both Name and URL.'); return; }
         try { new URL(url); } catch (e) { setError('reflink-error', 'Please enter a valid URL.'); return; }
         apiCall('reflink-add', { id: CFG.atemId, data: { name: name, url: url } }).then(function (res) {
-            if (res && res.success) { reflinks = res.data || []; renderReferenceLinks(); var m = getReflinkModal(); if (m) { m.hide(); } }
+            if (res && res.success) {
+                var prevIds = reflinks.map(function (l) { return l.id; });
+                reflinks = res.data || [];
+                renderReferenceLinks();
+                var m = getReflinkModal(); if (m) { m.hide(); }
+                var newLink = reflinks.filter(function (l) { return prevIds.indexOf(l.id) < 0; })[0];
+                if (newLink) { promptReferenceOutcome(newLink, 'reflink'); }
+            }
             else { setError('reflink-error', (res && res.message) ? res.message : 'Failed to add reference link.'); }
         }).catch(function () { setError('reflink-error', 'Network error while adding reference link.'); });
     }
     function removeReferenceLink(linkId) {
         apiCall('reflink-remove', { id: CFG.atemId, link_id: linkId }).then(function (res) {
+            if (res && res.success) { reflinks = res.data || []; renderReferenceLinks(); }
+        });
+    }
+    function markReflinkOutcome(linkId, isOutcome) {
+        apiCall('reflink-mark-outcome', { id: CFG.atemId, link_id: linkId, is_reference_outcome: !!isOutcome }).then(function (res) {
             if (res && res.success) { reflinks = res.data || []; renderReferenceLinks(); }
         });
     }
@@ -975,8 +984,9 @@
         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     }
     function fileExt(name) { var i = name.lastIndexOf('.'); return i >= 0 ? name.substr(i + 1).toLowerCase() : ''; }
-    function hasReferenceOutcomeAttachment() {
-        return (attachments || []).some(function (a) { return !!a.is_reference_outcome; });
+    function hasReferenceOutcome() {
+        return (attachments || []).some(function (a) { return !!a.is_reference_outcome; })
+            || (reflinks || []).some(function (l) { return !!l.is_reference_outcome; });
     }
     function renderAttachments() {
         var wrap = $('atem-attachment-list');
@@ -1002,14 +1012,18 @@
             if (res && res.success) { attachments = res.data || []; renderAttachments(); }
         });
     }
-    var _referenceOutcomeModal = null, _referenceOutcomeAttId = null;
+    var _referenceOutcomeModal = null, _referenceOutcomeId = null, _referenceOutcomeType = null;
     function getReferenceOutcomeModal() {
         if (!_referenceOutcomeModal && typeof bootstrap !== 'undefined') { _referenceOutcomeModal = new bootstrap.Modal($('atem-reference-outcome-modal')); }
         return _referenceOutcomeModal;
     }
-    function promptReferenceOutcome(att) {
-        _referenceOutcomeAttId = att.id;
-        if ($('reference-outcome-file-name')) { $('reference-outcome-file-name').textContent = att.name; }
+    // item is an attachment ({id, name}) or a reference link ({id, name}); type is
+    // 'attachment' or 'reflink' - the confirm button dispatches to the matching
+    // mark-outcome call based on it.
+    function promptReferenceOutcome(item, type) {
+        _referenceOutcomeId = item.id;
+        _referenceOutcomeType = type;
+        if ($('reference-outcome-file-name')) { $('reference-outcome-file-name').textContent = item.name; }
         var m = getReferenceOutcomeModal();
         if (m) { m.show(); }
     }
@@ -1032,7 +1046,7 @@
                     attachments = res.data || [];
                     renderAttachments();
                     var newAtt = attachments.filter(function (a) { return prevIds.indexOf(a.id) < 0; })[0];
-                    if (newAtt) { promptReferenceOutcome(newAtt); }
+                    if (newAtt) { promptReferenceOutcome(newAtt, 'attachment'); }
                 }
                 else { setError('atem-file-error', (res && res.message) ? res.message : 'Upload failed.'); }
                 next();
@@ -1073,8 +1087,12 @@
         }
         if ($('reference-outcome-confirm-btn')) {
             $('reference-outcome-confirm-btn').addEventListener('click', function () {
-                if (_referenceOutcomeAttId !== null) { markAttachmentOutcome(_referenceOutcomeAttId, true); }
-                _referenceOutcomeAttId = null;
+                if (_referenceOutcomeId !== null) {
+                    if (_referenceOutcomeType === 'reflink') { markReflinkOutcome(_referenceOutcomeId, true); }
+                    else { markAttachmentOutcome(_referenceOutcomeId, true); }
+                }
+                _referenceOutcomeId = null;
+                _referenceOutcomeType = null;
                 var m = getReferenceOutcomeModal(); if (m) { m.hide(); }
             });
         }
@@ -1380,12 +1398,6 @@
                 setError('tl-closure-error', 'Please set the closure date before saving.');
                 return false;
             }
-            // YYYY-MM-DD strings compare correctly as plain strings.
-            var _closureMin = dateOnly(REC.start_date);
-            if ((_closureMin && _closureVal < _closureMin) || _closureVal > localTodayStr()) {
-                setError('tl-closure-error', 'Closure date must be between the start date and today.');
-                return false;
-            }
         }
         var originalStatusValue = (REC.status && REC.status.value) ? REC.status.value : '';
         var MUST_CHANGE = ['Draft'];
@@ -1476,8 +1488,8 @@
     function saveAtem() {
         setError('atem-file-error', '');
         if (!validateFinal()) { scrollToFirstError(); return; }
-        if (COMPLETION_STATUSES.indexOf(getSelectedStatusValue()) >= 0 && !hasReferenceOutcomeAttachment()) {
-            setError('atem-file-error', 'At least one attachment must be marked as Reference Outcome before saving as ' + getSelectedStatusValue() + '.');
+        if (COMPLETION_STATUSES.indexOf(getSelectedStatusValue()) >= 0 && !hasReferenceOutcome()) {
+            setError('atem-file-error', 'At least one attachment or reference link must be marked as Reference Outcome before saving as ' + getSelectedStatusValue() + '.');
             var el = $('atem-file-error');
             if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
             return;
@@ -2022,21 +2034,17 @@
     // Card was restored from suspension back into Completed/Completed with
     // Excellence with closure_date left blank (see AtemController::unsuspend()).
     // Unlike every other locked field, Closure Date stays editable here. The
-    // replacement date must fall between the card's Start Date and today -
-    // enforced both by the picker's min/max and by validateFinal(), and
-    // re-checked server-side in AtemController::update().
+    // replacement date can be any date - no start_date..today range restriction.
     function applyClosureDateUnlock() {
         var el = $('tl-closure');
         if (!el) { return; }
         el.removeAttribute('disabled');
-        if (REC.start_date) { el.setAttribute('min', dateOnly(REC.start_date)); }
-        el.setAttribute('max', localTodayStr());
     }
 
     // CEO (grade 5) / SuperAdmin direct closure-date editing (CFG.canPickClosureDate):
     // available on any status except Draft/Active/Failed/Deleted, saved through its
     // own endpoint since the rest of the page is usually read-only for these
-    // viewers. Same start_date..today range as the post-unsuspend flow.
+    // viewers.
     function bindClosureDatePicker() {
         applyClosureDateUnlock();
     }
@@ -2050,12 +2058,6 @@
     // both required; the caller owns button state either way.
     function postClosureDate(v, onSuccess, onError) {
         setError('tl-closure-error', '');
-        var minD = dateOnly(REC.start_date);
-        if ((minD && v < minD) || v > localTodayStr()) {
-            setError('tl-closure-error', 'Closure date must be between the start date and today.');
-            onError();
-            return;
-        }
         apiCall('update-closure-date', { id: CFG.atemId, closure_date: v }).then(function (res) {
             if (res && res.success) {
                 REC.closure_date = v;
@@ -2257,6 +2259,13 @@
                 if (e.target.classList.contains('atem-reflink-remove')) {
                     var linkId = parseInt(e.target.getAttribute('data-id'), 10);
                     confirmAction('Remove this reference link?', function () { removeReferenceLink(linkId); });
+                    return;
+                }
+                var badge = e.target.closest ? e.target.closest('.atem-reference-outcome-badge') : null;
+                if (badge && !badge.classList.contains('atem-reference-outcome-disabled')) {
+                    var badgeLinkId = parseInt(badge.getAttribute('data-link-id'), 10);
+                    var linkMarked = badge.getAttribute('data-marked') === '1';
+                    markReflinkOutcome(badgeLinkId, !linkMarked);
                 }
             });
         }

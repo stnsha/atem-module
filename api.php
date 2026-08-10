@@ -1188,6 +1188,35 @@ function removeAtemReferenceLink($id, $link_id, $staff_id)
 }
 
 /**
+ * Toggle whether a reference link is marked as the reference outcome
+ * @param int $id ATEM ID
+ * @param int $link_id Reference link ID
+ * @param bool $is_outcome New flag value
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result with the updated link collection
+ */
+function markAtemReferenceLinkOutcome($id, $link_id, $is_outcome, $staff_id)
+{
+    $endpoint = 'atem/' . (int)$id . '/reference-links/' . (int)$link_id;
+    $result = getApiDataWithJWT($endpoint, array('is_reference_outcome' => (bool)$is_outcome, 'actor_id' => (int)$staff_id), 'PATCH', $staff_id);
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Reference link updated successfully'
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to update reference link'
+        );
+    }
+}
+
+/**
  * List the attachments for an ATEM card
  * @param int $id ATEM ID
  * @param int $staff_id Staff ID for authentication
@@ -3499,6 +3528,14 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = removeAtemReferenceLink($jsonData['id'], $jsonData['link_id'], $staff_id);
                     } else {
                         $response = array('success' => false, 'message' => 'Missing ATEM ID or link_id');
+                    }
+                    break;
+
+                case 'reflink-mark-outcome':
+                    if (isset($jsonData['id']) && isset($jsonData['link_id']) && isset($jsonData['is_reference_outcome'])) {
+                        $response = markAtemReferenceLinkOutcome($jsonData['id'], $jsonData['link_id'], $jsonData['is_reference_outcome'], $staff_id);
+                    } else {
+                        $response = array('success' => false, 'message' => 'Missing ATEM ID, link_id or is_reference_outcome');
                     }
                     break;
 

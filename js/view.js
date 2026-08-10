@@ -962,6 +962,7 @@
                         hqRows = hqRows.filter(function (r) { return r.id !== atemId; });
                         outletRows = outletRows.filter(function (r) { return r.id !== atemId; });
                         tabState.hq.page = 1; tabState.outlet.page = 1;
+                        updateTabCounts();
                         renderActiveTab();
                     } else {
                         var msg = res && res.message ? res.message : 'Failed to delete ATEM.';
@@ -1034,9 +1035,20 @@
         }
     }
 
+    // Tab badge counts exclude soft-deleted cards (status 'Deleted') - grade
+    // 4+/SA fetch those rows for the "Deleted" badge/filter inside the table,
+    // but the tab badge itself should only reflect live cards.
+    function updateTabCounts() {
+        if ($('atem-tab-hq-count')) {
+            $('atem-tab-hq-count').textContent = hqRows.filter(function (r) { return r.status !== 'Deleted'; }).length;
+        }
+        if ($('atem-tab-outlet-count')) {
+            $('atem-tab-outlet-count').textContent = outletRows.filter(function (r) { return r.status !== 'Deleted'; }).length;
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
-        if ($('atem-tab-hq-count')) { $('atem-tab-hq-count').textContent = hqRows.length; }
-        if ($('atem-tab-outlet-count')) { $('atem-tab-outlet-count').textContent = outletRows.length; }
+        updateTabCounts();
         rememberActiveTabForCreate();
         buildFilters();
         var params = new URLSearchParams(window.location.search);

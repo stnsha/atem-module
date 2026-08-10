@@ -1601,6 +1601,10 @@ button {
   padding: 5px 0;
 }
 
+.atem-reflink-row .atem-reference-outcome-badge {
+  margin-left: auto;
+}
+
 /* Navbar notification bell. Dedicated ids/classes (#atem-notif-badge, .atem-notif-*)
    NOT #badge/.badge/#myDropdown - those are dead legacy ids/classes rendered on
    every page by common/lock_adv.php + common/css/page.css (see .atem-pill note above). */
