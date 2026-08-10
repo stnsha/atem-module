@@ -17,6 +17,15 @@ if (isset($department) && $department !== '') {
     }
 }
 
+// Grade <3 users can't choose ATEM Type (see $_can_choose_atem_type below), so
+// their type is forced from their own department instead: dept 1 is Outlet,
+// anything else is HQ. $department is comma-separated and dev-view-override
+// aware (header.php already swaps it when the dev toolbar's HQ/Outlet
+// simulation is active), so this naturally follows that simulation too.
+$_issuer_dept_ids = array_map('trim', explode(',', (string) $department));
+$_issuer_is_outlet_dept = in_array('1', $_issuer_dept_ids, true);
+$_forced_atem_type = $_issuer_is_outlet_dept ? 'outlet' : 'hq';
+
 // Build staff grouped by department (for the ARCI pickers).
 $departments   = array();
 $staff_by_dept = array();
@@ -141,10 +150,17 @@ if ($session_files !== null) {
     $session_draft['attachments'] = $session_files;
 }
 
+// Only grade 3+ (and SuperAdmin) may choose between HQ / Outlet ATEM. Lower
+// grades never see the selector and are forced onto HQ/Outlet based on their
+// own department (see $_forced_atem_type above).
+$_can_choose_atem_type = ($atem_permission >= 3) || $_is_superadmin;
+
 $atem_config = array(
     'atemId'        => 0,
     'apiUrl'        => ATEM_BASE . 'api.php',
     'mode'          => 'create',
+    'canChooseAtemType' => $_can_choose_atem_type,
+    'forcedAtemType'    => $_forced_atem_type,
     'levels'        => isset($lookups['levels'])   ? $lookups['levels']   : array(),
     'rules'         => isset($lookups['rules'])    ? $lookups['rules']    : array(),
     'statuses'      => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
@@ -184,6 +200,7 @@ $api_unavailable = empty($lookup_result['success']);
 
 <div class="atem-bento">
 
+    <?php if ($_can_choose_atem_type): ?>
     <!-- Staff Type -->
     <div class="atem-bento-item atem-span-12">
         <div class="atem-card">
@@ -201,6 +218,7 @@ $api_unavailable = empty($lookup_result['success']);
             </div>
         </div>
     </div>
+    <?php endif; ?>
 
     <!-- ATEM Details -->
     <div class="atem-bento-item atem-span-8" id="atem-details-section">

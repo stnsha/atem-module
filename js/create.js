@@ -226,7 +226,7 @@
             syncAreaManagerPickerSelection();
             recomputeDerivedOutlets();
         }
-        if (draft.staff_type) { setStaffType(draft.staff_type); }
+        if (draft.staff_type && CFG.canChooseAtemType) { setStaffType(draft.staff_type); }
         // Restored content is unsaved (no DB row), so leaving should still warn.
         dirty = true;
     }
@@ -1282,8 +1282,8 @@
 
     // --------------------------------------------------------------- wiring
     function bind() {
-        $('staff-type-outlet').addEventListener('click', function () { requestStaffTypeChange('outlet'); });
-        $('staff-type-hq').addEventListener('click', function () { requestStaffTypeChange('hq'); });
+        if ($('staff-type-outlet')) { $('staff-type-outlet').addEventListener('click', function () { requestStaffTypeChange('outlet'); }); }
+        if ($('staff-type-hq')) { $('staff-type-hq').addEventListener('click', function () { requestStaffTypeChange('hq'); }); }
         var typeSwitchResetBtn = $('atem-type-switch-reset-btn');
         if (typeSwitchResetBtn) {
             typeSwitchResetBtn.addEventListener('click', function () {
@@ -1389,8 +1389,10 @@
             });
         }
         initEditor();
-        var _rememberedType = 'hq';
-        try { _rememberedType = sessionStorage.getItem('atem_create_type') === 'outlet' ? 'outlet' : 'hq'; } catch (e) { /* storage unavailable, keep default */ }
+        var _rememberedType = (CFG.forcedAtemType === 'outlet') ? 'outlet' : 'hq';
+        if (CFG.canChooseAtemType) {
+            try { _rememberedType = sessionStorage.getItem('atem_create_type') === 'outlet' ? 'outlet' : 'hq'; } catch (e) { /* storage unavailable, keep default */ }
+        }
         setStaffType(_rememberedType);
         hydrate(CFG.draft);
         bind();

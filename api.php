@@ -4267,8 +4267,38 @@ if (!defined('API_JWT_INCLUDED')) {
 
                 case 'save-atem':
                     if (isset($jsonData['data'])) {
-                        $issuer = getStaffAuthData($staff_id);
                         $data = $jsonData['data'];
+
+                        // Outlet ATEM (atem_type 2) is only selectable by grade 3+ /
+                        // SuperAdmin on the frontend (create.php hides the selector for
+                        // everyone else) - re-check here since the frontend gate is
+                        // bypassable via a direct API call. $atem_permission is not set
+                        // in this direct-access request, so resolve grade/atem the same
+                        // way get-performance-list does above.
+                        $_saPerm = 0;
+                        if (isset($atem_permission)) {
+                            $_saPerm = (int)$atem_permission;
+                        } elseif (isset($_SESSION['atem_dev_role_override'])) {
+                            $_saPerm = (int)$_SESSION['atem_dev_role_override'];
+                        } elseif ($staff_id) {
+                            $_saPerm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                            if ($_saPerm_res && ($_saPerm_row = mysqli_fetch_assoc($_saPerm_res))) {
+                                $_saPerm = ((int)$_saPerm_row['atem'] === 1) ? 6 : (int)$_saPerm_row['grade'];
+                            }
+                        }
+                        // Grade <3 outlet-department staff (department 1) are forced
+                        // onto Outlet ATEM on the frontend rather than choosing it, so
+                        // they're allowed through here too - only block Outlet for a
+                        // grade <3 issuer who isn't in department 1.
+                        $_saDeptIds = array_map('trim', explode(',', (string)$department));
+                        $_saIsOutletDept = in_array('1', $_saDeptIds, true);
+                        $_saAtemType = isset($data['atem_type']) ? (int)$data['atem_type'] : 1;
+                        if ($_saAtemType === 2 && $_saPerm < 3 && !$_saIsOutletDept) {
+                            $response = array('success' => false, 'message' => 'Insufficient permission to issue an Outlet ATEM');
+                            break;
+                        }
+
+                        $issuer = getStaffAuthData($staff_id);
                         // Issuer identity and audit fields are injected server-side.
                         $data['issuer_staff_id'] = $issuer ? $issuer['staff_id'] : $staff_id;
                         $data['staff_dept_id']   = $issuer ? $issuer['staff_dept_id'] : null;
