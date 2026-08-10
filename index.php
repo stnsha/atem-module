@@ -665,14 +665,6 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     <div class="atem-stat-label">temporarily on hold</div>
                 </div>
             </div>
-            <div class="col-12 col-sm-6 col-xl">
-                <div class="atem-card atem-dash-stat-outlet h-100"
-                    data-statuses="Active,Extended,Completed,Completed with Excellence" style="cursor:pointer;">
-                    <div class="atem-card-title mb-1">Est. Reward Forecast</div>
-                    <div class="atem-stat-value atem-stat-value--orange" id="dasho-incentive">---</div>
-                    <div class="atem-stat-label">potential reward payout</div>
-                </div>
-            </div>
         </div>
 
         <!-- Outlet My Involvement + ATEM Pillar Reward -->

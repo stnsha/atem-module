@@ -277,9 +277,32 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
         }
     }
     $view_rows = $filtered;
-} elseif (((int)$atem_permission === 2 || (int)$atem_permission === 3) && !$_is_superadmin) {
-    // Grades 2 and 3: cards where issuer or any ARCI member belongs to ANY of the
-    // user's departments. Also show own suspended cards regardless of department.
+} elseif ((int)$atem_permission === 3 && !$_is_superadmin) {
+    // Grade 3 (senior): Outlet-type cards are visible company-wide (all
+    // outlets), regardless of the viewer's own department. HQ-type cards stay
+    // scoped to own department(s), same rule as grade 2 below.
+    $filtered = array();
+    foreach ($view_rows as $idx => $r) {
+        if ($r['is_deleted']) {
+            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
+                $filtered[] = $r;
+            }
+            continue;
+        }
+        if ($r['atem_type'] === 2) {
+            $filtered[] = $r;
+            continue;
+        }
+        if (in_array($r['department_id'], $user_dept_ids)
+                || array_intersect($user_dept_ids, $row_arci_dept_ids[$idx])) {
+            $filtered[] = $r;
+        }
+    }
+    $view_rows = $filtered;
+} elseif ((int)$atem_permission === 2 && !$_is_superadmin) {
+    // Grade 2 (non-Outlet-dept): cards where issuer or any ARCI member belongs
+    // to ANY of the user's departments. Also show own suspended cards
+    // regardless of department.
     $filtered = array();
     foreach ($view_rows as $idx => $r) {
         if ($r['is_deleted']) {

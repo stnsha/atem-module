@@ -2508,7 +2508,29 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
                         $scopedItems = $_scopedFiltered;
-                    } elseif ($_scopedPerm === 2 || $_scopedPerm === 3) {
+                    } elseif ($_scopedPerm === 3) {
+                        // Grade 3 (senior): Outlet-type cards visible company-wide;
+                        // HQ-type cards stay scoped to own department(s).
+                        $_scopedFiltered = array();
+                        foreach ($scopedItems as $_sItem) {
+                            $_sItemAtemType = isset($_sItem['atem_type']) ? (int)$_sItem['atem_type'] : 1;
+                            if ($_sItemAtemType === 2) {
+                                $_scopedFiltered[] = $_sItem;
+                                continue;
+                            }
+                            $_sItemDept  = isset($_sItem['staff_dept_id']) ? (int)$_sItem['staff_dept_id'] : 0;
+                            $_sArciDepts = array();
+                            if (isset($_sItem['arci']) && is_array($_sItem['arci'])) {
+                                foreach ($_sItem['arci'] as $_sm) {
+                                    if (!empty($_sm['staff_dept_id'])) { $_sArciDepts[] = (int)$_sm['staff_dept_id']; }
+                                }
+                            }
+                            if (in_array($_sItemDept, $_scopedUserDeptIds) || array_intersect($_scopedUserDeptIds, $_sArciDepts)) {
+                                $_scopedFiltered[] = $_sItem;
+                            }
+                        }
+                        $scopedItems = $_scopedFiltered;
+                    } elseif ($_scopedPerm === 2) {
                         $_scopedFiltered = array();
                         foreach ($scopedItems as $_sItem) {
                             $_sItemDept  = isset($_sItem['staff_dept_id']) ? (int)$_sItem['staff_dept_id'] : 0;
@@ -2622,9 +2644,32 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
                         $items = $roleFiltered;
-                    } elseif ($_perm === 2 || $_perm === 3) {
-                        // Grades 2 and 3: cards where the issuer or any ARCI member
-                        // belongs to ANY of the user's departments.
+                    } elseif ($_perm === 3) {
+                        // Grade 3 (senior): Outlet-type cards are visible company-wide
+                        // (all outlets); HQ-type cards stay scoped to own department(s),
+                        // same rule as grade 2 below.
+                        $roleFiltered = array();
+                        foreach ($items as $_item) {
+                            $_itemAtemType = isset($_item['atem_type']) ? (int)$_item['atem_type'] : 1;
+                            if ($_itemAtemType === 2) {
+                                $roleFiltered[] = $_item;
+                                continue;
+                            }
+                            $_itemDept  = isset($_item['staff_dept_id']) ? (int)$_item['staff_dept_id'] : 0;
+                            $_arciDepts = array();
+                            if (isset($_item['arci']) && is_array($_item['arci'])) {
+                                foreach ($_item['arci'] as $_m) {
+                                    if (!empty($_m['staff_dept_id'])) { $_arciDepts[] = (int)$_m['staff_dept_id']; }
+                                }
+                            }
+                            if (in_array($_itemDept, $_userDeptIds) || array_intersect($_userDeptIds, $_arciDepts)) {
+                                $roleFiltered[] = $_item;
+                            }
+                        }
+                        $items = $roleFiltered;
+                    } elseif ($_perm === 2) {
+                        // Grade 2 (non-Outlet-dept): cards where the issuer or any ARCI
+                        // member belongs to ANY of the user's departments.
                         $roleFiltered = array();
                         foreach ($items as $_item) {
                             $_itemDept  = isset($_item['staff_dept_id']) ? (int)$_item['staff_dept_id'] : 0;
