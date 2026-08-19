@@ -872,7 +872,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     <h6 class="atem-card-title mb-0">Outlet Breakdown</h6>
                     <div class="text-muted mb-3" style="font-size:12px;padding-top:4px;">Cards, outcomes and reward
                         forecast by outlet</div>
-                    <div class="table-responsive">
+                    <div class="table-responsive" style="max-height:280px;overflow-y:auto;">
                         <table class="table table-sm align-middle mb-0">
                             <thead>
                                 <tr>

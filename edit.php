@@ -969,7 +969,7 @@ if ($_devIssuerEligible):
                 </div>
                 <div class="col-12">
                     <label class="form-label">Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;"><?php
+                    <div style="font-size:13px;white-space:pre-wrap;max-height:120px;overflow-y:auto;"><?php
                         $sb_remark = isset($record['suspended_remark']) ? (string)$record['suspended_remark'] : '';
                         echo ($sb_remark !== '') ? htmlspecialchars($sb_remark) : '&mdash;';
                     ?></div>
@@ -1006,7 +1006,7 @@ if ($_devIssuerEligible):
                 </div>
                 <div class="col-12">
                     <label class="form-label">Appeal Reason</label>
-                    <div style="font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;"><?php
+                    <div style="font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-height:120px;overflow-y:auto;"><?php
                         $ap_remark = isset($record['appeal_remark']) ? (string)$record['appeal_remark'] : '';
                         echo ($ap_remark !== '') ? htmlspecialchars($ap_remark) : '&mdash;';
                     ?></div>
