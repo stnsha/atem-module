@@ -707,6 +707,42 @@ function saveAtemCard($data, $staff_id)
 }
 
 /**
+ * Set (or clear, when $okrKeyResultId is null) the OKR Key Result an
+ * existing ATEM is linked back to. Bridges to atem-api's PATCH
+ * /atem/{id}/okr-link. Used by OKR's Link ATEM picker (existing-card path)
+ * and its unlink/delete flows - Create New ATEM sets okr_key_result_id
+ * directly via save-atem instead, this is only for already-existing cards.
+ * @param int $atemId
+ * @param int|null $okrKeyResultId
+ * @param int|null $actorId
+ * @param int $staff_id Staff ID for authentication
+ * @return array Result
+ */
+function linkAtemOkrKeyResult($atemId, $okrKeyResultId, $actorId, $staff_id)
+{
+    $result = getApiDataWithJWT(
+        'atem/' . (int)$atemId . '/okr-link',
+        array('okr_key_result_id' => $okrKeyResultId !== null ? (int)$okrKeyResultId : null, 'actor_id' => $actorId !== null ? (int)$actorId : null),
+        'PATCH',
+        $staff_id
+    );
+    $httpCode = $result['httpCode'];
+    $decoded = json_decode($result['response'], true);
+
+    if ($httpCode == 200) {
+        return array(
+            'success' => true,
+            'data' => isset($decoded['data']) ? $decoded['data'] : null
+        );
+    } else {
+        return array(
+            'success' => false,
+            'message' => isset($decoded['message']) ? $decoded['message'] : 'Failed to link ATEM to OKR Key Result'
+        );
+    }
+}
+
+/**
  * Get the list of ATEM cards for the listing page.
  * @param int $staff_id Staff ID for authentication
  * @param bool $include_deleted Whether to include soft-deleted cards (grade 4+/SA only)
@@ -2589,6 +2625,18 @@ if (!defined('API_JWT_INCLUDED')) {
                     $scopedItems = $_scopedUnlinked;
 
                     $response = array('success' => true, 'data' => array_values($scopedItems));
+                    break;
+
+                case 'link-atem-okr':
+                    $_linkAtemId = isset($jsonData['id']) ? (int)$jsonData['id'] : 0;
+                    $_linkKrId = (isset($jsonData['okr_key_result_id']) && $jsonData['okr_key_result_id'] !== null && $jsonData['okr_key_result_id'] !== '')
+                        ? (int)$jsonData['okr_key_result_id']
+                        : null;
+                    if ($_linkAtemId <= 0) {
+                        $response = array('success' => false, 'message' => 'Invalid ATEM id.');
+                        break;
+                    }
+                    $response = linkAtemOkrKeyResult($_linkAtemId, $_linkKrId, $staff_id, $staff_id);
                     break;
 
                 case 'dashboard-stats':

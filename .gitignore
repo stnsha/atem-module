@@ -3,3 +3,4 @@
 /vendor/
 /mail_config.local.php
 /.env
+/logs
