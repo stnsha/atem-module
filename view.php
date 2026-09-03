@@ -220,7 +220,10 @@ foreach ($rows as $a) {
         'level_label'     => ($level && isset($level['level']))       ? $level['level']       : '',
         'system_name'     => ($level && isset($level['system_name'])) ? $level['system_name'] : '',
         'pillar_name'     => ($pillar && isset($pillar['name']))      ? $pillar['name']       : '',
-        'status'          => ($status && isset($status['value']))     ? $status['value']      : '',
+        // A NULL atem_status_id (card saved without a status) is surfaced as
+        // Draft so it still appears when filtering/searching by Draft instead
+        // of falling out of every status bucket.
+        'status'          => ($status && isset($status['value']) && $status['value'] !== '') ? $status['value'] : 'Draft',
         'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
         'closure_date'    => isset($a['closure_date']) ? $a['closure_date'] : '',
