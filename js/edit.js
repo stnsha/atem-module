@@ -430,7 +430,23 @@
         });
         var extendedAllowed = ['Extended', 'Completed with Extension', 'Failed'];
         var canSeeDeleted = (CFG.userGrade >= 4 || CFG.isSuperAdmin);
+        // Whenever an Extended Date is filled in (live in the form, or persisted
+        // on the record), a card may only close as "Completed with Extension" -
+        // which forfeits the incentive. Plain "Completed" / "Completed with
+        // Excellence" must never be offered, regardless of the saved status,
+        // because reaching them on an extended card is the forfeit bypass.
+        // Mirrors the server guard in AtemController::update(). Real SuperAdmin
+        // terminal edits keep the full list.
+        var extDateFilled = !!(
+            ($('tl-ext1') && $('tl-ext1').value) ||
+            (REC.is_extended && REC.extended_date_1)
+        );
         (CFG.statuses || []).forEach(function (s) {
+            if (extDateFilled && !CFG.superadminTerminalEdit
+                && ['Completed', 'Completed with Excellence'].indexOf(s.value) !== -1
+                && String(s.id) !== String(REC.atem_status_id)) {
+                return;
+            }
             if (CFG.superadminTerminalEdit) {
                 if (recStatusVal === 'Suspended') {
                     // SuperAdmin editing a suspended card: only Active, Force
@@ -1447,6 +1463,9 @@
     function saveInline() {
         setError('atem-title-error', ''); setError('atem-level-error', ''); setError('atem-rule-error', ''); setError('atem-save-error', ''); setError('arci-error', '');
         if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return; }
+        // Never autosave with a blank status - a null atem_status_id nulls the
+        // column server-side and lets the card slip past every status guard.
+        if (!$('tl-status') || !$('tl-status').value) { setError('atem-save-error', 'A status is required.'); return; }
         var level = selectedLevel();
         if (level && Number(level.incentive_value) > 0 && !$('atem-rule').value) {
             setError('atem-rule-error', 'Incentive Rule is required for Level 2-4.');
@@ -1487,6 +1506,11 @@
     }
     function saveAtem() {
         setError('atem-file-error', '');
+        if (!$('tl-status') || !$('tl-status').value) {
+            setError('atem-save-error', 'A status is required.');
+            scrollToFirstError();
+            return;
+        }
         if (!validateFinal()) { scrollToFirstError(); return; }
         if (COMPLETION_STATUSES.indexOf(getSelectedStatusValue()) >= 0 && !hasReferenceOutcome()) {
             setError('atem-file-error', 'At least one attachment or reference link must be marked as Reference Outcome before saving as ' + getSelectedStatusValue() + '.');
