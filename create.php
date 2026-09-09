@@ -16,6 +16,9 @@ if (isset($department) && $department !== '') {
         $issuer_department = $dept_row['depart_name'];
     }
 }
+// Issuer field shows the name with the department (from staff.department) in
+// brackets, e.g. "Siti Anasuha (People Management)".
+$issuer_display = $issuer_name . ($issuer_department !== '' ? ' (' . $issuer_department . ')' : '');
 
 // Grade <3 users can't choose ATEM Type (see $_can_choose_atem_type below), so
 // their type is forced from their own department instead: dept 1 is Outlet,
@@ -52,6 +55,39 @@ if ($staff_res) {
     }
 }
 
+// Flat staff list for the ARCI cross-scope name search: typing a name in the
+// staff box before any outlet/department is chosen searches every staff member.
+// dept_ids / outlet_ids come from the comma-separated staff.department /
+// staff.outlet columns; the first id is used as the scope when a name is picked.
+$all_staff_flat = [];
+$asf_sql = "SELECT s.id, s.nama_staff, s.department, s.outlet, p.position_name
+            FROM staff s
+            LEFT JOIN position_rymnet p ON p.id = s.status_rym
+            WHERE s.recycle != 1
+            ORDER BY s.nama_staff";
+$asf_res = mysqli_query($conn, $asf_sql);
+if ($asf_res) {
+    while ($r = mysqli_fetch_assoc($asf_res)) {
+        $d_ids = [];
+        foreach (explode(',', (string) $r['department']) as $d) {
+            $d = (int) trim($d);
+            if ($d > 0) { $d_ids[] = $d; }
+        }
+        $o_ids = [];
+        foreach (explode(',', (string) $r['outlet']) as $o) {
+            $o = (int) trim($o);
+            if ($o > 0) { $o_ids[] = $o; }
+        }
+        $all_staff_flat[] = [
+            'id'         => (int) $r['id'],
+            'name'       => $r['nama_staff'],
+            'position'   => $r['position_name'] ?? '',
+            'dept_ids'   => $d_ids,
+            'outlet_ids' => $o_ids,
+        ];
+    }
+}
+
 // Normalise departments for JS as a list of {id, name}.
 $departments_list = array();
 foreach ($departments as $d_id => $d_name) {
@@ -67,14 +103,14 @@ if ($outlet_res) {
     }
 }
 
-// Outlet Staff(s) picker (outlet staff flow only): department 1 (Outlet) and
-// grade 3 and above. LEFT JOIN so a staff member without a matching
-// position_rymnet row is still included (just with a null position label).
+// Area Manager(s) picker (outlet-type ATEMs only): strictly staff whose
+// position is Area Manager (staff.status_rym = 134) and grade 3 or above.
+// LEFT JOIN keeps the position label available for display.
 $area_managers_list = [];
 $am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
            FROM staff s
            LEFT JOIN position_rymnet p ON p.id = s.status_rym
-           WHERE FIND_IN_SET('1', s.department) AND s.grade >= 3 AND s.recycle != 1
+           WHERE s.status_rym = 134 AND s.grade >= 3 AND s.recycle != 1
            ORDER BY s.nama_staff";
 $am_res = mysqli_query($conn, $am_sql);
 if ($am_res) {
@@ -173,6 +209,7 @@ $atem_config = array(
     ),
     'departments'   => $departments_list,
     'staffByDept'   => $staff_by_dept,
+    'allStaff'      => $all_staff_flat,
     'outlets'       => $outlets_list,
     'areaManagers'  => $area_managers_list,
     'staffByOutlet' => $staff_by_outlet,
@@ -231,15 +268,10 @@ $api_unavailable = empty($lookup_result['success']);
                     <input type="text" class="form-control" id="atem-title" placeholder="Short, searchable title">
                     <div class="atem-form-error" id="atem-title-error"></div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-12">
                     <label class="form-label">Issuer</label>
                     <input type="text" class="form-control" id="atem-issuer"
-                        value="<?php echo htmlspecialchars($issuer_name); ?>" readonly>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Department</label>
-                    <input type="text" class="form-control" id="atem-department"
-                        value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
+                        value="<?php echo htmlspecialchars($issuer_display); ?>" readonly>
                 </div>
                 <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-label-group">
                     <label for="atem-reward-label" class="form-label">Reward</label>
@@ -270,16 +302,16 @@ $api_unavailable = empty($lookup_result['success']);
                     <div class="atem-form-error" id="atem-pillars-error"></div>
                 </div>
                 <div class="col-12 atem-outlet-only atem-hidden" id="atem-am-tag-group">
-                    <label class="form-label">Outlet Staff(s) <span class="atem-req">*</span></label>
+                    <label class="form-label">Area Manager(s) <span class="atem-req">*</span></label>
                     <div class="row g-2">
                         <div class="col-md-6">
                             <div class="atem-outlet-picker" id="atem-am-picker-wrap">
-                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select outlet
-                                    staff(s)...</div>
+                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area
+                                    manager(s)...</div>
                                 <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
                                     <div class="atem-outlet-picker-search-wrap">
                                         <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
-                                            placeholder="Search outlet staff...">
+                                            placeholder="Search area managers...">
                                     </div>
                                     <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
                                 </div>
@@ -288,7 +320,7 @@ $api_unavailable = empty($lookup_result['success']);
                         </div>
                         <div class="col-md-6">
                             <div id="atem-am-tags" class="atem-outlet-tags">
-                                <span class="atem-empty-state">No outlet staff tagged.</span>
+                                <span class="atem-empty-state">No area manager tagged.</span>
                             </div>
                         </div>
                     </div>

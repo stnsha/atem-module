@@ -75,10 +75,10 @@ The browse/statistics scope above is the **list** layer. Two finer layers gate a
 
 | Layer | Rule |
 |---|---|
-| Open a single card (read-only view) | Grade 1: own cards only (issuer or ARCI member). Grades 2–5 and real SuperAdmin: any card. Gate at `edit.php` (`$can_view`). |
+| Open a single card (read-only view) | Issuer and any ARCI member: always, at any grade. Otherwise — grade 4–5 and real SuperAdmin: any card; grade 3: Outlet-type cards company-wide, HQ-type cards only when the issuer dept or an ARCI member dept overlaps the viewer's own dept(s); grade 2: Outlet-dept viewers only when a card outlet overlaps their own outlet(s), all other grade 2 on the same dept-overlap rule as grade 3; grade 1: issuer/ARCI only. Blocked users are redirected to `view.php` with the "no permission" warning. Gate at `edit.php` (`$can_view`); mirrors the list scoping in `api.php` (`list-atems-scoped`). |
 | Edit a card (`mode=edit`) | Issuer, Accountable ARCI member (`role 'A'`), or real SuperAdmin only — for every grade. Enforced solely by the edit backstop in `edit.php` (`$can_edit`); everyone else is downgraded to read server-side. |
 
-So grades 2–5 can open and read any card even though their list/dashboard only shows their own department(s); editing remains issuer/ARCI-only regardless of grade.
+So the single-card view gate now matches the list/dashboard department scoping instead of letting any grade 2+ open any card; editing remains issuer/ARCI-only regardless of grade. `$can_view` reads `$record['staff_dept_id']` (issuer dept), each `arci[].staff_dept_id` / `arci[].outlet_id`, and any `record['outlets'][].outlet_id`; viewer scope comes from `$requester_dept_ids` and the comma-separated `$outlet` session var.
 
 `view.php`'s Action column shows exactly two buttons per row — Edit and Delete. There is no separate View button: the Edit button always links to `edit.php?id=<id>&mode=edit` for every viewer, including those who cannot actually edit — `edit.php`'s `$can_edit` backstop (see above) downgrades unauthorized viewers to a read-only render server-side, so the single button doubles as "open" for read-only users. `js/view.js`'s `buildActionCell()` no longer gates the Edit link on any frontend permission check (the old `canEdit()`/`canUpdateProgress()` helpers were removed as dead code); it only gates the Delete button, via `canDelete()`/`canDeleteSuspended()`.
 
@@ -114,6 +114,35 @@ SuperAdmin (`$atem === 1`) passes all grade-based page guards above via `$_is_su
 - Grades 2–3: can only view or edit target staff whose `department` IDs overlap with their own assigned departments
 - Grade 4+ and SuperAdmin: can edit all staff regardless of department assignment
 - `canEditStaff()` in `js/admin_access.js` enforces this on the frontend by comparing `REQUESTER_DEPT_IDS` against the target staff member's dept IDs
+
+### Outlet ATEM — Area Manager Picker
+
+Outlet-type ATEMs (`create.php` / `edit.php`) carry a required **Area Manager(s)** field (`#atem-am-tag-group`, JS `CFG.areaManagers` / `areaManagerTags`, error id `atem-am-error`). It was previously labelled "Outlet Staff(s)".
+
+**Visibility:** the group has classes `atem-outlet-only atem-hidden`. `setStaffType()` in `js/create.js` / `js/edit.js` unhides all `.atem-outlet-only` only when ATEM Type is **Outlet**; HQ ATEM keeps it hidden. The ATEM Type selector itself only renders when `$_can_choose_atem_type` (`$atem_permission >= 3 || $_is_superadmin`); lower grades are forced onto a type by `$_forced_atem_type` from their department.
+
+**Who populates the picker** (`$area_managers_list` / `$am_sql` in both `create.php` and `edit.php`):
+
+```sql
+SELECT s.id, s.nama_staff, s.outlet, p.position_name
+FROM staff s
+LEFT JOIN position_rymnet p ON p.id = s.status_rym
+WHERE s.status_rym = 134 AND s.grade >= 3 AND s.recycle != 1
+ORDER BY s.nama_staff
+```
+
+`staff.status_rym = 134` is the Area Manager position (same id the Outlet dashboard tab uses in `index.php`). The list is strictly Area Managers — the old filter was `FIND_IN_SET('1', s.department) AND s.grade >= 3` (any grade-3+ Outlet-department staff), which let non-AM staff through. `position_rymnet` is `LEFT JOIN`ed for the display label only; it is not filtered on. `staff.grade` holds 0–5 only (grade 6 does not exist — see the SuperAdmin Flag section).
+
+### Project Team (ARCI) — Staff Picker
+
+The ARCI picker (`#arci-*` in `create.php` / `edit.php`, logic in `js/create.js` / `js/edit.js`) normally requires a Scope first: a radio toggle (`#arci-scope-outlet` / `#arci-scope-department`, Outlet cards only) then an outlet/department in `#arci-dept-select`, which loads `CFG.staffByOutlet[id]` or `CFG.staffByDept[id]` into `#arci-staff-list`. `#arci-staff-search` only filters within that chosen scope.
+
+**Cross-scope name search:** when `#arci-dept-select` is empty and `#arci-staff-search` has text, `renderStaffList()` calls `renderCrossScopeMatches()` instead, listing name matches from **every** outlet and department out of `CFG.allStaff` (flat list, capped at 50 rows, each row shows the staff member's outlet code(s) / department name(s) as a muted hint). `CFG.allStaff` is built server-side in both PHP files (`$all_staff_flat` / `$asf_sql`): `id, name, position, dept_ids[], outlet_ids[]` parsed from the comma-separated `staff.department` / `staff.outlet` columns.
+
+**Clicking a match** (`pickCrossScopeStaff()`):
+- Uses the **first** id only — `outlet_ids[0]` on Outlet scope, `dept_ids[0]` otherwise (matches how `staffByOutlet` / `staffByDept` are keyed).
+- Outlet scope: if `outlet_ids[0]` is not one of the card's tagged outlets (`outletTags`), it is **blocked** with inline red text (`atem-arci-error`) — "…is not in a tagged outlet — add outlet `<code>` to the card first." Nothing is added.
+- Otherwise it sets the Scope radio + `#arci-dept-select`, re-renders the scoped list, and ticks that person's checkbox. The user still picks a **Role** and clicks **Add Selected** — the click never adds the member directly.
 
 ### API Bridge
 

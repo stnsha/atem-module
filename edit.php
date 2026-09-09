@@ -9,12 +9,17 @@ include('header.php');
 
 // header.php bootstrapped $conn and the current staff. Build id -> name maps so
 // we can resolve the FK ids the atem-api returns (it stores ids only).
-$staff_names = array();
-$dept_names  = array();
-$staff_res = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1");
+$staff_names     = array();
+$staff_dept_ids  = array(); // staff id -> first (latest) dept id from staff.department
+$dept_names      = array();
+$staff_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1");
 if ($staff_res) {
     while ($srow = mysqli_fetch_assoc($staff_res)) {
         $staff_names[(int) $srow['id']] = $srow['nama_staff'];
+        foreach (explode(',', (string) $srow['department']) as $_sd) {
+            $_sd = (int) trim($_sd);
+            if ($_sd > 0) { $staff_dept_ids[(int) $srow['id']] = $_sd; break; }
+        }
     }
 }
 $dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
@@ -46,6 +51,39 @@ if ($staff_res2) {
         $staff_by_dept[$dept_id][] = array('id' => (int) $srow['id'], 'name' => $srow['nama_staff']);
     }
 }
+
+// Flat staff list for the ARCI cross-scope name search: typing a name in the
+// staff box before any outlet/department is chosen searches every staff member.
+// dept_ids / outlet_ids come from the comma-separated staff.department /
+// staff.outlet columns; the first id is used as the scope when a name is picked.
+$all_staff_flat = [];
+$asf_sql = "SELECT s.id, s.nama_staff, s.department, s.outlet, p.position_name
+            FROM staff s
+            LEFT JOIN position_rymnet p ON p.id = s.status_rym
+            WHERE s.recycle != 1
+            ORDER BY s.nama_staff";
+$asf_res = mysqli_query($conn, $asf_sql);
+if ($asf_res) {
+    while ($r = mysqli_fetch_assoc($asf_res)) {
+        $d_ids = [];
+        foreach (explode(',', (string) $r['department']) as $d) {
+            $d = (int) trim($d);
+            if ($d > 0) { $d_ids[] = $d; }
+        }
+        $o_ids = [];
+        foreach (explode(',', (string) $r['outlet']) as $o) {
+            $o = (int) trim($o);
+            if ($o > 0) { $o_ids[] = $o; }
+        }
+        $all_staff_flat[] = [
+            'id'         => (int) $r['id'],
+            'name'       => $r['nama_staff'],
+            'position'   => $r['position_name'] ?? '',
+            'dept_ids'   => $d_ids,
+            'outlet_ids' => $o_ids,
+        ];
+    }
+}
 $departments_list = array();
 foreach ($departments as $d_id => $d_name) {
     $departments_list[] = array('id' => $d_id, 'name' => $d_name);
@@ -60,14 +98,14 @@ if ($outlet_res) {
     }
 }
 
-// Outlet Staff(s) picker (outlet-type ATEMs only): department 1 (Outlet) and
-// grade 3 and above. LEFT JOIN so a staff member without a matching
-// position_rymnet row is still included (just with a null position label).
+// Area Manager(s) picker (outlet-type ATEMs only): strictly staff whose
+// position is Area Manager (staff.status_rym = 134) and grade 3 or above.
+// LEFT JOIN keeps the position label available for display.
 $area_managers_list = [];
 $am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
            FROM staff s
            LEFT JOIN position_rymnet p ON p.id = s.status_rym
-           WHERE FIND_IN_SET('1', s.department) AND s.grade >= 3 AND s.recycle != 1
+           WHERE s.status_rym = 134 AND s.grade >= 3 AND s.recycle != 1
            ORDER BY s.nama_staff";
 $am_res = mysqli_query($conn, $am_sql);
 if ($am_res) {
@@ -153,11 +191,17 @@ $api_unavailable = ($record === null);
 // Resolve display names server-side onto the record + its ARCI members.
 $issuer_name = '';
 $issuer_department = '';
+$issuer_display = '';
 if ($record) {
     $iid = isset($record['issuer_staff_id']) ? (int) $record['issuer_staff_id'] : 0;
+    // Department comes from the card's stored atems.staff_dept_id, resolved
+    // against staff_department (via $dept_names), not the issuer's current
+    // staff.department - so it reflects the department at the time of issue.
     $did = isset($record['staff_dept_id']) ? (int) $record['staff_dept_id'] : 0;
     $issuer_name = isset($staff_names[$iid]) ? $staff_names[$iid] : ($iid ? ('Staff #' . $iid) : '');
     $issuer_department = isset($dept_names[$did]) ? $dept_names[$did] : '';
+    // Issuer field shows the name with that department in brackets.
+    $issuer_display = $issuer_name . ($issuer_department !== '' ? ' (' . $issuer_department . ')' : '');
     $is_outlet_type = ((int) (isset($record['atem_type']) ? $record['atem_type'] : 1) === 2);
     $outlet_codes_by_id = [];
     foreach ($outlets_list as $o) {
@@ -171,6 +215,9 @@ if ($record) {
     // department-scoped (an HQ staff tagged C/I, staff_dept_id set), or
     // neither (an auto-added Area Manager, who spans every outlet on the
     // card). HQ-type cards are always department-scoped, unchanged.
+    // Department-scoped members display their CURRENT department (first id in
+    // staff.department), not the atem_arci.staff_dept_id snapshot - so the label
+    // follows staff who have since moved departments.
     if (isset($record['arci']) && is_array($record['arci'])) {
         foreach ($record['arci'] as $k => $m) {
             $sid  = isset($m['staff_id']) ? (int) $m['staff_id'] : 0;
@@ -184,8 +231,9 @@ if ($record) {
                 $record['arci'][$k]['staff_name']      = $area_managers_by_id[$sid]['name'] . ' (' . $area_managers_by_id[$sid]['position'] . ')';
                 $record['arci'][$k]['department_name'] = 'All Outlets';
             } else {
+                $_cur_did = isset($staff_dept_ids[$sid]) ? $staff_dept_ids[$sid] : $mdid;
                 $record['arci'][$k]['staff_name']      = isset($staff_names[$sid]) ? $staff_names[$sid] : ('Staff #' . $sid);
-                $record['arci'][$k]['department_name'] = isset($dept_names[$mdid]) ? $dept_names[$mdid] : '';
+                $record['arci'][$k]['department_name'] = isset($dept_names[$_cur_did]) ? $dept_names[$_cur_did] : '';
             }
         }
     }
@@ -216,8 +264,16 @@ if ($record) {
     }
 }
 
-// Access control (view): grades 2-5 and a real SuperAdmin may open any card.
-// Grade 1 may only open cards where they are the issuer or an ARCI member.
+// Access control (view). The issuer and any Project Team (ARCI) member can open
+// their card at any grade. Otherwise:
+//   - Grade 4-5 and a real SuperAdmin: any card.
+//   - Grade 3: Outlet-type cards company-wide; HQ-type cards only when the
+//     issuer department, or an ARCI member department, overlaps the user's own.
+//   - Grade 2: Outlet-department viewers only when a card outlet overlaps their
+//     own outlet(s); everyone else on the same department-overlap rule as grade 3.
+//   - Grade 1: issuer or ARCI member only.
+// A blocked user is redirected to view.php with the "no permission" warning.
+// This mirrors the list/dashboard scoping in api.php ('list-atems-scoped').
 // Both $atem_permission and $_is_superadmin (header.php) are dev-override aware.
 $is_arci_member  = false;
 $user_arci_roles = array();
@@ -233,10 +289,48 @@ if ($record) {
         }
     }
 
-    $can_view = $_is_superadmin
-        || (int) $atem_permission >= 2
-        || $is_issuer
-        || $is_arci_member;
+    $_view_perm = (int) $atem_permission;
+
+    // Viewer outlet ids (comma-separated staff.outlet, set by lock_adv.php).
+    $_view_user_outlet_ids = array();
+    if (isset($outlet) && $outlet !== '') {
+        foreach (explode(',', (string) $outlet) as $_vop) {
+            $_vop = (int) trim($_vop);
+            if ($_vop > 0) { $_view_user_outlet_ids[] = $_vop; }
+        }
+    }
+
+    // Card scope: issuer department, ARCI member departments, and card outlets
+    // (from ARCI members' outlet_id plus any top-level outlets list).
+    $_card_atem_type   = (int) (isset($record['atem_type']) ? $record['atem_type'] : 1);
+    $_card_issuer_dept = (int) (isset($record['staff_dept_id']) ? $record['staff_dept_id'] : 0);
+    $_card_arci_dept_ids = array();
+    $_card_outlet_ids    = array();
+    if (isset($record['arci']) && is_array($record['arci'])) {
+        foreach ($record['arci'] as $m) {
+            if (!empty($m['staff_dept_id'])) { $_card_arci_dept_ids[] = (int) $m['staff_dept_id']; }
+            if (!empty($m['outlet_id']))     { $_card_outlet_ids[]    = (int) $m['outlet_id']; }
+        }
+    }
+    if (isset($record['outlets']) && is_array($record['outlets'])) {
+        foreach ($record['outlets'] as $o) {
+            if (!empty($o['outlet_id'])) { $_card_outlet_ids[] = (int) $o['outlet_id']; }
+        }
+    }
+
+    $_dept_overlap = in_array($_card_issuer_dept, $requester_dept_ids, true)
+        || (bool) array_intersect($requester_dept_ids, $_card_arci_dept_ids);
+    $_outlet_overlap = (bool) array_intersect($_view_user_outlet_ids, $_card_outlet_ids);
+
+    if ($_is_superadmin || $is_issuer || $is_arci_member || $_view_perm >= 4) {
+        $can_view = true;
+    } elseif ($_view_perm === 3) {
+        $can_view = ($_card_atem_type === 2) ? true : $_dept_overlap;
+    } elseif ($_view_perm === 2) {
+        $can_view = in_array(1, $requester_dept_ids, true) ? $_outlet_overlap : $_dept_overlap;
+    } else {
+        $can_view = false;
+    }
 
     if (!$can_view) {
         $_SESSION['atem_warning'] = 'You do not have permission to view this ATEM card.';
@@ -433,6 +527,7 @@ $atem_config = array(
     'pillars'      => isset($lookups['pillars'])  ? $lookups['pillars']  : array(),
     'departments'  => $departments_list,
     'staffByDept'  => $staff_by_dept,
+    'allStaff'     => $all_staff_flat,
     'outlets'      => $outlets_list,
     'areaManagers' => $area_managers_list,
     'staffByOutlet' => $staff_by_outlet,
@@ -568,15 +663,10 @@ if ($_devIssuerEligible):
                     <input type="text" class="form-control" id="atem-title" placeholder="Short, searchable title">
                     <div class="atem-form-error" id="atem-title-error"></div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-12">
                     <label class="form-label">Issuer</label>
                     <input type="text" class="form-control" id="atem-issuer"
-                        value="<?php echo htmlspecialchars($issuer_name); ?>" readonly>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Department</label>
-                    <input type="text" class="form-control" id="atem-department"
-                        value="<?php echo htmlspecialchars($issuer_department); ?>" readonly>
+                        value="<?php echo htmlspecialchars($issuer_display); ?>" readonly>
                 </div>
                 <div class="col-md-6 atem-outlet-only atem-hidden" id="atem-reward-label-group">
                     <label for="atem-reward-label" class="form-label">Reward</label>
@@ -607,17 +697,17 @@ if ($_devIssuerEligible):
                     <div class="atem-form-error" id="atem-pillars-error"></div>
                 </div>
                 <div class="col-12 atem-outlet-only atem-hidden" id="atem-am-tag-group">
-                    <label class="form-label">Outlet Staff(s) <span class="atem-req">*</span></label>
+                    <label class="form-label">Area Manager(s) <span class="atem-req">*</span></label>
                     <div class="row g-2">
                         <div class="col-md-6">
                             <?php if ($suspended_issuer_edit || (!$is_read && !$issuer_completed_edit)): ?>
                             <div class="atem-outlet-picker" id="atem-am-picker-wrap">
-                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select outlet
-                                    staff(s)...</div>
+                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area
+                                    manager(s)...</div>
                                 <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
                                     <div class="atem-outlet-picker-search-wrap">
                                         <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
-                                            placeholder="Search outlet staff...">
+                                            placeholder="Search area managers...">
                                     </div>
                                     <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
                                 </div>
@@ -627,7 +717,7 @@ if ($_devIssuerEligible):
                         </div>
                         <div class="col-md-6">
                             <div id="atem-am-tags" class="atem-outlet-tags">
-                                <span class="atem-empty-state">No outlet staff tagged.</span>
+                                <span class="atem-empty-state">No area manager tagged.</span>
                             </div>
                         </div>
                     </div>
