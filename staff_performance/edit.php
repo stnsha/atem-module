@@ -118,7 +118,7 @@ $status_colors = array(
     'Completed with Extension'  => '#495057',
     'Extended'                  => '#fd7e14',
     'Failed'                    => '#dc3545',
-    'Overdue'                   => '#fd7e14',
+    'Overdue'                   => '#b45309',
 );
 
 function fmt_date($d) {

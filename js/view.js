@@ -38,7 +38,7 @@
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Completed with Extension': '#495057',
         'Extended': '#fd7e14', 'Failed': '#dc3545',
         'Deleted': '#dc3545', 'Suspended': '#e11d48', 'Force Terminated': '#7c3aed',
-        'Overdue': '#fd7e14'
+        'Overdue': '#b45309'
     };
     function $(id) { return document.getElementById(id); }
 
@@ -471,9 +471,9 @@
     }
 
     // --------------------------------------------------------------- filtering
-    // Active/Draft cards haven't closed yet, so the Year/Month/From-To filters
-    // go by when they started; every other status (Completed family, Extended,
-    // Failed) is bucketed by when it closed - mirrors api.php's
+    // Active/Draft/Overdue cards haven't closed yet, so the Year/Month/From-To
+    // filters go by when they started; every other status (Completed family,
+    // Extended, Failed) is bucketed by when it closed - mirrors api.php's
     // atem_status_period_field()/dashboard-stats convention, so the counts
     // shown here and on the dashboard agree for the same filter selection.
     function periodDateOf(r) {
@@ -481,7 +481,7 @@
         // Force Terminated never get a closure_date either (they're soft-deleted
         // without ever actually closing) - period them by start_date too, or the
         // Year/Month filter would silently exclude every one of them.
-        if (r.status === 'Active' || r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated') {
+        if (r.status === 'Active' || r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated' || r.status === 'Overdue') {
             return r.start_date;
         }
         return r.closure_date;
@@ -521,11 +521,14 @@
                 if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
             }
             if (overdueFilter) {
-                var effectiveDue = ((r.is_extended || r.status === 'Extended') && r.extended_date_1)
-                    ? String(r.extended_date_1).substring(0, 10)
-                    : String(r.end_date || '').substring(0, 10);
-                if (r.status !== 'Active' && r.status !== 'Extended') { return false; }
-                if (!effectiveDue || effectiveDue >= TODAY) { return false; }
+                if (r.status === 'Overdue') {
+                    // real Overdue status (set nightly) always belongs in this list
+                } else if (r.status === 'Active') {
+                    var overdueEnd = String(r.end_date || '').substring(0, 10);
+                    if (!overdueEnd || overdueEnd >= TODAY) { return false; }
+                } else {
+                    return false;
+                }
             }
             if (minLevelId > 0) {
                 var levelNum = parseInt(String(r.level_label || '').replace(/[^0-9]/g, ''), 10) || 0;
@@ -590,11 +593,14 @@
                 if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
             }
             if (overdueFilter) {
-                var effectiveDue = ((r.is_extended || r.status === 'Extended') && r.extended_date_1)
-                    ? String(r.extended_date_1).substring(0, 10)
-                    : String(r.end_date || '').substring(0, 10);
-                if (r.status !== 'Active' && r.status !== 'Extended') { return false; }
-                if (!effectiveDue || effectiveDue >= TODAY) { return false; }
+                if (r.status === 'Overdue') {
+                    // real Overdue status (set nightly) always belongs in this list
+                } else if (r.status === 'Active') {
+                    var overdueEnd = String(r.end_date || '').substring(0, 10);
+                    if (!overdueEnd || overdueEnd >= TODAY) { return false; }
+                } else {
+                    return false;
+                }
             }
             if (startDate && (!r.start_date || String(r.start_date).substring(0, 10) !== startDate)) { return false; }
             if (endDate && (!r.end_date || String(r.end_date).substring(0, 10) !== endDate)) { return false; }
