@@ -547,7 +547,7 @@
         var wrap = $('atem-am-tags');
         if (!wrap) { return; }
         if (!areaManagerTags.length) {
-            wrap.innerHTML = '<span class="atem-empty-state">No outlet staff tagged.</span>';
+            wrap.innerHTML = '<span class="atem-empty-state">No area manager tagged.</span>';
             return;
         }
         var html = '';
@@ -624,7 +624,7 @@
             var label = amLabel(managers[i]);
             html += '<li data-id="' + managers[i].id + '">' + escapeHtml(label) + '</li>';
         }
-        listEl.innerHTML = html || '<div class="atem-outlet-picker-empty">No outlet staff available</div>';
+        listEl.innerHTML = html || '<div class="atem-outlet-picker-empty">No area managers available</div>';
         syncAreaManagerPickerSelection();
 
         function openDropdown() {
@@ -874,15 +874,94 @@
         var term = $('arci-dept-search').value.toLowerCase(), opts = $('arci-dept-select').options;
         for (var i = 0; i < opts.length; i++) { if (opts[i].value === '') { continue; } opts[i].hidden = opts[i].textContent.toLowerCase().indexOf(term) < 0; }
     }
+    // Cross-scope name search: when no outlet/department is chosen yet, typing a
+    // name lists matching staff from every outlet and department. Clicking a
+    // result sets the Scope to that staff's first outlet (Outlet scope) or first
+    // department, then ticks their checkbox; the user still picks a Role and
+    // clicks Add Selected.
+    function renderCrossScopeMatches(listDiv, term) {
+        var all = CFG.allStaff || [];
+        var assigned = assignedStaffIds();
+        var deptById = {}; (CFG.departments || []).forEach(function (d) { deptById[d.id] = d.name; });
+        var outletById = {}; (CFG.outlets || []).forEach(function (o) { outletById[o.id] = o.code; });
+        var rows = '', shown = 0;
+        for (var i = 0; i < all.length && shown < 50; i++) {
+            var s = all[i];
+            if (s.name.toLowerCase().indexOf(term) < 0) { continue; }
+            if (assigned.indexOf(parseInt(s.id, 10)) >= 0) { continue; }
+            var hintParts = [];
+            (s.outlet_ids || []).forEach(function (id) { if (outletById[id]) { hintParts.push(outletById[id]); } });
+            (s.dept_ids || []).forEach(function (id) { if (deptById[id]) { hintParts.push(deptById[id]); } });
+            var hint = !hintParts.length
+                ? 'No scope'
+                : (hintParts.length <= 4 ? hintParts.join(', ')
+                    : hintParts.slice(0, 4).join(', ') + ' +' + (hintParts.length - 4));
+            var label = s.position ? (s.name + ' (' + s.position + ')') : s.name;
+            rows += '<div class="atem-arci-staff-item atem-arci-xscope" data-id="' + parseInt(s.id, 10) + '" role="button" tabindex="0">'
+                  + '<span>' + escapeHtml(label) + '</span>'
+                  + '<span class="atem-arci-xscope-hint">' + escapeHtml(hint) + '</span>'
+                  + '</div>';
+            shown++;
+        }
+        listDiv.innerHTML = rows || '<div class="text-muted" style="font-size:13px;">No matching staff</div>';
+    }
+
+    function pickCrossScopeStaff(staffId) {
+        setError('arci-error', '');
+        var all = CFG.allStaff || [];
+        var s = null;
+        for (var i = 0; i < all.length; i++) {
+            if (parseInt(all[i].id, 10) === parseInt(staffId, 10)) { s = all[i]; break; }
+        }
+        if (!s) { return; }
+        var isOutletCard = (parseInt(REC.atem_type, 10) || 1) === 2;
+
+        if (currentArciScope() === 'outlet') {
+            var oid = (s.outlet_ids && s.outlet_ids.length) ? parseInt(s.outlet_ids[0], 10) : 0;
+            var tagged = false;
+            for (var j = 0; j < outletTags.length; j++) {
+                if (parseInt(outletTags[j].id, 10) === oid) { tagged = true; break; }
+            }
+            if (!oid || !tagged) {
+                var outletById = {}; (CFG.outlets || []).forEach(function (o) { outletById[o.id] = o.code; });
+                var code = outletById[oid] || ('#' + oid);
+                setError('arci-error', s.name + ' is not in a tagged outlet' + (oid ? ' — add outlet ' + code + ' to the card first.' : '.'));
+                return;
+            }
+            if ($('arci-scope-outlet')) { $('arci-scope-outlet').checked = true; }
+            arciScope = 'outlet';
+            populateDepartments();
+            $('arci-dept-select').value = String(oid);
+        } else {
+            var did = (s.dept_ids && s.dept_ids.length) ? parseInt(s.dept_ids[0], 10) : 0;
+            if (!did) { setError('arci-error', s.name + ' has no department assigned.'); return; }
+            if (isOutletCard && $('arci-scope-department')) {
+                $('arci-scope-department').checked = true;
+                arciScope = 'department';
+            }
+            populateDepartments();
+            $('arci-dept-select').value = String(did);
+        }
+
+        renderStaffList();
+        var box = $('arci-staff-list').querySelector('input[type="checkbox"][value="' + parseInt(staffId, 10) + '"]');
+        if (box) { box.checked = true; }
+        else { setError('arci-error', s.name + ' could not be loaded in that scope.'); }
+    }
+
     function renderStaffList() {
         var listDiv = $('arci-staff-list'); if (!listDiv) { return; }
         var deptId = $('arci-dept-select').value;
         var isOutletScope = (currentArciScope() === 'outlet');
-        if (!deptId) { listDiv.innerHTML = '<div class="text-muted" style="font-size:13px;">Select ' + (isOutletScope ? 'an outlet' : 'a department') + ' to load staff</div>'; return; }
+        var term = $('arci-staff-search').value.toLowerCase();
+        if (!deptId) {
+            if (term) { renderCrossScopeMatches(listDiv, term); return; }
+            listDiv.innerHTML = '<div class="text-muted" style="font-size:13px;">Select ' + (isOutletScope ? 'an outlet' : 'a department') + ' to load staff, or type a name to search all staff</div>'; return;
+        }
         var staff = isOutletScope
             ? ((CFG.staffByOutlet && CFG.staffByOutlet[deptId]) ? CFG.staffByOutlet[deptId] : [])
             : ((CFG.staffByDept && CFG.staffByDept[deptId]) ? CFG.staffByDept[deptId] : []);
-        var assigned = assignedStaffIds(), term = $('arci-staff-search').value.toLowerCase(), html = '';
+        var assigned = assignedStaffIds(), html = '';
         for (var i = 0; i < staff.length; i++) {
             if (assigned.indexOf(parseInt(staff[i].id, 10)) >= 0) { continue; }
             if (term && staff[i].name.toLowerCase().indexOf(term) < 0) { continue; }
@@ -1386,7 +1465,7 @@
         var isOutletType = (parseInt(REC.atem_type, 10) || 1) === 2;
         if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return false; }
         if (isOutletType) {
-            if (!areaManagerTags.length) { setError('atem-am-error', 'At least one Outlet Staff is required.'); return false; }
+            if (!areaManagerTags.length) { setError('atem-am-error', 'At least one Area Manager is required.'); return false; }
         } else if (!$('atem-level').value) {
             setError('atem-level-error', 'ATEM Complexity Levelis required.'); return false;
         }
@@ -1996,7 +2075,7 @@
     function applyReadMode() {
         if (!READ) { return; }
         if (quillEditor) { quillEditor.disable(); }
-        ['atem-title', 'atem-issuer', 'atem-department', 'atem-level', 'atem-rule',
+        ['atem-title', 'atem-issuer', 'atem-level', 'atem-rule',
             'atem-pillars', 'atem-reward-label', 'tl-start', 'tl-end',
             'tl-status', 'tl-final-due', 'tl-closure', 'tl-remarks', 'tl-extended', 'tl-ext1',
             'tl-incentive-approve-yes', 'tl-incentive-approve-no',
@@ -2226,6 +2305,20 @@
         if ($('arci-dept-select')) { $('arci-dept-select').addEventListener('change', renderStaffList); }
         if ($('arci-staff-search')) { $('arci-staff-search').addEventListener('keyup', renderStaffList); }
         if ($('arci-add-btn')) { $('arci-add-btn').addEventListener('click', addSelectedMembers); }
+        if ($('arci-staff-list')) {
+            $('arci-staff-list').addEventListener('click', function (e) {
+                var row = e.target.closest ? e.target.closest('.atem-arci-xscope') : null;
+                if (!row) { return; }
+                pickCrossScopeStaff(parseInt(row.getAttribute('data-id'), 10) || 0);
+            });
+            $('arci-staff-list').addEventListener('keydown', function (e) {
+                if (e.key !== 'Enter' && e.key !== ' ') { return; }
+                var row = e.target.closest ? e.target.closest('.atem-arci-xscope') : null;
+                if (!row) { return; }
+                e.preventDefault();
+                pickCrossScopeStaff(parseInt(row.getAttribute('data-id'), 10) || 0);
+            });
+        }
         if ($('arci-scope-outlet')) {
             $('arci-scope-outlet').addEventListener('change', function () {
                 arciScope = 'outlet';

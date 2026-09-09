@@ -1127,6 +1127,9 @@ button {
 .atem-arci-add-grid > div {
   display: flex;
   flex-direction: column;
+  /* Let the grid tracks shrink instead of being blown out by a long,
+     non-wrapping row (e.g. a staff member tagged to dozens of outlets). */
+  min-width: 0;
 }
 
 /* Department list box fills its column down to the Add Selected button. */
@@ -1149,6 +1152,8 @@ button {
        list keeps a steady height and scrolls instead of growing to fit all. */
   height: 240px;
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
   background-color: #fff;
 }
 
@@ -1159,6 +1164,39 @@ button {
   padding: 3px 0;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* Cross-scope name search results: rows are clickable (no checkbox) and carry a
+   right-aligned muted hint showing the staff member's outlet(s) / department(s). */
+.atem-arci-xscope {
+  justify-content: space-between;
+  padding: 5px 6px;
+  border-radius: 4px;
+  min-width: 0;
+}
+
+.atem-arci-xscope:hover,
+.atem-arci-xscope:focus {
+  background-color: #eef4ff;
+  outline: none;
+}
+
+.atem-arci-xscope > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atem-arci-xscope-hint {
+  flex: 0 1 auto;
+  color: #6c757d;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
 }
 
 .atem-arci-grid {
