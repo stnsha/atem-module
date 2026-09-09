@@ -3096,7 +3096,9 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
 
-                        if ($statusVal === 'Active' || $statusVal === 'Extended') {
+                        if ($statusVal === 'Overdue') {
+                            $overdueCount++;
+                        } elseif ($statusVal === 'Active' || $statusVal === 'Extended') {
                             $dueDate = !empty($item['final_due_date'])
                                 ? $item['final_due_date']
                                 : (isset($item['end_date']) ? $item['end_date'] : '');
