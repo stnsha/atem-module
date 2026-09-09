@@ -417,7 +417,8 @@ var STATUS_COLOR = {
     'Completed with Excellence': '#0dcaf0',
     'Completed with Extension': '#495057',
     'Extended': '#fd7e14',
-    'Failed': '#dc3545'
+    'Failed': '#dc3545',
+    'Overdue': '#fd7e14'
 };
 var MONTHS_LABEL = {
     1: 'January',

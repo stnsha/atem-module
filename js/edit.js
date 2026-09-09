@@ -476,6 +476,10 @@
                 if (recStatusVal === 'Extended' && extendedAllowed.indexOf(s.value) === -1) { return; }
                 if (s.value === 'Suspended' && recStatusVal !== 'Suspended') { return; }
                 if (s.value === 'Deleted' && !canSeeDeleted) { return; }
+                // Overdue is system-assigned only (AtemOverdueSweeper flips Active/
+                // Extended cards past their due date automatically) - never a manual
+                // pick, same treatment as Suspended/Deleted above.
+                if (s.value === 'Overdue' && recStatusVal !== 'Overdue') { return; }
             }
             var opt = document.createElement('option');
             opt.value = s.id;

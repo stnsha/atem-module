@@ -37,7 +37,8 @@
         'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Completed with Extension': '#495057',
         'Extended': '#fd7e14', 'Failed': '#dc3545',
-        'Deleted': '#dc3545', 'Suspended': '#e11d48', 'Force Terminated': '#7c3aed'
+        'Deleted': '#dc3545', 'Suspended': '#e11d48', 'Force Terminated': '#7c3aed',
+        'Overdue': '#fd7e14'
     };
     function $(id) { return document.getElementById(id); }
 
@@ -261,7 +262,10 @@
     // ------------------------------------------------- status checkbox dropdown
     // baseId is 'vf-status' (HQ tab) or 'vfo-status' (Outlet tab) - each tab
     // has its own independent multi-select so switching tabs doesn't reset it.
-    var DEFAULT_STATUSES = ['Active', 'Extended', 'Suspended'];
+    // Overdue is included so a card that flips from Active/Extended to Overdue
+    // (see AtemOverdueSweeper in atem-api) doesn't silently drop out of the
+    // default view - it's still "open" work, just past due.
+    var DEFAULT_STATUSES = ['Active', 'Extended', 'Suspended', 'Overdue'];
 
     function buildStatusOptions(baseId, statusValues) {
         var listEl = $(baseId + '-list');
