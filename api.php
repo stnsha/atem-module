@@ -748,6 +748,35 @@ function linkAtemOkrKeyResult($atemId, $okrKeyResultId, $actorId, $staff_id)
  * @param bool $include_deleted Whether to include soft-deleted cards (grade 4+/SA only)
  * @return array Result with the atem rows
  */
+/**
+ * True when the viewer is the issuer or any ARCI member (by staff_id) of the
+ * given ATEM list item. Used by the grade 2-3 list/dashboard scoping so a user's
+ * own cards are always visible regardless of the department snapshot on the card
+ * or their current department - mirrors edit.php's $can_view.
+ *
+ * @param array $item ATEM list item (needs issuer_staff_id and arci[])
+ * @param int $viewerStaffId
+ * @return bool
+ */
+function _atem_viewer_is_own($item, $viewerStaffId)
+{
+    $viewerStaffId = (int) $viewerStaffId;
+    if ($viewerStaffId <= 0) {
+        return false;
+    }
+    if ((int) (isset($item['issuer_staff_id']) ? $item['issuer_staff_id'] : 0) === $viewerStaffId) {
+        return true;
+    }
+    if (isset($item['arci']) && is_array($item['arci'])) {
+        foreach ($item['arci'] as $_m) {
+            if (!empty($_m['staff_id']) && (int) $_m['staff_id'] === $viewerStaffId) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 function getAtemList($staff_id, $include_deleted = false)
 {
     $endpoint = $include_deleted ? 'atem?include_deleted=1' : 'atem';
@@ -2562,6 +2591,10 @@ if (!defined('API_JWT_INCLUDED')) {
                     } elseif ($_scopedPerm === 2 && in_array(1, $_scopedUserDeptIds, true)) {
                         $_scopedFiltered = array();
                         foreach ($scopedItems as $_sItem) {
+                            if (_atem_viewer_is_own($_sItem, $_scopedUserStaff)) {
+                                $_scopedFiltered[] = $_sItem;
+                                continue;
+                            }
                             $_sItemOutletIds = array();
                             if (isset($_sItem['outlets']) && is_array($_sItem['outlets'])) {
                                 foreach ($_sItem['outlets'] as $_so) {
@@ -2578,6 +2611,10 @@ if (!defined('API_JWT_INCLUDED')) {
                         // HQ-type cards stay scoped to own department(s).
                         $_scopedFiltered = array();
                         foreach ($scopedItems as $_sItem) {
+                            if (_atem_viewer_is_own($_sItem, $_scopedUserStaff)) {
+                                $_scopedFiltered[] = $_sItem;
+                                continue;
+                            }
                             $_sItemAtemType = isset($_sItem['atem_type']) ? (int)$_sItem['atem_type'] : 1;
                             if ($_sItemAtemType === 2) {
                                 $_scopedFiltered[] = $_sItem;
@@ -2598,6 +2635,10 @@ if (!defined('API_JWT_INCLUDED')) {
                     } elseif ($_scopedPerm === 2) {
                         $_scopedFiltered = array();
                         foreach ($scopedItems as $_sItem) {
+                            if (_atem_viewer_is_own($_sItem, $_scopedUserStaff)) {
+                                $_scopedFiltered[] = $_sItem;
+                                continue;
+                            }
                             $_sItemDept  = isset($_sItem['staff_dept_id']) ? (int)$_sItem['staff_dept_id'] : 0;
                             $_sArciDepts = array();
                             if (isset($_sItem['arci']) && is_array($_sItem['arci'])) {
@@ -2710,6 +2751,10 @@ if (!defined('API_JWT_INCLUDED')) {
                         // show every outlet's cards.
                         $roleFiltered = array();
                         foreach ($items as $_item) {
+                            if (_atem_viewer_is_own($_item, $_userStaff)) {
+                                $roleFiltered[] = $_item;
+                                continue;
+                            }
                             $_itemOutletIds = array();
                             if (isset($_item['outlets']) && is_array($_item['outlets'])) {
                                 foreach ($_item['outlets'] as $_o) {
@@ -2727,6 +2772,10 @@ if (!defined('API_JWT_INCLUDED')) {
                         // same rule as grade 2 below.
                         $roleFiltered = array();
                         foreach ($items as $_item) {
+                            if (_atem_viewer_is_own($_item, $_userStaff)) {
+                                $roleFiltered[] = $_item;
+                                continue;
+                            }
                             $_itemAtemType = isset($_item['atem_type']) ? (int)$_item['atem_type'] : 1;
                             if ($_itemAtemType === 2) {
                                 $roleFiltered[] = $_item;
@@ -2749,6 +2798,10 @@ if (!defined('API_JWT_INCLUDED')) {
                         // member belongs to ANY of the user's departments.
                         $roleFiltered = array();
                         foreach ($items as $_item) {
+                            if (_atem_viewer_is_own($_item, $_userStaff)) {
+                                $roleFiltered[] = $_item;
+                                continue;
+                            }
                             $_itemDept  = isset($_item['staff_dept_id']) ? (int)$_item['staff_dept_id'] : 0;
                             $_arciDepts = array();
                             if (isset($_item['arci']) && is_array($_item['arci'])) {

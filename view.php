@@ -275,6 +275,13 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
             }
             continue;
         }
+        // The viewer's own cards (issuer or any ARCI role) are always shown,
+        // regardless of outlet/department scope - matches edit.php's $can_view.
+        if ($r['issuer_staff_id'] === (int)$staff_id
+                || in_array((int)$staff_id, $r['arci_staff_ids'])) {
+            $filtered[] = $r;
+            continue;
+        }
         if (array_intersect($user_outlet_ids, $row_outlet_ids[$idx])) {
             $filtered[] = $r;
         }
@@ -290,6 +297,12 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
             if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
                 $filtered[] = $r;
             }
+            continue;
+        }
+        // The viewer's own cards (issuer or any ARCI role) are always shown.
+        if ($r['issuer_staff_id'] === (int)$staff_id
+                || in_array((int)$staff_id, $r['arci_staff_ids'])) {
+            $filtered[] = $r;
             continue;
         }
         if ($r['atem_type'] === 2) {
@@ -312,6 +325,13 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
             if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
                 $filtered[] = $r;
             }
+            continue;
+        }
+        // The viewer's own cards (issuer or any ARCI role) are always shown,
+        // regardless of department scope - matches edit.php's $can_view.
+        if ($r['issuer_staff_id'] === (int)$staff_id
+                || in_array((int)$staff_id, $r['arci_staff_ids'])) {
+            $filtered[] = $r;
             continue;
         }
         if (in_array($r['department_id'], $user_dept_ids)

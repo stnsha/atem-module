@@ -66,10 +66,12 @@ All SuperAdmin feature gates check `$_is_superadmin` (set by `header.php`) or `$
 | Grade | Card / statistics scope |
 |---|---|
 | 1 | Own cards only — issuer or ARCI member |
-| 2, 3 | Own department(s) — issuer dept or any ARCI member dept overlaps the user's departments |
+| 2, 3 | Own cards (issuer or ARCI member by `staff_id`, always) **plus** department scope: issuer dept or any ARCI member dept overlaps the user's departments. Grade 3 also sees every Outlet-type card. |
 | 4, 5, SuperAdmin | All departments |
 
-This scoping is enforced server-side in `view.php` (card list) and the `dashboard-stats` handler in `api.php` (dashboard), and reflected in their department filter dropdowns (`view.php`, `index.php`). It is independent of the Access Control page, where grades 3–5 manage staff across all departments.
+The "own cards" clause for grades 2–3 is checked by `staff_id` against `issuer_staff_id` / `arci[].staff_id` — it ignores the `atem_arci.staff_dept_id` snapshot and the user's current department, so an issuer/ARCI member still sees their card after changing departments (`_atem_viewer_is_own()` in `api.php`; inline in `view.php`). This mirrors `edit.php`'s `$can_view`.
+
+This scoping is enforced server-side in `view.php` (card list), the `dashboard-stats` handler in `api.php` (dashboard), and `list-atems-scoped` in `api.php` (OKR Link-ATEM picker), and reflected in the department filter dropdowns (`view.php`, `index.php`). It is independent of the Access Control page, where grades 3–5 manage staff across all departments.
 
 The browse/statistics scope above is the **list** layer. Two finer layers gate an individual card (both enforced in `edit.php`, dev-override aware via `$atem_permission` / `$_is_superadmin`):
 
