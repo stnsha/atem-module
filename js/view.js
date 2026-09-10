@@ -27,7 +27,6 @@
 
     var TODAY           = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
     var presetClosed    = false;
-    var overdueFilter   = false;
     var minLevelId      = 0;
     var mineFilter      = false;
 
@@ -37,8 +36,7 @@
         'Draft': '#6c757d', 'Active': '#0d6efd',
         'Completed': '#198754', 'Completed with Excellence': '#0dcaf0', 'Completed with Extension': '#495057',
         'Extended': '#fd7e14', 'Failed': '#dc3545',
-        'Deleted': '#dc3545', 'Suspended': '#e11d48', 'Force Terminated': '#7c3aed',
-        'Overdue': '#b45309'
+        'Deleted': '#dc3545', 'Suspended': '#e11d48', 'Force Terminated': '#7c3aed'
     };
     function $(id) { return document.getElementById(id); }
 
@@ -113,11 +111,11 @@
         buildStatusOptions('vf-status', statuses);
         buildStatusOptions('vfo-status', statuses);
         buildStatusDropdown('vf-status', 'vf-year', function () {
-            presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false;
+            presetClosed = false; minLevelId = 0; mineFilter = false;
             tabState.hq.page = 1; renderTable('hq', hqRows);
         });
         buildStatusDropdown('vfo-status', 'vfo-year', function () {
-            presetClosed = false; overdueFilter = false; mineFilter = false;
+            presetClosed = false; mineFilter = false;
             tabState.outlet.page = 1; renderTable('outlet', outletRows);
         });
 
@@ -262,10 +260,7 @@
     // ------------------------------------------------- status checkbox dropdown
     // baseId is 'vf-status' (HQ tab) or 'vfo-status' (Outlet tab) - each tab
     // has its own independent multi-select so switching tabs doesn't reset it.
-    // Overdue is included so a card that flips from Active/Extended to Overdue
-    // (see AtemOverdueSweeper in atem-api) doesn't silently drop out of the
-    // default view - it's still "open" work, just past due.
-    var DEFAULT_STATUSES = ['Active', 'Extended', 'Suspended', 'Overdue'];
+    var DEFAULT_STATUSES = ['Active', 'Extended', 'Suspended'];
 
     function buildStatusOptions(baseId, statusValues) {
         var listEl = $(baseId + '-list');
@@ -471,7 +466,7 @@
     }
 
     // --------------------------------------------------------------- filtering
-    // Active/Draft/Overdue cards haven't closed yet, so the Year/Month/From-To
+    // Active/Draft cards haven't closed yet, so the Year/Month/From-To
     // filters go by when they started; every other status (Completed family,
     // Extended, Failed) is bucketed by when it closed - mirrors api.php's
     // atem_status_period_field()/dashboard-stats convention, so the counts
@@ -481,10 +476,19 @@
         // Force Terminated never get a closure_date either (they're soft-deleted
         // without ever actually closing) - period them by start_date too, or the
         // Year/Month filter would silently exclude every one of them.
-        if (r.status === 'Active' || r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated' || r.status === 'Overdue') {
+        if (r.status === 'Active' || r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated') {
             return r.start_date;
         }
         return r.closure_date;
+    }
+
+    // Overdue is derived, not a status: an Active or Extended card whose
+    // final_due_date (the end date, or the extension date once extended) is
+    // already before today. Mirrors the dashboard-stats overdue_count in api.php.
+    function isRowOverdue(r) {
+        if (r.status !== 'Active' && r.status !== 'Extended') { return false; }
+        var due = String(r.final_due_date || '').substring(0, 10);
+        return due !== '' && due < TODAY;
     }
 
     function applyHqFilters(sourceRows) {
@@ -503,11 +507,16 @@
         var term = $('vf-search').value.toLowerCase().trim();
         var issuerValEl = $('vf-issuer-value');
         var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
+        var overdueOnly = $('vf-overdue') && $('vf-overdue').checked;
 
         return sourceRows.filter(function (r) {
             var pDate = periodDateOf(r);
-            if (year  && (!pDate || parseInt(pDate.substring(0, 4), 10) !== year))  { return false; }
-            if (month && (!pDate || parseInt(pDate.substring(5, 7), 10) !== month)) { return false; }
+            // Only exclude on period when the row actually has a period date.
+            // A dateless row (e.g. Extended with no closure_date yet) is kept,
+            // mirroring api.php's dashboard-stats "if ($periodDate && ...)" rule
+            // so the filtered list and the dashboard counts agree.
+            if (year  && pDate && parseInt(pDate.substring(0, 4), 10) !== year)  { return false; }
+            if (month && pDate && parseInt(pDate.substring(5, 7), 10) !== month) { return false; }
             if (issuer && r.issuer_staff_id !== issuer && (!r.arci_staff_ids || r.arci_staff_ids.indexOf(issuer) === -1)) { return false; }
             if (level && r.level_label !== level) { return false; }
             if (dept) {
@@ -520,16 +529,7 @@
             if (presetClosed) {
                 if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
             }
-            if (overdueFilter) {
-                if (r.status === 'Overdue') {
-                    // real Overdue status (set nightly) always belongs in this list
-                } else if (r.status === 'Active') {
-                    var overdueEnd = String(r.end_date || '').substring(0, 10);
-                    if (!overdueEnd || overdueEnd >= TODAY) { return false; }
-                } else {
-                    return false;
-                }
-            }
+            if (overdueOnly && !isRowOverdue(r)) { return false; }
             if (minLevelId > 0) {
                 var levelNum = parseInt(String(r.level_label || '').replace(/[^0-9]/g, ''), 10) || 0;
                 if (levelNum < minLevelId) { return false; }
@@ -577,11 +577,16 @@
             var match = (CFG.outlets || []).filter(function (o) { return o.id === outletId; })[0];
             outletCode = match ? match.code : '';
         }
+        var overdueOnly = $('vfo-overdue') && $('vfo-overdue').checked;
 
         return sourceRows.filter(function (r) {
             var pDate = periodDateOf(r);
-            if (year  && (!pDate || parseInt(pDate.substring(0, 4), 10) !== year))  { return false; }
-            if (month && (!pDate || parseInt(pDate.substring(5, 7), 10) !== month)) { return false; }
+            // Only exclude on period when the row actually has a period date.
+            // A dateless row (e.g. Extended with no closure_date yet) is kept,
+            // mirroring api.php's dashboard-stats "if ($periodDate && ...)" rule
+            // so the filtered list and the dashboard counts agree.
+            if (year  && pDate && parseInt(pDate.substring(0, 4), 10) !== year)  { return false; }
+            if (month && pDate && parseInt(pDate.substring(5, 7), 10) !== month) { return false; }
             if (issuer && r.issuer_staff_id !== issuer && (!r.arci_staff_ids || r.arci_staff_ids.indexOf(issuer) === -1)) { return false; }
             if (statuses.length === 0) { return false; }
             if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
@@ -592,16 +597,7 @@
             if (presetClosed) {
                 if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
             }
-            if (overdueFilter) {
-                if (r.status === 'Overdue') {
-                    // real Overdue status (set nightly) always belongs in this list
-                } else if (r.status === 'Active') {
-                    var overdueEnd = String(r.end_date || '').substring(0, 10);
-                    if (!overdueEnd || overdueEnd >= TODAY) { return false; }
-                } else {
-                    return false;
-                }
-            }
+            if (overdueOnly && !isRowOverdue(r)) { return false; }
             if (startDate && (!r.start_date || String(r.start_date).substring(0, 10) !== startDate)) { return false; }
             if (endDate && (!r.end_date || String(r.end_date).substring(0, 10) !== endDate)) { return false; }
             if (closureFrom && (!r.closure_date || String(r.closure_date).substring(0, 10) < closureFrom)) { return false; }
@@ -628,22 +624,14 @@
         return (g === undefined) ? 2 : g;
     }
 
-    function effectiveSortDate(r) {
-        if ((r.is_extended || r.status === 'Extended') && r.extended_date_1) {
-            return String(r.extended_date_1).substring(0, 10);
-        }
-        return String(r.end_date || '');
-    }
-
     function sortRows(list, sortCol, sortDir) {
         if (sortCol === null) {
+            // Default order: Suspended group first (STATUS_SORT_GROUP), then
+            // every other row newest ATEM first (id descending).
             return list.slice().sort(function (a, b) {
                 var ga = statusGroup(a.status), gb = statusGroup(b.status);
                 if (ga !== gb) { return ga - gb; }
-                var da = effectiveSortDate(a), db = effectiveSortDate(b);
-                if (da < db) { return -1; }
-                if (da > db) { return 1; }
-                return 0;
+                return (Number(b.id) || 0) - (Number(a.id) || 0);
             });
         }
         return list.slice().sort(function (a, b) {
@@ -762,6 +750,10 @@
     function buildHqRowHtml(r) {
         var levelCell = r.level_label ? pill(shortLevelLabel(r.level_label), LEVEL_COLOR[r.level_label] || '#6c757d', r.level_label + (r.system_name ? ' - ' + r.system_name : '')) : '-';
         var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
+        if (isRowOverdue(r)) {
+            statusCell = '<span style="display:inline-flex;flex-direction:column;align-items:center;">' + statusCell
+                + '<span style="color:#dc3545;font-style:italic;font-size:11px;margin-top:3px;">Overdue</span></span>';
+        }
         var arciCell = '';
         if (r.user_arci_roles && r.user_arci_roles.length > 0) {
             for (var ri = 0; ri < r.user_arci_roles.length; ri++) {
@@ -787,6 +779,10 @@
 
     function buildOutletRowHtml(r) {
         var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
+        if (isRowOverdue(r)) {
+            statusCell = '<span style="display:inline-flex;flex-direction:column;align-items:center;">' + statusCell
+                + '<span style="color:#dc3545;font-style:italic;font-size:11px;margin-top:3px;">Overdue</span></span>';
+        }
         var pillarCell = r.pillar_name ? pill(r.pillar_name, '#0A5AA8') : '-';
         return '<tr' + rowStyleFor(r) + '>'
             + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
@@ -873,7 +869,7 @@
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
-                    presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false;
+                    presetClosed = false; minLevelId = 0; mineFilter = false;
                     tabState.hq.page = 1;
                     renderTable('hq', hqRows);
                 });
@@ -883,13 +879,20 @@
             tabState.hq.page = 1;
             renderTable('hq', hqRows);
         });
+        if ($('vf-overdue')) {
+            $('vf-overdue').addEventListener('change', function () {
+                tabState.hq.page = 1;
+                renderTable('hq', hqRows);
+            });
+        }
         $('vf-reset').addEventListener('click', function () {
             ['vf-year', 'vf-level', 'vf-dept', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
+            if ($('vf-overdue')) { $('vf-overdue').checked = false; }
             resetS2Dropdown('vf-issuer', 'All staff');
             resetStatusDropdown('vf-status');
             resetRoleDropdown('vf-role');
-            presetClosed = false; overdueFilter = false; minLevelId = 0; mineFilter = false;
+            presetClosed = false; minLevelId = 0; mineFilter = false;
             tabState.hq.page = 1;
             renderTable('hq', hqRows);
         });
@@ -899,7 +902,7 @@
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
-                    presetClosed = false; overdueFilter = false; mineFilter = false;
+                    presetClosed = false; mineFilter = false;
                     tabState.outlet.page = 1;
                     renderTable('outlet', outletRows);
                 });
@@ -909,14 +912,21 @@
             tabState.outlet.page = 1;
             renderTable('outlet', outletRows);
         });
+        if ($('vfo-overdue')) {
+            $('vfo-overdue').addEventListener('change', function () {
+                tabState.outlet.page = 1;
+                renderTable('outlet', outletRows);
+            });
+        }
         $('vfo-reset').addEventListener('click', function () {
             ['vfo-year', 'vfo-region', 'vfo-start-date', 'vfo-end-date', 'vfo-closure-from', 'vfo-closure-to', 'vfo-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl2 = $('vfo-month'); if (monthEl2) { monthEl2.value = '0'; }
+            if ($('vfo-overdue')) { $('vfo-overdue').checked = false; }
             resetS2Dropdown('vfo-issuer', 'All staff');
             resetS2Dropdown('vfo-outlet', 'All outlets');
             resetStatusDropdown('vfo-status');
             resetRoleDropdown('vfo-role');
-            presetClosed = false; overdueFilter = false; mineFilter = false;
+            presetClosed = false; mineFilter = false;
             tabState.outlet.page = 1;
             renderTable('outlet', outletRows);
         });
@@ -1127,9 +1137,12 @@
         if (params.get('from'))  { var fr = $(_tabPrefix + '-from'); if (fr) { fr.value = params.get('from'); } }
         if (params.get('to'))    { var to = $(_tabPrefix + '-to');   if (to) { to.value = params.get('to'); } }
         if (params.get('preset')        === 'closed') { presetClosed  = true; }
-        if (params.get('overdue')       === '1')      { overdueFilter = true; }
         if (params.get('min_level_id'))               { minLevelId = parseInt(params.get('min_level_id'), 10) || 0; }
         if (params.get('mine')          === '1')      { mineFilter = true; }
+        if (params.get('overdue')       === '1') {
+            var ovEl = $(_tabPrefix + '-overdue');
+            if (ovEl) { ovEl.checked = true; }
+        }
         if (params.get('issuer') === 'me' && CFG.staffId) {
             var ivEl = $(_tabPrefix + '-issuer-value');
             var ibEl = $(_tabPrefix + '-issuer-btn');

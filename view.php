@@ -226,6 +226,7 @@ foreach ($rows as $a) {
         'status'          => ($status && isset($status['value']) && $status['value'] !== '') ? $status['value'] : 'Draft',
         'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
         'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
+        'final_due_date'  => isset($a['final_due_date']) ? $a['final_due_date'] : '',
         'closure_date'    => isset($a['closure_date']) ? $a['closure_date'] : '',
         'extended_date_1' => isset($a['extended_date_1']) ? $a['extended_date_1'] : '',
         'issuer_staff_id' => $issuer_id,
@@ -517,6 +518,10 @@ $view_config = array(
                                 <ul class="vf-s2-list" id="vf-status-list" style="padding:4px 0;"></ul>
                             </div>
                         </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="vf-overdue">
+                            <label class="form-check-label" for="vf-overdue">Overdue</label>
+                        </div>
                     </div>
                 </div>
 
@@ -659,6 +664,10 @@ $view_config = array(
                             <div class="vf-s2-dropdown" id="vfo-status-dropdown">
                                 <ul class="vf-s2-list" id="vfo-status-list" style="padding:4px 0;"></ul>
                             </div>
+                        </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="vfo-overdue">
+                            <label class="form-check-label" for="vfo-overdue">Overdue</label>
                         </div>
                     </div>
                 </div>

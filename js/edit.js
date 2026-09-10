@@ -305,7 +305,16 @@
         }
         _lastCalcIncentive = money(a + r);
         var _isExtended = !!($('tl-extended') && $('tl-extended').checked && $('tl-ext1') && $('tl-ext1').value);
-        var _noIncentive = (_isExtended && !READ && IS_ISSUER) && !!($('tl-incentive-approve-no') && $('tl-incentive-approve-no').checked);
+        // A card sitting at (or being saved as) Extended / Completed with
+        // Extension forfeits the incentive in full - mirrors
+        // AtemController::update() zeroing a/r/total for those statuses.
+        var _selStatusVal = '';
+        (CFG.statuses || []).forEach(function (s) {
+            if ($('tl-status') && String(s.id) === String($('tl-status').value)) { _selStatusVal = s.value; }
+        });
+        var _forfeitStatus = (_selStatusVal === 'Extended' || _selStatusVal === 'Completed with Extension');
+        var _noIncentive = _forfeitStatus
+            || ((_isExtended && !READ && IS_ISSUER) && !!($('tl-incentive-approve-no') && $('tl-incentive-approve-no').checked));
         $('inc-base').textContent  = _noIncentive ? money(0) : money(base);
         $('inc-a').textContent     = _noIncentive ? money(0) : money(a);
         $('inc-r').textContent     = _noIncentive ? money(0) : money(code === 'rule 1' ? rDisplay : r);
@@ -325,6 +334,7 @@
         if (!level) { note.textContent = 'Select an ATEM Complexity Leveland rule to calculate incentive.'; }
         else if (base === 0) { note.textContent = 'Level 1 carries no incentive payout.'; }
         else if (!rule) { note.textContent = 'Select an incentive rule (required for Level 2-4).'; }
+        else if (_forfeitStatus) { note.textContent = 'Incentive forfeited - this ATEM needed an extension.'; }
         else { note.textContent = 'Projected amounts. Claimable only on a completed closure.'; }
         syncIncentiveApproval();
     }
@@ -476,10 +486,6 @@
                 if (recStatusVal === 'Extended' && extendedAllowed.indexOf(s.value) === -1) { return; }
                 if (s.value === 'Suspended' && recStatusVal !== 'Suspended') { return; }
                 if (s.value === 'Deleted' && !canSeeDeleted) { return; }
-                // Overdue is system-assigned only (AtemOverdueSweeper flips Active/
-                // Extended cards past their due date automatically) - never a manual
-                // pick, same treatment as Suspended/Deleted above.
-                if (s.value === 'Overdue' && recStatusVal !== 'Overdue') { return; }
             }
             var opt = document.createElement('option');
             opt.value = s.id;
@@ -1503,6 +1509,24 @@
         if (IS_ISSUER && MUST_CHANGE.indexOf(originalStatusValue) >= 0 && String($('tl-status').value) === String(REC.atem_status_id)) {
             setError('tl-status-error', 'The current status is "' + originalStatusValue + '". Please change the status before saving.');
             return false;
+        }
+        // An Active card that finished on time closes as plain "Completed" /
+        // "Completed with Excellence" - closure date within [Start, End]
+        // inclusive. A late finish (closure after End Date) must be saved as
+        // "Completed with Extension". Mirrors AtemController::update().
+        if (originalStatusValue === 'Active' && !(REC && REC.is_extended)
+            && (_tlStatusVal === 'Completed' || _tlStatusVal === 'Completed with Excellence')) {
+            var _clDate = $('tl-closure').value;
+            var _stDate = $('tl-start').value;
+            var _enDate = $('tl-end').value;
+            if (_clDate && _enDate && _clDate > _enDate) {
+                setError('tl-status-error', 'This ATEM was completed after its End Date (' + _enDate + '). Please select "Completed with Extension" instead.');
+                return false;
+            }
+            if (_clDate && _stDate && _clDate < _stDate) {
+                setError('tl-closure-error', 'The closure date cannot be earlier than the Start Date (' + _stDate + ').');
+                return false;
+            }
         }
         // Non-issuer SuperAdmin changing status on a card must explain why.
         var isNonIssuerSuperAdminStatusEdit = !!CFG.isSuperAdmin && !IS_ISSUER

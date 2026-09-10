@@ -1971,13 +1971,13 @@ function atem_status_bucket($status)
 }
 
 // Mirrors CalculateBonusEligibility.php's date basis: completed-family/extended/
-// failed are matched by closure_date, active by start_date. Overdue/Suspended/
-// Force Terminated also key off start_date - they have not actually closed, so
-// they never have a closure_date (mirrors js/view.js's periodDateOf(), which
-// uses the same start_date fallback for these statuses).
+// failed are matched by closure_date, active by start_date. Suspended/Force
+// Terminated also key off start_date - they have not actually closed, so they
+// never have a closure_date (mirrors js/view.js's periodDateOf(), which uses the
+// same start_date fallback for these statuses).
 function atem_status_period_field($status)
 {
-    return in_array($status, array('Active', 'Overdue', 'Suspended', 'Force Terminated'), true) ? 'start_date' : 'closure_date';
+    return in_array($status, array('Active', 'Suspended', 'Force Terminated'), true) ? 'start_date' : 'closure_date';
 }
 
 // Live, per-status equivalent of the old atem_bonus_eligibilities snapshot table.
@@ -2880,8 +2880,8 @@ if (!defined('API_JWT_INCLUDED')) {
                     $total = 0;
                     $incentiveTotal = 0.0;
                     $overdueCount = 0;
+                    $todayStr = date('Y-m-d');
                     $byDept = array();
-                    $today = date('Y-m-d');
 
                     // Suspended/Force Terminated live outside every other aggregate
                     // above (they are soft-deleted, like genuinely-Deleted cards) but
@@ -3008,13 +3008,13 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($statusVal === 'Deleted' || !empty($item['deleted_at'])) { continue; }
 
                         if ($filterYear > 0 || $filterMonth > 0 || !empty($filterQuarter)) {
-                            // Active/Draft/Overdue cards haven't closed yet, so the period
+                            // Active/Draft cards haven't closed yet, so the period
                             // filter goes by when they started; every other status
                             // (Completed family, Extended, Failed) is bucketed by when it
                             // closed — mirrors atem_status_period_field()'s convention
                             // already used by Staff Performance, and js/view.js
                             // periodDateOf(), instead of start_date for everything.
-                            $periodField = ($statusVal === 'Active' || $statusVal === 'Draft' || $statusVal === 'Overdue') ? 'start_date' : 'closure_date';
+                            $periodField = ($statusVal === 'Active' || $statusVal === 'Draft') ? 'start_date' : 'closure_date';
                             $periodDate  = isset($item[$periodField]) ? $item[$periodField] : '';
                             if ($periodDate && !atem_date_in_period($periodDate, $periodMonths, $filterYear)) {
                                 continue;
@@ -3150,14 +3150,13 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
 
-                        // Overdue = the real status (set nightly by atem:mark-overdue),
-                        // plus Active cards whose end_date has already passed but the
-                        // nightly job has not run yet. Extended cards are never overdue.
-                        if ($statusVal === 'Overdue') {
-                            $overdueCount++;
-                        } elseif ($statusVal === 'Active') {
-                            $endDate = isset($item['end_date']) ? substr((string)$item['end_date'], 0, 10) : '';
-                            if ($endDate !== '' && $endDate < $today) {
+                        // Overdue is a derived state, not a status: an Active or
+                        // Extended card whose final_due_date (end_date, or the
+                        // extension date once extended) is already in the past.
+                        // Closed/Draft/Suspended/Force Terminated cards never count.
+                        if ($statusVal === 'Active' || $statusVal === 'Extended') {
+                            $finalDue = isset($item['final_due_date']) ? substr((string)$item['final_due_date'], 0, 10) : '';
+                            if ($finalDue !== '' && $finalDue < $todayStr) {
                                 $overdueCount++;
                             }
                         }
