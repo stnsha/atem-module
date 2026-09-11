@@ -181,12 +181,32 @@ if (!empty($lr['success']) && isset($lr['data'])) {
 $atem_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $record = null;
 if ($atem_id > 0) {
-    $get = getAtem($atem_id, $staff_id);
-    if (!empty($get['success']) && isset($get['data'])) {
-        $record = $get['data'];
+    // Transient cold-start/timeout blips on the atem-api side are common on
+    // first hit; a couple of quick in-request retries clear most of them
+    // without needing the user to notice and manually reload.
+    for ($_atem_fetch_attempt = 1; $_atem_fetch_attempt <= 3; $_atem_fetch_attempt++) {
+        $get = getAtem($atem_id, $staff_id);
+        if (!empty($get['success']) && isset($get['data'])) {
+            $record = $get['data'];
+            break;
+        }
+        if ($_atem_fetch_attempt < 3) { usleep(400000); }
     }
 }
 $api_unavailable = ($record === null);
+
+// Still failed after in-request retries: fall back to a full page reload
+// (capped) instead of rendering a permanently locked form. This covers
+// longer cold starts (atem-api still booting) that outlast the quick
+// in-request retries above.
+$_load_retry = isset($_GET['_lr']) ? max(0, (int) $_GET['_lr']) : 0;
+$_load_retry_max = 4;
+$_load_retry_url = null;
+if ($api_unavailable && $atem_id > 0 && $_load_retry < $_load_retry_max) {
+    $_retry_qs = $_GET;
+    $_retry_qs['_lr'] = $_load_retry + 1;
+    $_load_retry_url = ATEM_BASE . 'edit.php?' . http_build_query($_retry_qs);
+}
 
 // Resolve display names server-side onto the record + its ARCI members.
 $issuer_name = '';
@@ -586,9 +606,16 @@ if ($_devIssuerEligible):
 </div>
 <?php endif; ?>
 
-<?php if ($api_unavailable): ?>
+<?php if ($api_unavailable && $_load_retry_url): ?>
+<div id="atem-load-overlay" style="position:fixed;inset:0;background:rgba(248,249,250,.96);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+    <span class="spinner-border text-primary" role="status" aria-hidden="true"></span>
+    <div style="font-size:13px;color:#555;">Loading ATEM&hellip; (attempt <?php echo $_load_retry + 1; ?>/<?php echo $_load_retry_max; ?>)</div>
+</div>
+<script>setTimeout(function () { window.location.href = <?php echo json_encode($_load_retry_url); ?>; }, 1200);</script>
+<?php elseif ($api_unavailable): ?>
 <div class="alert alert-warning" role="alert" style="font-size:13px;">
-    The ATEM could not be loaded. Make sure a valid id is supplied and the atem-api service is running.
+    The ATEM could not be loaded after several attempts. Make sure a valid id is supplied and the atem-api service is running.
+    <a href="<?php echo ATEM_BASE; ?>edit.php?<?php echo http_build_query(array_merge($_GET, array('_lr' => 0))); ?>">Retry</a>
 </div>
 <?php endif; ?>
 
