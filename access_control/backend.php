@@ -210,9 +210,17 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
     $name_filter     = ($name_filter_raw !== '') ? mysqli_real_escape_string($conn, $name_filter_raw) : '';
     $dept_filter     = isset($_GET['dept_filter']) ? (int)$_GET['dept_filter'] : 0;
     $outlet_filter   = isset($_GET['outlet_filter']) ? (int)$_GET['outlet_filter'] : 0;
+    // Grade/Evaluation Structure filters are SuperAdmin-only - silently ignored
+    // for anyone else, regardless of what the request sends.
+    $grade_filter    = ($requester_is_superadmin && isset($_GET['grade_filter']))  ? (int)$_GET['grade_filter']  : 0;
+    $struct_filter   = ($requester_is_superadmin && isset($_GET['struct_filter'])) ? (int)$_GET['struct_filter'] : 0;
 
     $name_sql       = ($name_filter !== '') ? "AND s.nama_staff LIKE '%$name_filter%'" : '';
     $name_sql_count = ($name_filter !== '') ? "AND nama_staff LIKE '%$name_filter%'"   : '';
+    $grade_filter_sql       = ($grade_filter > 0)  ? "AND s.grade = $grade_filter"    : '';
+    $grade_filter_sql_count = ($grade_filter > 0)  ? "AND grade = $grade_filter"      : '';
+    $struct_filter_sql      = ($struct_filter > 0) ? "AND s.struct = $struct_filter"  : '';
+    $struct_filter_sql_count = ($struct_filter > 0) ? "AND struct = $struct_filter"   : '';
 
     // For grades 2-3, silently discard dept_filter that falls outside their allowed departments
     if ($dept_filter > 0 && $requester_grade <= 3 && !$requester_is_superadmin && !in_array($dept_filter, $requester_dept_ids)) {
@@ -246,11 +254,11 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
         }
         $dept_sql           = count($own_scope_conds)       ? '(' . implode(' OR ', $own_scope_conds) . ')'       : '1=0';
         $dept_sql_count     = count($own_scope_conds_count) ? '(' . implode(' OR ', $own_scope_conds_count) . ')' : '1=0';
-        $where_clause       = "s.recycle != 1 AND s.grade > 0 AND $dept_sql $name_sql $dept_filter_sql $outlet_only_sql $outlet_filter_sql";
-        $where_clause_count = "recycle != 1 AND grade > 0 AND $dept_sql_count $name_sql_count $dept_filter_sql_count $outlet_only_sql_count $outlet_filter_sql_count";
+        $where_clause       = "s.recycle != 1 AND s.grade > 0 AND $dept_sql $name_sql $dept_filter_sql $outlet_only_sql $outlet_filter_sql $grade_filter_sql $struct_filter_sql";
+        $where_clause_count = "recycle != 1 AND grade > 0 AND $dept_sql_count $name_sql_count $dept_filter_sql_count $outlet_only_sql_count $outlet_filter_sql_count $grade_filter_sql_count $struct_filter_sql_count";
     } else {
-        $where_clause       = "s.recycle != 1 AND s.grade > 0 $name_sql $dept_filter_sql $outlet_only_sql $outlet_filter_sql";
-        $where_clause_count = "recycle != 1 AND grade > 0 $name_sql_count $dept_filter_sql_count $outlet_only_sql_count $outlet_filter_sql_count";
+        $where_clause       = "s.recycle != 1 AND s.grade > 0 $name_sql $dept_filter_sql $outlet_only_sql $outlet_filter_sql $grade_filter_sql $struct_filter_sql";
+        $where_clause_count = "recycle != 1 AND grade > 0 $name_sql_count $dept_filter_sql_count $outlet_only_sql_count $outlet_filter_sql_count $grade_filter_sql_count $struct_filter_sql_count";
     }
 
     $count_result = mysqli_query($conn, "SELECT COUNT(*) as total FROM staff WHERE $where_clause_count");

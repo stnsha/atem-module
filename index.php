@@ -8,7 +8,7 @@ $page_title = 'ATEM Dashboard';
 $page_title_actions = '<a href="okr/index.php" id="switch-okr-btn" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Switch to OKR Dashboard</a>';
 include('header.php');
 
-$_okr_menu_visible = ((int)$atem_permission >= 3 || $_is_superadmin || in_array((int)$struct, array(4, 5), true));
+$_okr_menu_visible = (in_array((int)$atem_permission, array(4, 5), true) || $_is_superadmin || in_array((int)$struct, array(4, 5), true));
 ?>
 <?php if (!$_okr_menu_visible): ?>
 <script>
@@ -37,22 +37,27 @@ if (isset($department) && $department !== '') {
     }
 }
 
-// Grade 1 and 2 users only ever belong to one side (HQ or Outlet, per their
-// own department), so showing both tabs is misleading noise - collapse to the
-// single matching tab, like the pre-tab single-view page. Grade 3+ and
-// SuperAdmin keep seeing both tabs as today (deferred to a future task).
+// Grade 1, 2, 3, and 6 (a real, non-SA staff.grade value - not just the dev
+// toolbar's simulated one) only ever belong to one side (HQ or Outlet, per
+// their own department) - collapse to the single matching tab, hiding the
+// other side entirely. Grade 4+ and SuperAdmin keep seeing both tabs.
 $grade1_single_view = null;
-if (((int)$atem_permission === 1 || (int)$atem_permission === 2) && !$_is_superadmin) {
+if (in_array((int)$atem_permission, array(1, 2, 3, 6), true) && !$_is_superadmin) {
     $grade1_single_view = in_array(1, $dash_user_dept_ids, true) ? 'outlet' : 'hq';
 }
 
+// Department filter dropdown, scoped the same way as view.php's $dept_list:
+// grade 1 and grade 6 (a real, non-SA staff.grade value - not just the dev
+// toolbar's simulated one) see only their own department(s), grades 2-3 see
+// their own department(s) too (same list, just via the dept-overlap branch
+// below), grade 4+/SuperAdmin see every department.
 $dash_dept_options = array();
 $_dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department ORDER BY depart_name");
 if ($_dept_res) {
     while ($_drow = mysqli_fetch_assoc($_dept_res)) {
         if ((int)$atem_permission >= 4 || $_is_superadmin) {
             $dash_dept_options[] = array('id' => (int)$_drow['id'], 'name' => $_drow['depart_name']);
-        } elseif (((int)$atem_permission === 2 || (int)$atem_permission === 3)
+        } elseif (in_array((int)$atem_permission, array(1, 2, 3, 6), true) && !$_is_superadmin
                   && in_array((int)$_drow['id'], $dash_user_dept_ids)) {
             $dash_dept_options[] = array('id' => (int)$_drow['id'], 'name' => $_drow['depart_name']);
         }
@@ -60,14 +65,14 @@ if ($_dept_res) {
 }
 
 // Staff filter dropdown, scoped the same way as the Issuer dropdown on view.php:
-// grade 1 sees only self, grades 2-3 see staff in their own department(s), grade
-// 4+/SuperAdmin see everyone. dept_ids lets the frontend narrow the list further
-// when a specific department is also selected.
+// grade 1 and grade 6 see only self, grades 2-3 see staff in their own
+// department(s), grade 4+/SuperAdmin see everyone. dept_ids lets the frontend
+// narrow the list further when a specific department is also selected.
 // status_rym lets the Outlet dashboard tab narrow its Staff dropdown to Area
 // Managers (status_rym = 134); outlet_ids then lets the Outlet dropdown follow
 // the selected staff member's own outlet(s).
 $dash_staff_options = array();
-if ((int)$atem_permission === 1 && !$_is_superadmin) {
+if (in_array((int)$atem_permission, array(1, 6), true) && !$_is_superadmin) {
     $_me_id = (int)$id_user;
     $_me_res = mysqli_query($conn, "SELECT id, nama_staff, department, outlet, status_rym FROM staff WHERE recycle != 1 AND id = " . $_me_id);
     if ($_me_res && ($_me_row = mysqli_fetch_assoc($_me_res))) {
@@ -111,18 +116,37 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
 // outlet_regional -> outlet.regional_id -> staff.status_rym = 134.
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
+// Grade 6 (a real, non-SA staff.grade value - not just the dev toolbar's
+// simulated one) is restricted to their own outlet(s); the Region dropdown
+// then follows, narrowed to only the region(s) their own outlet(s) belong to.
+$dash_user_outlet_ids = array();
+if (isset($outlet) && $outlet !== '') {
+    foreach (explode(',', (string)$outlet) as $_dopart) {
+        $_dopart = (int)trim($_dopart);
+        if ($_dopart > 0) { $dash_user_outlet_ids[] = $_dopart; }
+    }
+}
+$_dash_outlet_scoped = ((int)$atem_permission === 6 && !$_is_superadmin);
+
+$dash_outlet_options = array();
+$dash_outlet_region_ids = array();
+$_outlet_res = mysqli_query($conn, "SELECT id, code, regional_id FROM outlet ORDER BY code ASC");
+if ($_outlet_res) {
+    while ($_orow = mysqli_fetch_assoc($_outlet_res)) {
+        $_oid = (int)$_orow['id'];
+        if ($_dash_outlet_scoped && !in_array($_oid, $dash_user_outlet_ids, true)) { continue; }
+        $dash_outlet_options[] = array('id' => $_oid, 'code' => $_orow['code'], 'region_id' => (int)$_orow['regional_id']);
+        $dash_outlet_region_ids[(int)$_orow['regional_id']] = true;
+    }
+}
+
 $dash_region_options = array();
 $_region_res = mysqli_query($conn, "SELECT id, regional FROM outlet_regional ORDER BY regional ASC");
 if ($_region_res) {
     while ($_rrow = mysqli_fetch_assoc($_region_res)) {
-        $dash_region_options[] = array('id' => (int)$_rrow['id'], 'name' => $_rrow['regional']);
-    }
-}
-$dash_outlet_options = array();
-$_outlet_res = mysqli_query($conn, "SELECT id, code, regional_id FROM outlet ORDER BY code ASC");
-if ($_outlet_res) {
-    while ($_orow = mysqli_fetch_assoc($_outlet_res)) {
-        $dash_outlet_options[] = array('id' => (int)$_orow['id'], 'code' => $_orow['code'], 'region_id' => (int)$_orow['regional_id']);
+        $_rid = (int)$_rrow['id'];
+        if ($_dash_outlet_scoped && !isset($dash_outlet_region_ids[$_rid])) { continue; }
+        $dash_region_options[] = array('id' => $_rid, 'name' => $_rrow['regional']);
     }
 }
 ?>

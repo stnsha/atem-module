@@ -29,7 +29,7 @@ $grade_badges = array(
 );
 
 $show_edit          = $_is_superadmin;
-$table_cols_hq      = $show_edit ? 5 : 4;
+$table_cols_hq      = $show_edit ? 6 : 5;
 $table_cols_outlet  = $show_edit ? 5 : 4;
 $requester_dept_ids = array();
 
@@ -229,6 +229,20 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                             <input type="text" id="ac-filter-name" class="form-control form-control-sm"
                                 placeholder="Search name...">
                         </div>
+                        <?php if ($_is_superadmin): ?>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label">Grade</label>
+                            <select id="ac-filter-grade" class="form-select form-select-sm">
+                                <option value="0">All Grade</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label">Evaluation Structure</label>
+                            <select id="ac-filter-struct" class="form-select form-select-sm">
+                                <option value="0">All Evaluation Structure</option>
+                            </select>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-auto d-flex align-items-end gap-2">
                             <button class="btn btn-sm btn-outline-secondary" id="ac-reset-filter">Reset</button>
                         </div>
@@ -247,6 +261,7 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                                 <tr>
                                     <th>Staff Name</th>
                                     <th>Department</th>
+                                    <th>Outlet</th>
                                     <th>Grade</th>
                                     <th>Evaluation Structure</th>
                                     <?php if ($show_edit): ?><th></th><?php endif; ?>
@@ -292,6 +307,20 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                             <input type="text" id="aco-filter-name" class="form-control form-control-sm"
                                 placeholder="Search name...">
                         </div>
+                        <?php if ($_is_superadmin): ?>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label">Grade</label>
+                            <select id="aco-filter-grade" class="form-select form-select-sm">
+                                <option value="0">All Grade</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label">Evaluation Structure</label>
+                            <select id="aco-filter-struct" class="form-select form-select-sm">
+                                <option value="0">All Evaluation Structure</option>
+                            </select>
+                        </div>
+                        <?php endif; ?>
                         <div class="col-auto d-flex align-items-end gap-2">
                             <button class="btn btn-sm btn-outline-secondary" id="aco-reset-filter">Reset</button>
                         </div>

@@ -2545,15 +2545,26 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     $scopedItems = $scopedListResult['data'];
 
+                    // $_scopedIsSA is tracked separately from $_scopedPerm - a real
+                    // SuperAdmin (staff.atem = 1) used to get folded into the same
+                    // "6" sentinel as a real (non-SA) staff.grade = 6 row, which
+                    // wrongly made grade-6 staff unrestricted below (grade 6 is a
+                    // real, occupied grade id - not just the dev toolbar's simulated
+                    // value - and must stay own-only like grade 1, same as
+                    // view.php/access_control/backend.php already enforce).
                     $_scopedPerm = 0;
-                    if (isset($atem_permission)) {
+                    $_scopedIsSA = false;
+                    if (isset($_is_superadmin) && $_is_superadmin) {
+                        $_scopedIsSA = true;
+                    } elseif (isset($atem_permission)) {
                         $_scopedPerm = (int)$atem_permission;
                     } elseif (isset($_SESSION['atem_dev_role_override'])) {
                         $_scopedPerm = (int)$_SESSION['atem_dev_role_override'];
                     } elseif ($staff_id) {
                         $_scopedPermRes = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_scopedPermRes && ($_scopedPermRow = mysqli_fetch_assoc($_scopedPermRes))) {
-                            $_scopedPerm = ((int)$_scopedPermRow['atem'] === 1) ? 6 : (int)$_scopedPermRow['grade'];
+                            $_scopedIsSA = ((int)$_scopedPermRow['atem'] === 1);
+                            $_scopedPerm = (int)$_scopedPermRow['grade'];
                         }
                     }
 
@@ -2573,7 +2584,11 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     $_scopedUserStaff = (int)$staff_id;
 
-                    if ($_scopedPerm === 1) {
+                    if ($_scopedIsSA) {
+                        // SuperAdmin: no role-based filtering.
+                    } elseif ($_scopedPerm === 1 || $_scopedPerm === 6) {
+                        // Grade 1, and a real (non-SA) grade-6 staff record: own
+                        // cards only - no department/outlet overlap scope.
                         $_scopedFiltered = array();
                         foreach ($scopedItems as $_sItem) {
                             $_sIssuerId = isset($_sItem['issuer_staff_id']) ? (int)$_sItem['issuer_staff_id'] : 0;
@@ -2652,7 +2667,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                         $scopedItems = $_scopedFiltered;
                     }
-                    // Grades 4-6 (superadmin resolves to 6): no role-based filtering.
+                    // Grade 4-5, or SuperAdmin: no role-based filtering.
 
                     // OKR's Link ATEM picker only offers cards that aren't already
                     // linked to a different OKR - avoids one ATEM silently getting
@@ -2692,8 +2707,18 @@ if (!defined('API_JWT_INCLUDED')) {
                     // $atem_permission is set when api.php is included from a page,
                     // but NOT in direct-access mode (how the dashboard calls it), so
                     // fall back to a grade/atem lookup like get-staff-atem-list does.
+                    // $_isSA is tracked separately from $_perm - a real SuperAdmin
+                    // (staff.atem = 1) used to get folded into the same "6" sentinel
+                    // as a real (non-SA) staff.grade = 6 row, which wrongly made
+                    // grade-6 staff unrestricted below (grade 6 is a real, occupied
+                    // grade id - not just the dev toolbar's simulated value - and
+                    // must stay own-only like grade 1, same as view.php/
+                    // access_control/backend.php already enforce).
                     $_perm = 0;
-                    if (isset($atem_permission)) {
+                    $_isSA = false;
+                    if (isset($_is_superadmin) && $_is_superadmin) {
+                        $_isSA = true;
+                    } elseif (isset($atem_permission)) {
                         $_perm = (int)$atem_permission;
                     } elseif (isset($_SESSION['atem_dev_role_override'])) {
                         // Dev role simulation (localhost): mirror header.php so the
@@ -2703,7 +2728,8 @@ if (!defined('API_JWT_INCLUDED')) {
                     } elseif ($staff_id) {
                         $_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_perm_res && ($_perm_row = mysqli_fetch_assoc($_perm_res))) {
-                            $_perm = ((int)$_perm_row['atem'] === 1) ? 6 : (int)$_perm_row['grade'];
+                            $_isSA = ((int)$_perm_row['atem'] === 1);
+                            $_perm = (int)$_perm_row['grade'];
                         }
                     }
 
@@ -2728,7 +2754,11 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     $_userStaff = (int)$staff_id;
 
-                    if ($_perm === 1) {
+                    if ($_isSA) {
+                        // SuperAdmin: no role-based filtering.
+                    } elseif ($_perm === 1 || $_perm === 6) {
+                        // Grade 1, and a real (non-SA) grade-6 staff record: own
+                        // cards only - no department/outlet overlap scope.
                         $roleFiltered = array();
                         foreach ($items as $_item) {
                             $_issuerId = isset($_item['issuer_staff_id']) ? (int)$_item['issuer_staff_id'] : 0;
@@ -2815,7 +2845,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                         $items = $roleFiltered;
                     }
-                    // Grades 4–6 (superadmin resolves to 6): no role-based filtering
+                    // Grade 4-5, or SuperAdmin: no role-based filtering
 
                     $filterYear      = isset($jsonData['filter_year'])       ? (int)$jsonData['filter_year']       : 0;
                     $filterMonth     = isset($jsonData['filter_month'])      ? (int)$jsonData['filter_month']      : 0;
@@ -3897,12 +3927,14 @@ if (!defined('API_JWT_INCLUDED')) {
                     // page guard so every page-admitted user can also load the table.
                     $pl_perm  = 0;
                     $pl_is_sa = false;
+                    $pl_struct_val = 0;
                     if (isset($atem_permission)) {
                         // Included after header.php ran (e.g. from a page) - already
                         // dev-override-aware (header.php bakes the override into both
                         // $atem_permission and $_is_superadmin).
                         $pl_perm  = (int)$atem_permission;
                         $pl_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
+                        $pl_struct_val = isset($struct) ? (int)$struct : 0;
                     } elseif (isset($_SESSION['atem_dev_role_override'])) {
                         // Direct-AJAX call (how staff_performance/index.php's JS actually
                         // calls this action) - header.php never ran in this request, so
@@ -3910,26 +3942,19 @@ if (!defined('API_JWT_INCLUDED')) {
                         // Mirrors dashboard-stats' identical fallback tier.
                         $pl_perm  = (int)$_SESSION['atem_dev_role_override'];
                         $pl_is_sa = false;
+                        $pl_struct_val = isset($struct) ? (int)$struct : 0;
                     } elseif ($staff_id) {
-                        $_pp_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_pp_res = mysqli_query($conn, "SELECT grade, atem, struct FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_pp_res && ($_pp_row = mysqli_fetch_assoc($_pp_res))) {
                             $pl_perm  = (int)$_pp_row['grade'];
                             $pl_is_sa = ((int)$_pp_row['atem'] === 1);
+                            $pl_struct_val = ($_pp_row['struct'] !== null) ? (int)$_pp_row['struct'] : 0;
                         }
                     }
-                    // $department is always already resolved (and dev-view-override
-                    // aware) by api.php's own bootstrap at the top of this file,
-                    // regardless of which branch above resolved grade/SA - no separate
-                    // re-query needed.
-                    $pl_dept_str = isset($department) ? (string)$department : '';
-                    $pl_dept_ids = array();
-                    if ($pl_dept_str !== '') {
-                        foreach (explode(',', $pl_dept_str) as $_pld) {
-                            $_pld = (int)trim($_pld);
-                            if ($_pld > 0) { $pl_dept_ids[] = $_pld; }
-                        }
-                    }
-                    if ($pl_perm < 3 && !$pl_is_sa) {
+                    // Only SuperAdmin, grade 4/5, or Evaluation Structure 4/5 may load
+                    // the performance list - mirrors staff_performance/index.php's page
+                    // guard.
+                    if (!$pl_is_sa && !in_array($pl_perm, array(4, 5), true) && !in_array($pl_struct_val, array(4, 5), true)) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
@@ -4040,16 +4065,11 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                     }
 
-                    // Only grade 2 (non-SA) is mandatorily scoped to their own
-                    // department overlap. Grade 3+ and SuperAdmin see company-wide
-                    // data, same as grade 4/5 - matches the Department filter
-                    // dropdown (index.php), which already shows every department
-                    // starting at grade 3. Dept-17 grade-1/below users (the only
-                    // other way to reach this gate) are intentionally NOT scoped
-                    // here - People Management needs to see/lock payroll company-
-                    // wide, mirroring the page's own "single tier" access model
-                    // (no narrower carve-out).
-                    $pl_is_scoped_grade = ($pl_perm === 2 && !$pl_is_sa);
+                    // Only SuperAdmin and grade 4/5 see company-wide performance data.
+                    // Every other grade that can reach this endpoint (grade 3, and
+                    // grade 6 - a real, non-SA staff.grade value, not just the dev
+                    // toolbar's simulated one) is restricted to their own row only.
+                    $pl_own_only = !$pl_is_sa && $pl_perm !== 4 && $pl_perm !== 5;
 
                     // Union of HQ-ATEM-involved, Outlet-ATEM-involved, and OKR-involved
                     // staff ids - a staff member with only Outlet ATEM or OKR activity
@@ -4075,7 +4095,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         $pl_grade_id   = isset($pl_staff_grade[$pl_sid])  ? $pl_staff_grade[$pl_sid]  : null;
                         $pl_struct_id  = isset($pl_staff_struct[$pl_sid]) ? $pl_staff_struct[$pl_sid] : null;
 
-                        if ($pl_is_scoped_grade && !in_array($pl_rec_dept, $pl_dept_ids, true)) { continue; }
+                        if ($pl_own_only && $pl_sid !== (int)$staff_id) { continue; }
 
                         if ($pl_dept   > 0 && $pl_rec_dept  !== $pl_dept)   { continue; }
                         if ($pl_grade  > 0 && $pl_grade_id  !== $pl_grade)  { continue; }
@@ -4286,17 +4306,21 @@ if (!defined('API_JWT_INCLUDED')) {
                     // direct-access mode.
                     $caller_perm  = 0;
                     $caller_is_sa = false;
+                    $caller_struct_val = 0;
                     if (isset($atem_permission)) {
                         $caller_perm  = (int)$atem_permission;
                         $caller_is_sa = isset($_is_superadmin) ? (bool)$_is_superadmin : false;
+                        $caller_struct_val = isset($struct) ? (int)$struct : 0;
                     } elseif ($staff_id) {
-                        $_perm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                        $_perm_res = mysqli_query($conn, "SELECT grade, atem, struct FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                         if ($_perm_res && ($_perm_row = mysqli_fetch_assoc($_perm_res))) {
                             $caller_perm  = (int)$_perm_row['grade'];
                             $caller_is_sa = ((int)$_perm_row['atem'] === 1);
+                            $caller_struct_val = ($_perm_row['struct'] !== null) ? (int)$_perm_row['struct'] : 0;
                         }
                     }
-                    if ($caller_perm < 3 && !$caller_is_sa) {
+                    $caller_perf_qualified = $caller_is_sa || in_array($caller_perm, array(4, 5), true) || in_array($caller_struct_val, array(4, 5), true);
+                    if (!$caller_perf_qualified) {
                         $response = array('success' => false, 'message' => 'Insufficient permissions');
                         break;
                     }
@@ -4305,6 +4329,16 @@ if (!defined('API_JWT_INCLUDED')) {
                         break;
                     }
                     $target_sid = (int)$jsonData['target_staff_id'];
+                    // Redundant with $caller_perf_qualified above (anyone not
+                    // qualified was already rejected), but kept explicit: only a
+                    // qualified caller may drill into ANOTHER staff member's
+                    // detail via an arbitrary target_staff_id - otherwise this
+                    // would be a way to view a random staff's data regardless of
+                    // qualification, since target_sid is caller-supplied.
+                    if (!$caller_perf_qualified && $target_sid !== (int)$staff_id) {
+                        $response = array('success' => false, 'message' => 'Insufficient permissions');
+                        break;
+                    }
                     $list_result = getStaffAtemList($target_sid, $staff_id);
                     if (!$list_result['success']) {
                         $response = array('success' => false, 'message' => isset($list_result['message']) ? $list_result['message'] : 'Failed');

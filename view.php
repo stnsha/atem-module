@@ -47,12 +47,12 @@ if (isset($department) && $department !== '') {
     }
 }
 
-// Grade 1 and 2 users only ever belong to one side (HQ or Outlet, per their
-// own department), so showing both tabs is misleading noise - collapse to the
-// single matching tab, like the pre-tab single-view page. Grade 3+ and
-// SuperAdmin keep seeing both tabs as today (deferred to a future task).
+// Grade 1, 2, 3, and 6 (a real, non-SA staff.grade value - not just the dev
+// toolbar's simulated one) only ever belong to one side (HQ or Outlet, per
+// their own department) - collapse to the single matching tab, hiding the
+// other side entirely. Grade 4+ and SuperAdmin keep seeing both tabs.
 $grade1_single_view = null;
-if (((int)$atem_permission === 1 || (int)$atem_permission === 2) && !$_is_superadmin) {
+if (in_array((int)$atem_permission, array(1, 2, 3, 6), true) && !$_is_superadmin) {
     $grade1_single_view = in_array(1, $user_dept_ids, true) ? 'outlet' : 'hq';
 }
 
@@ -87,18 +87,38 @@ if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_pe
     }
 }
 
+// staff.outlet is comma-separated (e.g. an Area Manager covering several
+// outlets). Used only to narrow the Outlet/Region FILTER DROPDOWN options
+// below for grade 1, 2, and 6 (a real, non-SA staff.grade value, not just the
+// dev toolbar's simulated one) - the same "own only" population whose cards
+// can only ever reference their own outlet(s) anyway. $outlet_names/
+// $outlet_region_ids stay unrestricted since they're used to resolve display
+// codes/regions for whatever rows the viewer does see.
+$user_outlet_ids = [];
+if (isset($outlet) && $outlet !== '') {
+    foreach (explode(',', (string)$outlet) as $_opart) {
+        $_opart = (int)trim($_opart);
+        if ($_opart > 0) { $user_outlet_ids[] = $_opart; }
+    }
+}
+$_view_outlet_scoped = (in_array((int)$atem_permission, [1, 2, 6], true) && !$_is_superadmin);
+
 // Outlet filter + code lookup used to resolve atem_outlets.outlet_id to a
 // display code below. regional_id also lets each row resolve its region(s)
 // (odb.outlet.regional_id -> odb.outlet_regional.id) for the Region filter.
 $outlet_list       = [];
 $outlet_names      = [];
 $outlet_region_ids = [];
+$outlet_list_region_ids = [];
 $outlet_res = mysqli_query($conn, "SELECT id, code, regional_id FROM outlet ORDER BY code ASC");
 if ($outlet_res) {
     while ($orow = mysqli_fetch_assoc($outlet_res)) {
-        $outlet_list[] = ['id' => (int) $orow['id'], 'code' => $orow['code']];
-        $outlet_names[(int) $orow['id']] = $orow['code'];
-        $outlet_region_ids[(int) $orow['id']] = (int) $orow['regional_id'];
+        $o_id = (int) $orow['id'];
+        $outlet_names[$o_id]      = $orow['code'];
+        $outlet_region_ids[$o_id] = (int) $orow['regional_id'];
+        if ($_view_outlet_scoped && !in_array($o_id, $user_outlet_ids, true)) { continue; }
+        $outlet_list[] = ['id' => $o_id, 'code' => $orow['code']];
+        $outlet_list_region_ids[(int) $orow['regional_id']] = true;
     }
 }
 
@@ -107,8 +127,10 @@ $region_names = [];
 $region_res = mysqli_query($conn, "SELECT id, regional FROM outlet_regional ORDER BY regional ASC");
 if ($region_res) {
     while ($rrow = mysqli_fetch_assoc($region_res)) {
-        $region_list[] = ['id' => (int) $rrow['id'], 'name' => $rrow['regional']];
-        $region_names[(int) $rrow['id']] = $rrow['regional'];
+        $r_id = (int) $rrow['id'];
+        $region_names[$r_id] = $rrow['regional'];
+        if ($_view_outlet_scoped && !isset($outlet_list_region_ids[$r_id])) { continue; }
+        $region_list[] = ['id' => $r_id, 'name' => $rrow['regional']];
     }
 }
 

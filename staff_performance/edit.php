@@ -4,7 +4,10 @@ ob_start();
 $page_title = 'Staff Performance - Edit';
 include('../header.php');
 
-if ($atem_permission < 3 && !$_is_superadmin) {
+// Only SuperAdmin, grade 4/5, or Evaluation Structure 4/5 may access Staff
+// Performance - grade 3 and 6 no longer qualify.
+if (!$_is_superadmin && !in_array((int)$atem_permission, array(4, 5), true)
+        && !in_array((int)(isset($struct) ? $struct : 0), array(4, 5), true)) {
     ob_end_clean();
     header('Location: ' . ATEM_BASE . 'index.php');
     exit;

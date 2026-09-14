@@ -387,6 +387,14 @@
     var activeNameFilterOutlet = '';
     var activeOutletFilter     = 0;
 
+    // Grade/Evaluation Structure filters - SuperAdmin only (see the matching
+    // $_is_superadmin guard around the <select> markup and the backend's
+    // own $requester_is_superadmin check, which is the actual enforcement).
+    var activeGradeFilter         = 0;
+    var activeStructFilter        = 0;
+    var activeGradeFilterOutlet   = 0;
+    var activeStructFilterOutlet  = 0;
+
     function loadActiveStaff(page) {
         currentPage = page || 1;
         var colSpan = TABLE_COLS;
@@ -395,6 +403,8 @@
         var url = BACKEND_URL + '?action=getActiveStaff&page=' + currentPage + '&per_page=' + adminPerPage;
         if (activeDeptFilter > 0) { url += '&dept_filter=' + activeDeptFilter; }
         if (activeNameFilter !== '') { url += '&name_filter=' + encodeURIComponent(activeNameFilter); }
+        if (IS_SUPERADMIN && activeGradeFilter > 0) { url += '&grade_filter=' + activeGradeFilter; }
+        if (IS_SUPERADMIN && activeStructFilter > 0) { url += '&struct_filter=' + activeStructFilter; }
 
         $.ajax({
             url: url,
@@ -434,6 +444,7 @@
             html += '<tr>' +
                 '<td>' + $('<span>').text(s.nama_staff).html() + '</td>' +
                 '<td class="text-muted">' + $('<span>').text(s.department_name).html() + '</td>' +
+                '<td class="text-muted">' + outletHtml + '</td>' +
                 '<td><span class="atem-pill ' + gradeBadge + '">' + gradeLabel + '</span></td>' +
                 '<td class="text-muted">' + $('<span>').text(structName).html() + '</td>';
 
@@ -465,6 +476,8 @@
         var url = BACKEND_URL + '?action=getActiveStaff&outlet_only=1&page=' + currentPageOutlet + '&per_page=' + adminPerPageOutlet;
         if (activeNameFilterOutlet !== '') { url += '&name_filter=' + encodeURIComponent(activeNameFilterOutlet); }
         if (activeOutletFilter > 0) { url += '&outlet_filter=' + activeOutletFilter; }
+        if (IS_SUPERADMIN && activeGradeFilterOutlet > 0) { url += '&grade_filter=' + activeGradeFilterOutlet; }
+        if (IS_SUPERADMIN && activeStructFilterOutlet > 0) { url += '&struct_filter=' + activeStructFilterOutlet; }
 
         $.ajax({
             url: url,
@@ -650,11 +663,24 @@
         if (e.key === 'Enter') { applyHqNameFilterNow(); }
     });
 
+    $('#ac-filter-grade').on('change', function () {
+        activeGradeFilter = parseInt($(this).val(), 10) || 0;
+        loadActiveStaff(1);
+    });
+    $('#ac-filter-struct').on('change', function () {
+        activeStructFilter = parseInt($(this).val(), 10) || 0;
+        loadActiveStaff(1);
+    });
+
     $('#ac-reset-filter').on('click', function () {
         activeDeptFilter = 0;
         activeNameFilter = '';
+        activeGradeFilter = 0;
+        activeStructFilter = 0;
         if (HAS_DEPT_FILTER) { $('#ac-filter-dept').val('0'); }
         $('#ac-filter-name').val('');
+        $('#ac-filter-grade').val('0');
+        $('#ac-filter-struct').val('0');
         loadActiveStaff(1);
     });
 
@@ -674,10 +700,23 @@
         if (e.key === 'Enter') { applyOutletNameFilterNow(); }
     });
 
+    $('#aco-filter-grade').on('change', function () {
+        activeGradeFilterOutlet = parseInt($(this).val(), 10) || 0;
+        loadActiveStaffOutlet(1);
+    });
+    $('#aco-filter-struct').on('change', function () {
+        activeStructFilterOutlet = parseInt($(this).val(), 10) || 0;
+        loadActiveStaffOutlet(1);
+    });
+
     $('#aco-reset-filter').on('click', function () {
         activeNameFilterOutlet = '';
         activeOutletFilter     = 0;
+        activeGradeFilterOutlet  = 0;
+        activeStructFilterOutlet = 0;
         $('#aco-filter-name').val('');
+        $('#aco-filter-grade').val('0');
+        $('#aco-filter-struct').val('0');
         resetSearchDropdown('aco-filter-outlet', 'All Outlets');
         loadActiveStaffOutlet(1);
     });
@@ -747,10 +786,35 @@
         });
     }
 
+    // Grade/Evaluation Structure filter <select>s - SuperAdmin-only markup,
+    // populated from the same GRADE_OPTIONS/STRUCT_OPTIONS the update form's
+    // radio buttons use (loaded via getLibrary), so a masterlist-added grade/
+    // structure shows up here too without a code change. Only active entries
+    // are offered as filter values - filtering by a deactivated one would
+    // never match anyone new anyway.
+    function populateFilterSelect(selId, options) {
+        var $sel = $('#' + selId);
+        if (!$sel.length) { return; }
+        var html = $sel.find('option').first().prop('outerHTML');
+        for (var i = 0; i < options.length; i++) {
+            if (!options[i].is_active) { continue; }
+            html += '<option value="' + options[i].id + '">' + escapeHtml(options[i].label) + '</option>';
+        }
+        $sel.html(html);
+    }
+
+    function populateAdminFilterSelects() {
+        populateFilterSelect('ac-filter-grade', GRADE_OPTIONS);
+        populateFilterSelect('ac-filter-struct', STRUCT_OPTIONS);
+        populateFilterSelect('aco-filter-grade', GRADE_OPTIONS);
+        populateFilterSelect('aco-filter-struct', STRUCT_OPTIONS);
+    }
+
     // -----------------------------------------------------------------------
     // Init
     // -----------------------------------------------------------------------
     loadAllStructData(function () {
+        if (IS_SUPERADMIN) { populateAdminFilterSelects(); }
         if (TAB_SINGLE_VIEW !== 'outlet') { loadActiveStaff(1); }
         if (TAB_SINGLE_VIEW !== 'hq') { loadActiveStaffOutlet(1); }
     });

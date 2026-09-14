@@ -114,12 +114,12 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                 <li class="nav-item">
                     <a class="nav-link <?php echo $view_active; ?>" href="<?php echo ATEM_BASE; ?>view.php">ATEM</a>
                 </li>
-                <?php if ($atem_role >= 3 || $_is_superadmin || in_array((int)(isset($struct) ? $struct : 0), array(4, 5), true)): ?>
+                <?php if (in_array((int)$atem_role, array(4, 5), true) || $_is_superadmin || in_array((int)(isset($struct) ? $struct : 0), array(4, 5), true)): ?>
                 <li class="nav-item">
                     <a class="nav-link" href="okr/list.php">OKR</a>
                 </li>
                 <?php endif; ?>
-                <?php if ($atem_role >= 3 || $_is_superadmin): ?>
+                <?php if (in_array((int)$atem_role, array(4, 5), true) || $_is_superadmin || in_array((int)(isset($struct) ? $struct : 0), array(4, 5), true)): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $performance_active; ?>"
                         href="<?php echo ATEM_BASE; ?>staff_performance/index.php">Performance</a>

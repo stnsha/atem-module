@@ -16,7 +16,11 @@ if (isset($department) && $department !== '') {
     }
 }
 
-if ($atem_permission < 3 && !$_is_superadmin) {
+// Only SuperAdmin, grade 4/5, or Evaluation Structure 4/5 may access Staff
+// Performance - grade 3 and 6 no longer qualify (grade 3 lost the tier,
+// grade 6 was never really meant to pass the old ">= 3" check).
+if (!$_is_superadmin && !in_array((int)$atem_permission, array(4, 5), true)
+        && !in_array((int)(isset($struct) ? $struct : 0), array(4, 5), true)) {
     ob_end_clean();
     header('Location: ' . ATEM_BASE . 'index.php');
     exit;
@@ -70,13 +74,16 @@ if ($gr) { while ($row = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$row['id'
 $str_r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
 if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$row['id']] = $row['struct_name']; } }
 
-// Build department options respecting grade — SuperAdmin always sees all departments
-// regardless of their real grade (mirrors $_is_superadmin, never a bumped $atem_permission).
+// Only SuperAdmin and grade 4/5 see every department; everyone else who can
+// reach this page (grade 3, and grade 6 - a real, non-SA staff.grade value,
+// not just the dev toolbar's simulated one) is restricted to their own
+// department(s) - matches get-performance-list's own-only row scoping below.
+$_perf_own_only = !$_is_superadmin && (int)$atem_permission !== 4 && (int)$atem_permission !== 5;
 $dept_filter_options = array();
 foreach ($dept_names as $did => $dname) {
-    if ((int)$atem_permission >= 3 || $_is_superadmin) {
+    if ($_is_superadmin || (int)$atem_permission === 4 || (int)$atem_permission === 5) {
         $dept_filter_options[$did] = $dname;
-    } elseif (isset($department) && (int)$department === $did) {
+    } elseif ($_perf_own_only && in_array($did, $_perf_dept_ids, true)) {
         $dept_filter_options[$did] = $dname;
     }
 }
@@ -117,29 +124,33 @@ if (empty($perf_status_options)) {
 }
 $perf_default_statuses = array('Completed', 'Completed with Excellence', 'Completed with Extension', 'Failed', 'Suspended', 'Force Terminated');
 
-// Staff filter dropdown (searchable, like the one on index.php). Only grade 2
-// (non-SA) is narrowed to their own department overlap here, mirroring
-// api.php's get-performance-list mandatory scoping. Grade 3+ and SuperAdmin
-// see every staff member company-wide, same as grade 4/5 - matches the
-// Department filter dropdown above, which already shows every department
-// starting at grade 3. Dept-17 grade-1 users see every staff member too,
-// matching the same "no narrower carve-out" access model as the table
-// itself. dept_ids lets the frontend narrow options further when a specific
-// Department filter is also selected.
-$_perf_is_scoped_grade = ((int)$atem_permission === 2 && !$_is_superadmin);
+// Staff filter dropdown (searchable, like the one on index.php). Only
+// SuperAdmin and grade 4/5 see every staff member company-wide - everyone
+// else who can reach this page (grade 3, and grade 6) is restricted to
+// themself only, matching get-performance-list's own-only row scoping and
+// the Department filter dropdown above.
 $perf_staff_options = array();
-$_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
-if ($_pso_res) {
-    while ($_pso_row = mysqli_fetch_assoc($_pso_res)) {
+if ($_perf_own_only) {
+    $_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 AND id = " . (int)$staff_id);
+    if ($_pso_res && ($_pso_row = mysqli_fetch_assoc($_pso_res))) {
         $_deptIds = array();
         foreach (explode(',', (string)$_pso_row['department']) as $_p) {
             $_p = (int)trim($_p);
             if ($_p > 0) { $_deptIds[] = $_p; }
         }
-        if ($_perf_is_scoped_grade && !array_intersect($_deptIds, $_perf_dept_ids)) {
-            continue;
-        }
         $perf_staff_options[] = array('id' => (int)$_pso_row['id'], 'name' => $_pso_row['nama_staff'], 'dept_ids' => $_deptIds);
+    }
+} else {
+    $_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+    if ($_pso_res) {
+        while ($_pso_row = mysqli_fetch_assoc($_pso_res)) {
+            $_deptIds = array();
+            foreach (explode(',', (string)$_pso_row['department']) as $_p) {
+                $_p = (int)trim($_p);
+                if ($_p > 0) { $_deptIds[] = $_p; }
+            }
+            $perf_staff_options[] = array('id' => (int)$_pso_row['id'], 'name' => $_pso_row['nama_staff'], 'dept_ids' => $_deptIds);
+        }
     }
 }
 ?>
