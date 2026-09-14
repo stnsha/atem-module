@@ -28,7 +28,7 @@ $grade_badges = array(
     6 => 'bg-dark'
 );
 
-$show_edit          = ($atem_permission > 1 || $_is_superadmin);
+$show_edit          = $_is_superadmin;
 $table_cols_hq      = $show_edit ? 5 : 4;
 $table_cols_outlet  = $show_edit ? 5 : 4;
 $requester_dept_ids = array();
@@ -398,8 +398,6 @@ if ($atem_permission >= 2 || $_is_superadmin) {
 <script>
 var GRADE_LABELS = {};
 var GRADE_BADGES = <?php echo json_encode($grade_badges); ?>;
-var REQUESTER_GRADE = <?php echo (int)$atem_permission; ?>;
-var REQUESTER_DEPT_IDS = <?php echo json_encode(array_values($requester_dept_ids)); ?>;
 var IS_SUPERADMIN = <?php echo $_is_superadmin ? 'true' : 'false'; ?>;
 var SHOW_EDIT = <?php echo $show_edit ? 'true' : 'false'; ?>;
 var TAB_SINGLE_VIEW = <?php echo json_encode($grade1_single_view); ?>;

@@ -165,7 +165,8 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
     $outlet_only_sql       = $outlet_only ? 'AND FIND_IN_SET(1, s.department)' : '';
     $outlet_only_sql_count = $outlet_only ? 'AND FIND_IN_SET(1, department)'   : '';
 
-    if ($requester_grade === 1) {
+    if ($requester_grade === 1 || ($requester_grade === 6 && !$requester_is_superadmin)) {
+        // Grade 1, and dev-simulated Grade 6: self only, same as view.php's ATEM scope.
         $query  = "SELECT s.id, s.nama_staff, s.grade, s.status_semasa, s.struct,
                           s.department, d.depart_name, st.struct_name, s.outlet
                    FROM staff s
@@ -299,7 +300,7 @@ if ($action === 'getActiveStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVE
 }
 
 if ($action === 'searchStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade === 1) {
+    if ($requester_grade === 1 || ($requester_grade === 6 && !$requester_is_superadmin)) {
         echo json_encode(array());
         exit;
     }
@@ -366,7 +367,7 @@ if ($action === 'searchStaff' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['
 }
 
 if ($action === 'updateAccess' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($requester_grade < 2) {
+    if (!$requester_is_superadmin) {
         echo json_encode(array('success' => false, 'message' => 'Unauthorized.'));
         exit;
     }
@@ -394,26 +395,6 @@ if ($action === 'updateAccess' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER[
         exit;
     }
 
-    if (!$requester_is_superadmin) {
-        $dept_check = mysqli_query($conn, "SELECT department FROM staff WHERE id = $target_id AND recycle != 1");
-        if (!$dept_check || mysqli_num_rows($dept_check) === 0) {
-            echo json_encode(array('success' => false, 'message' => 'Staff not found.'));
-            exit;
-        }
-        $dept_row        = mysqli_fetch_assoc($dept_check);
-        $target_dept_ids = array();
-        foreach (explode(',', (string)$dept_row['department']) as $_d) {
-            $_d = (int)trim($_d);
-            if ($_d > 0) {
-                $target_dept_ids[] = $_d;
-            }
-        }
-        if (empty(array_intersect($requester_dept_ids, $target_dept_ids))) {
-            echo json_encode(array('success' => false, 'message' => 'You can only update staff in your own department.'));
-            exit;
-        }
-    }
-
     $struct_id_safe = max(0, $struct_id);
 
     // Detect whether the struct value is actually changing
@@ -421,19 +402,13 @@ if ($action === 'updateAccess' && isset($_SERVER['REQUEST_METHOD']) && $_SERVER[
     $cur_row         = $cur_result ? mysqli_fetch_assoc($cur_result) : null;
     $struct_changing = ($cur_row !== null && (int)$cur_row['struct'] !== $struct_id_safe);
 
-    // Check history existence once; reused for quota enforcement and insert decision
+    // Check history existence once; reused for insert-vs-update decision below.
+    // Struct changes are only reachable via this endpoint, which is now
+    // SuperAdmin-only, so the window/quota rules never apply here.
     $hist_exists = false;
     if ($struct_changing) {
         $hist_check  = mysqli_query($conn, "SELECT id FROM staff_struct_history WHERE staff_id = $target_id AND year = $current_year AND quarter = $current_quarter");
         $hist_exists = ($hist_check && mysqli_num_rows($hist_check) > 0);
-    }
-
-    // Struct changes require the window to be open for non-superadmin; re-updates within the window are allowed
-    if ($struct_changing && !$requester_is_superadmin) {
-        if (!$in_window) {
-            echo json_encode(array('success' => false, 'message' => 'Evaluation structure can only be updated between the 1st and 10th of each quarter.'));
-            exit;
-        }
     }
 
     $update = "UPDATE staff SET grade = $grade, struct = $struct_id_safe WHERE id = $target_id AND recycle != 1";

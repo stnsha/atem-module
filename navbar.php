@@ -130,7 +130,7 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
                     <a class="nav-link <?php echo $admin_active; ?>" href="<?php echo ATEM_BASE; ?>access_control/index.php">Access Control</a>
                 </li>
                 <?php endif; ?>
-                <?php if ($_is_superadmin || $atem_permission >= 4): ?>
+                <?php if ($_is_superadmin): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $masterlist_active; ?>" href="<?php echo ATEM_BASE; ?>access_control/masterlist.php">Masterlist</a>
                 </li>

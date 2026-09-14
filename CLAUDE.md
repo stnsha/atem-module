@@ -112,10 +112,9 @@ SuperAdmin (`$atem === 1`) passes all grade-based page guards above via `$_is_su
 
 `staff.department` stores comma-separated department IDs (e.g., `"3,7"`), not a single FK. A staff member can belong to multiple departments.
 
-- `access_control/backend.php` parses this with `explode(',', $auth_row['department'])` into an array of int IDs (`$requester_dept_ids`)
-- Grades 2–3: can only view or edit target staff whose `department` IDs overlap with their own assigned departments
-- Grade 4+ and SuperAdmin: can edit all staff regardless of department assignment
-- `canEditStaff()` in `js/admin_access.js` enforces this on the frontend by comparing `REQUESTER_DEPT_IDS` against the target staff member's dept IDs
+- `access_control/backend.php` parses this with `explode(',', $auth_row['department'])` into an array of int IDs (`$requester_dept_ids`), used only for the staff **list/search** scope below — not for editing
+- Grades 2–3: `getActiveStaff`/`searchStaff` list scope is restricted to staff whose `department` IDs overlap with their own assigned departments (grade 2 in Outlet dept 1 is narrowed further to outlet overlap); grade 4+ and SuperAdmin see all staff
+- **Editing staff grade/struct is SuperAdmin-only, full stop** — no department-overlap carve-out for any grade. `access_control/backend.php`'s `updateAccess` case requires `$requester_is_superadmin` outright; `access_control/index.php` sets `$show_edit = $_is_superadmin` (hides the Action column/edit panel entirely for non-SuperAdmin); `canEditStaff()` in `js/admin_access.js` simply returns `IS_SUPERADMIN`
 
 ### Outlet ATEM — Area Manager Picker
 

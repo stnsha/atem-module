@@ -199,17 +199,7 @@
     // Returns true when the requester is allowed to edit staff in deptRaw
     // -----------------------------------------------------------------------
     function canEditStaff(deptRaw) {
-        if (IS_SUPERADMIN) return true;
-        if (!REQUESTER_DEPT_IDS || REQUESTER_DEPT_IDS.length === 0) return false;
-        var targetIds = String(deptRaw || '').split(',').map(function (d) {
-            return parseInt(d.trim(), 10);
-        }).filter(function (d) { return !isNaN(d) && d > 0; });
-        for (var i = 0; i < REQUESTER_DEPT_IDS.length; i++) {
-            for (var j = 0; j < targetIds.length; j++) {
-                if (REQUESTER_DEPT_IDS[i] === targetIds[j]) return true;
-            }
-        }
-        return false;
+        return IS_SUPERADMIN;
     }
 
     // -----------------------------------------------------------------------

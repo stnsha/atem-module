@@ -47,18 +47,6 @@ if (isset($department) && $department !== '') {
     }
 }
 
-// staff.outlet is comma-separated too (e.g. an Area Manager covering several
-// outlets). Used to narrow a grade-2 Outlet-department viewer down to their
-// own specific outlet(s), instead of every outlet company-wide. $outlet is
-// set by lock_adv.php and is untouched by api.php's own bootstrap below.
-$user_outlet_ids = array();
-if (isset($outlet) && $outlet !== '') {
-    foreach (explode(',', (string)$outlet) as $_opart) {
-        $_opart = (int)trim($_opart);
-        if ($_opart > 0) { $user_outlet_ids[] = $_opart; }
-    }
-}
-
 // Grade 1 and 2 users only ever belong to one side (HQ or Outlet, per their
 // own department), so showing both tabs is misleading noise - collapse to the
 // single matching tab, like the pre-tab single-view page. Grade 3+ and
@@ -70,10 +58,12 @@ if (((int)$atem_permission === 1 || (int)$atem_permission === 2) && !$_is_supera
 
 // Build grade-scoped issuer list for the filter dropdown.
 $issuer_list = array();
-if ((int)$atem_permission === 1 && !$_is_superadmin) {
+if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_permission === 6) && !$_is_superadmin) {
+    // Grade 1, Grade 2, and dev-simulated Grade 6: own cards only, so the
+    // issuer filter is limited to the viewer themself.
     $me_id = (int)$staff_id;
     $issuer_list[] = array('id' => $me_id, 'name' => isset($staff_names[$me_id]) ? $staff_names[$me_id] : 'You');
-} elseif (((int)$atem_permission === 2 || (int)$atem_permission === 3) && !$_is_superadmin) {
+} elseif ((int)$atem_permission === 3 && !$_is_superadmin) {
     if (!empty($user_dept_ids)) {
         $dept_parts = array();
         foreach ($user_dept_ids as $_did) {
@@ -142,8 +132,7 @@ if (isset($_SESSION['atem_warning'])) {
 
 // Enrich each row with resolved names + flattened display fields.
 $view_rows         = array();
-$row_arci_dept_ids = array(); // parallel array used only for grade 2 server-side filtering
-$row_outlet_ids    = array(); // parallel array used only for grade-2-Outlet server-side filtering
+$row_arci_dept_ids = array(); // parallel array used only for grade 3 server-side filtering
 foreach ($rows as $a) {
     $issuer_id = isset($a['issuer_staff_id']) ? (int) $a['issuer_staff_id'] : 0;
     $dept_id   = isset($a['staff_dept_id']) ? (int) $a['staff_dept_id'] : 0;
@@ -242,12 +231,12 @@ foreach ($rows as $a) {
         'payout_status'   => isset($a['payout_status']) ? $a['payout_status'] : null,
     );
     $row_arci_dept_ids[] = $arci_dept_ids;
-    $row_outlet_ids[]    = $outlet_ids;
 }
 
 // Apply server-side visibility filtering based on grade.
-if ((int)$atem_permission === 1 && !$_is_superadmin) {
-    // Grade 1: own cards only (issuer or any ARCI role).
+if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_permission === 6) && !$_is_superadmin) {
+    // Grade 1, Grade 2, and dev-simulated Grade 6: own cards only (issuer or
+    // any ARCI role) - no department/outlet overlap scope.
     // Also show own suspended cards (soft-deleted with status Suspended).
     $filtered = array();
     foreach ($view_rows as $r) {
@@ -263,35 +252,10 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
         }
     }
     $view_rows = $filtered;
-} elseif ((int)$atem_permission === 2 && !$_is_superadmin && in_array(1, $user_dept_ids, true)) {
-    // Grade 2, Outlet department: narrowed to the viewer's own specific
-    // outlet(s) (staff.outlet overlap with the card's own linked outlets) -
-    // department=1 alone is shared by every outlet company-wide, so the
-    // regular dept-overlap rule below would show every outlet's cards.
-    $filtered = array();
-    foreach ($view_rows as $idx => $r) {
-        if ($r['is_deleted']) {
-            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
-                $filtered[] = $r;
-            }
-            continue;
-        }
-        // The viewer's own cards (issuer or any ARCI role) are always shown,
-        // regardless of outlet/department scope - matches edit.php's $can_view.
-        if ($r['issuer_staff_id'] === (int)$staff_id
-                || in_array((int)$staff_id, $r['arci_staff_ids'])) {
-            $filtered[] = $r;
-            continue;
-        }
-        if (array_intersect($user_outlet_ids, $row_outlet_ids[$idx])) {
-            $filtered[] = $r;
-        }
-    }
-    $view_rows = $filtered;
 } elseif ((int)$atem_permission === 3 && !$_is_superadmin) {
     // Grade 3 (senior): Outlet-type cards are visible company-wide (all
     // outlets), regardless of the viewer's own department. HQ-type cards stay
-    // scoped to own department(s), same rule as grade 2 below.
+    // scoped to own department(s) (issuer or any ARCI member overlap).
     $filtered = array();
     foreach ($view_rows as $idx => $r) {
         if ($r['is_deleted']) {
@@ -307,31 +271,6 @@ if ((int)$atem_permission === 1 && !$_is_superadmin) {
             continue;
         }
         if ($r['atem_type'] === 2) {
-            $filtered[] = $r;
-            continue;
-        }
-        if (in_array($r['department_id'], $user_dept_ids)
-                || array_intersect($user_dept_ids, $row_arci_dept_ids[$idx])) {
-            $filtered[] = $r;
-        }
-    }
-    $view_rows = $filtered;
-} elseif ((int)$atem_permission === 2 && !$_is_superadmin) {
-    // Grade 2 (non-Outlet-dept): cards where issuer or any ARCI member belongs
-    // to ANY of the user's departments. Also show own suspended cards
-    // regardless of department.
-    $filtered = array();
-    foreach ($view_rows as $idx => $r) {
-        if ($r['is_deleted']) {
-            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
-                $filtered[] = $r;
-            }
-            continue;
-        }
-        // The viewer's own cards (issuer or any ARCI role) are always shown,
-        // regardless of department scope - matches edit.php's $can_view.
-        if ($r['issuer_staff_id'] === (int)$staff_id
-                || in_array((int)$staff_id, $r['arci_staff_ids'])) {
             $filtered[] = $r;
             continue;
         }
