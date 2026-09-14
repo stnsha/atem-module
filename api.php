@@ -2622,8 +2622,13 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                         $scopedItems = $_scopedFiltered;
                     } elseif ($_scopedPerm === 3) {
-                        // Grade 3 (senior): Outlet-type cards visible company-wide;
-                        // HQ-type cards stay scoped to own department(s).
+                        // Grade 3 (senior): Outlet-type cards visible company-wide
+                        // only when the viewer is themself in the Outlet department
+                        // (dept 1) - a non-Outlet-dept grade 3 gets no such carve-out
+                        // (matches the Outlet ATEM tab being hidden for them on
+                        // index.php/view.php). HQ-type cards stay scoped to own
+                        // department(s) either way.
+                        $_scopedIsOutletDept = in_array(1, $_scopedUserDeptIds, true);
                         $_scopedFiltered = array();
                         foreach ($scopedItems as $_sItem) {
                             if (_atem_viewer_is_own($_sItem, $_scopedUserStaff)) {
@@ -2631,7 +2636,7 @@ if (!defined('API_JWT_INCLUDED')) {
                                 continue;
                             }
                             $_sItemAtemType = isset($_sItem['atem_type']) ? (int)$_sItem['atem_type'] : 1;
-                            if ($_sItemAtemType === 2) {
+                            if ($_sItemAtemType === 2 && $_scopedIsOutletDept) {
                                 $_scopedFiltered[] = $_sItem;
                                 continue;
                             }
@@ -2798,8 +2803,12 @@ if (!defined('API_JWT_INCLUDED')) {
                         $items = $roleFiltered;
                     } elseif ($_perm === 3) {
                         // Grade 3 (senior): Outlet-type cards are visible company-wide
-                        // (all outlets); HQ-type cards stay scoped to own department(s),
-                        // same rule as grade 2 below.
+                        // only when the viewer is themself in the Outlet department
+                        // (dept 1) - a non-Outlet-dept grade 3 gets no such carve-out
+                        // (matches the Outlet ATEM tab being hidden for them on
+                        // index.php/view.php). HQ-type cards stay scoped to own
+                        // department(s) either way, same rule as grade 2 below.
+                        $_isOutletDept = in_array(1, $_userDeptIds, true);
                         $roleFiltered = array();
                         foreach ($items as $_item) {
                             if (_atem_viewer_is_own($_item, $_userStaff)) {
@@ -2807,7 +2816,7 @@ if (!defined('API_JWT_INCLUDED')) {
                                 continue;
                             }
                             $_itemAtemType = isset($_item['atem_type']) ? (int)$_item['atem_type'] : 1;
-                            if ($_itemAtemType === 2) {
+                            if ($_itemAtemType === 2 && $_isOutletDept) {
                                 $roleFiltered[] = $_item;
                                 continue;
                             }

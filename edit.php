@@ -342,10 +342,20 @@ if ($record) {
         || (bool) array_intersect($requester_dept_ids, $_card_arci_dept_ids);
     $_outlet_overlap = (bool) array_intersect($_view_user_outlet_ids, $_card_outlet_ids);
 
-    if ($_is_superadmin || $is_issuer || $is_arci_member || $_view_perm >= 4) {
+    // $_view_perm >= 4 intentionally excludes 6 - a real (non-SA) staff.grade
+    // value, not just the dev toolbar's simulated one, that must stay own-only
+    // like grade 1 everywhere else in the codebase. Without the exclusion,
+    // "6 >= 4" would wrongly let a real grade-6 staff view ANY card, HQ or
+    // Outlet, company-wide.
+    if ($_is_superadmin || $is_issuer || $is_arci_member || ($_view_perm >= 4 && $_view_perm !== 6)) {
         $can_view = true;
     } elseif ($_view_perm === 3) {
-        $can_view = ($_card_atem_type === 2) ? true : $_dept_overlap;
+        // Outlet-type cards are only company-wide for a grade-3 viewer who is
+        // themself in the Outlet department (dept 1) - a non-Outlet-dept
+        // grade 3 falls through to the same department-overlap rule as any
+        // HQ-type card (matches the Outlet ATEM tab being hidden entirely for
+        // them on index.php/view.php).
+        $can_view = ($_card_atem_type === 2 && in_array(1, $requester_dept_ids, true)) ? true : $_dept_overlap;
     } elseif ($_view_perm === 2) {
         $can_view = in_array(1, $requester_dept_ids, true) ? $_outlet_overlap : $_dept_overlap;
     } else {

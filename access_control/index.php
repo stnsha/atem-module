@@ -49,7 +49,7 @@ if (isset($department) && $department !== '') {
 // Dev-simulated grade 1/2 (via atem_dev_role_override) is included here since
 // $atem_permission/$department already reflect the simulation by this point.
 $grade1_single_view = null;
-if (((int)$atem_permission === 1 || (int)$atem_permission === 2) && !$_is_superadmin) {
+if (in_array((int)$atem_permission, array(1, 2, 3, 6), true) && !$_is_superadmin) {
     $grade1_single_view = in_array(1, $requester_dept_ids, true) ? 'outlet' : 'hq';
 }
 
