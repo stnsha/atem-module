@@ -276,8 +276,13 @@ if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_pe
     $view_rows = $filtered;
 } elseif ((int)$atem_permission === 3 && !$_is_superadmin) {
     // Grade 3 (senior): Outlet-type cards are visible company-wide (all
-    // outlets), regardless of the viewer's own department. HQ-type cards stay
-    // scoped to own department(s) (issuer or any ARCI member overlap).
+    // outlets) only when the viewer is themself in the Outlet department
+    // (dept 1). A non-Outlet-dept grade 3 (e.g. an HQ staff tagged as Area
+    // Manager on one outlet card) gets no such carve-out - they only see
+    // their own cards (issuer/ARCI/Area Manager tag counts as ARCI - see
+    // edit.php's $area_managers_by_id note) plus HQ-type cards via
+    // department overlap. Mirrors api.php's list-atems-scoped/dashboard-stats.
+    $_is_outlet_dept_viewer = in_array(1, $user_dept_ids, true);
     $filtered = array();
     foreach ($view_rows as $idx => $r) {
         if ($r['is_deleted']) {
@@ -286,13 +291,14 @@ if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_pe
             }
             continue;
         }
-        // The viewer's own cards (issuer or any ARCI role) are always shown.
+        // The viewer's own cards (issuer or any ARCI role, including a
+        // tagged Area Manager - stored as an ARCI member) are always shown.
         if ($r['issuer_staff_id'] === (int)$staff_id
                 || in_array((int)$staff_id, $r['arci_staff_ids'])) {
             $filtered[] = $r;
             continue;
         }
-        if ($r['atem_type'] === 2) {
+        if ($r['atem_type'] === 2 && $_is_outlet_dept_viewer) {
             $filtered[] = $r;
             continue;
         }
@@ -311,6 +317,19 @@ if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_pe
     $view_rows = $filtered;
 }
 // Grade 4+/SA (include_deleted=true): no filtering — all rows shown.
+
+// A non-Outlet-dept grade 1/2/3 viewer can still have own Outlet-type cards
+// (issuer, ARCI, or tagged Area Manager) surviving the filtering above even
+// though their own department collapsed them onto the HQ-only tab. Un-collapse
+// so that tab (and only their own outlet rows within it) becomes visible.
+if ($grade1_single_view === 'hq') {
+    foreach ($view_rows as $r) {
+        if ($r['atem_type'] === 2) {
+            $grade1_single_view = null;
+            break;
+        }
+    }
+}
 
 $dept_list = array();
 if ((int)$atem_permission <= 3 && !$_is_superadmin) {
@@ -654,6 +673,7 @@ $view_config = array(
                             <th class="atem-sortable" data-col="id">ATEM ID</th>
                             <th class="atem-sortable" data-col="title">Title</th>
                             <th class="atem-sortable" data-col="issuer_name">Issuer / Accountable</th>
+                            <th>ARCI</th>
                             <th class="atem-sortable" data-col="pillar_name">Pillars</th>
                             <th class="atem-sortable" data-col="start_date">Start</th>
                             <th class="atem-sortable" data-col="end_date">End</th>

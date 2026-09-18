@@ -116,6 +116,25 @@ if (in_array((int)$atem_permission, array(1, 6), true) && !$_is_superadmin) {
 // outlet_regional -> outlet.regional_id -> staff.status_rym = 134.
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
+
+// A non-Outlet-dept grade 1/2/3 viewer can still have own Outlet-type cards
+// (issuer, ARCI, or a tagged Area Manager - stored as an ARCI-shaped member,
+// see edit.php) even though their own department collapsed the dashboard
+// onto the HQ-only tab. Un-collapse so the Outlet tab (and dashboard-stats'
+// own-scoped data within it) surfaces. Mirrors view.php's same override.
+if ($grade1_single_view === 'hq') {
+    $_dash_own_list = getAtemList($staff_id);
+    if (!empty($_dash_own_list['success']) && isset($_dash_own_list['data'])) {
+        foreach ($_dash_own_list['data'] as $_dItem) {
+            $_dItemType = isset($_dItem['atem_type']) ? (int)$_dItem['atem_type'] : 1;
+            if ($_dItemType === 2 && _atem_viewer_is_own($_dItem, $staff_id)) {
+                $grade1_single_view = null;
+                break;
+            }
+        }
+    }
+}
+
 // Grade 6 (a real, non-SA staff.grade value - not just the dev toolbar's
 // simulated one) is restricted to their own outlet(s); the Region dropdown
 // then follows, narrowed to only the region(s) their own outlet(s) belong to.

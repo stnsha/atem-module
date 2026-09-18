@@ -66,10 +66,12 @@ All SuperAdmin feature gates check `$_is_superadmin` (set by `header.php`) or `$
 | Grade | Card / statistics scope |
 |---|---|
 | 1 | Own cards only — issuer or ARCI member |
-| 2, 3 | Own cards (issuer or ARCI member by `staff_id`, always) **plus** department scope: issuer dept or any ARCI member dept overlaps the user's departments. Grade 3 also sees every Outlet-type card. |
+| 2, 3 | Own cards (issuer or ARCI member by `staff_id`, always) **plus** department scope: issuer dept or any ARCI member dept overlaps the user's departments. Grade 3 also sees every Outlet-type card **only when the viewer is themself in the Outlet department (dept 1)**. |
 | 4, 5, SuperAdmin | All departments |
 
 The "own cards" clause for grades 2–3 is checked by `staff_id` against `issuer_staff_id` / `arci[].staff_id` — it ignores the `atem_arci.staff_dept_id` snapshot and the user's current department, so an issuer/ARCI member still sees their card after changing departments (`_atem_viewer_is_own()` in `api.php`; inline in `view.php`). This mirrors `edit.php`'s `$can_view`.
+
+A non-Outlet-dept grade 3 (e.g. an HQ staff picked into the Area Manager tag-group on one Outlet-type card — stored as an ARCI-shaped member with no `staff_dept_id`/`outlet_id`, see the Area Manager Picker section) gets **no** company-wide Outlet carve-out: they only see their own tagged card(s) via the "own cards" clause above, same as any other ARCI membership. `view.php`'s Outlet tab, which normally collapses away entirely for a non-Outlet-dept grade ≤3 viewer (`$grade1_single_view`), un-collapses whenever the viewer's filtered rows include at least one Outlet-type card, so the tab still surfaces (showing only their own tagged card, not every outlet). `index.php` (dashboard) does the same un-collapse server-side via a one-off `getAtemList()` + `_atem_viewer_is_own()` check (it has no pre-fetched row list of its own — dashboard-stats data is fetched client-side by AJAX). `api.php`'s `list-atems-scoped` and `dashboard-stats` cases already gated the blanket grant on `in_array(1, $userDeptIds, true)` before `view.php`/`index.php`'s tab logic caught up to match.
 
 This scoping is enforced server-side in `view.php` (card list), the `dashboard-stats` handler in `api.php` (dashboard), and `list-atems-scoped` in `api.php` (OKR Link-ATEM picker), and reflected in the department filter dropdowns (`view.php`, `index.php`). It is independent of the Access Control page, where grades 3–5 manage staff across all departments.
 

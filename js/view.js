@@ -119,7 +119,7 @@
             tabState.outlet.page = 1; renderTable('outlet', outletRows);
         });
 
-        var roleOptions = ['Issuer', 'A', 'R', 'C', 'I'];
+        var roleOptions = ['Issuer', 'A', 'R', 'C', 'I', 'None'];
         buildRoleOptions('vf-role', roleOptions);
         buildRoleOptions('vfo-role', roleOptions);
         buildRoleDropdown('vf-role', 'vf-year', function () {
@@ -452,12 +452,18 @@
     }
 
     // Shared role-match test: a row matches if it holds ANY of the selected
-    // roles (Issuer via issuer_staff_id, A/R/C/I via user_arci_roles).
+    // roles (Issuer via issuer_staff_id, A/R/C/I via user_arci_roles, None for
+    // a row the viewer isn't personally tagged on at all - e.g. shown only via
+    // department/outlet overlap, not by being Issuer or an ARCI/AM member).
     function rowMatchesRoles(r, selectedRoles, staffId) {
         for (var i = 0; i < selectedRoles.length; i++) {
             var rv = selectedRoles[i];
             if (rv === 'Issuer') {
                 if (staffId && r.issuer_staff_id == staffId) { return true; }
+            } else if (rv === 'None') {
+                var isIssuer   = staffId && r.issuer_staff_id == staffId;
+                var hasArciTag = r.user_arci_roles && r.user_arci_roles.length > 0;
+                if (!isIssuer && !hasArciTag) { return true; }
             } else if (r.user_arci_roles && r.user_arci_roles.indexOf(rv) >= 0) {
                 return true;
             }
@@ -747,6 +753,22 @@
         return buildIssuerCell(r) + CELL_DIVIDER_HTML + buildAccountableCell(r);
     }
 
+    // "Your Role" badge cell (Issuer's own A/R/C/I roles on the card, incl. a
+    // tagged Area Manager - stored as an ARCI member) - shared by HQ and
+    // Outlet tables.
+    function buildArciCell(r) {
+        if (!r.user_arci_roles || r.user_arci_roles.length === 0) {
+            return '<span style="color:#adb5bd;font-size:12px;">—</span>';
+        }
+        var html = '';
+        for (var ri = 0; ri < r.user_arci_roles.length; ri++) {
+            var role = r.user_arci_roles[ri];
+            var rc = ARCI_COLOR[role] || '#6c757d';
+            html += '<span style="display:inline-block;background:' + rc + ';color:#fff;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;margin:1px 2px;">' + escapeHtml(role) + '</span>';
+        }
+        return html;
+    }
+
     function buildHqRowHtml(r) {
         var levelCell = r.level_label ? pill(shortLevelLabel(r.level_label), LEVEL_COLOR[r.level_label] || '#6c757d', r.level_label + (r.system_name ? ' - ' + r.system_name : '')) : '-';
         var statusCell = r.status ? pill(r.status, STATUS_COLOR[r.status] || '#6c757d') : '-';
@@ -754,21 +776,11 @@
             statusCell = '<span style="display:inline-flex;flex-direction:column;align-items:center;">' + statusCell
                 + '<span style="color:#dc3545;font-style:italic;font-size:11px;margin-top:3px;">Overdue</span></span>';
         }
-        var arciCell = '';
-        if (r.user_arci_roles && r.user_arci_roles.length > 0) {
-            for (var ri = 0; ri < r.user_arci_roles.length; ri++) {
-                var role = r.user_arci_roles[ri];
-                var rc = ARCI_COLOR[role] || '#6c757d';
-                arciCell += '<span style="display:inline-block;background:' + rc + ';color:#fff;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;margin:1px 2px;">' + escapeHtml(role) + '</span>';
-            }
-        } else {
-            arciCell = '<span style="color:#adb5bd;font-size:12px;">—</span>';
-        }
         return '<tr' + rowStyleFor(r) + '>'
             + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
             + '<td>' + escapeHtml(r.title) + '</td>'
             + '<td>' + buildIssuerAccountableCell(r) + '</td>'
-            + '<td>' + arciCell + '</td>'
+            + '<td>' + buildArciCell(r) + '</td>'
             + '<td>' + levelCell + '</td>'
             + '<td>' + fmtDate(r.start_date) + '</td>'
             + '<td>' + buildEndCell(r) + '</td>'
@@ -788,6 +800,7 @@
             + '<td><span class="atem-id">#AT' + r.id + '</span></td>'
             + '<td>' + escapeHtml(r.title) + '</td>'
             + '<td>' + buildIssuerAccountableCell(r) + '</td>'
+            + '<td>' + buildArciCell(r) + '</td>'
             + '<td>' + pillarCell + '</td>'
             + '<td>' + fmtDate(r.start_date) + '</td>'
             + '<td>' + buildEndCell(r) + '</td>'
