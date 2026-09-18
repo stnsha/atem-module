@@ -359,7 +359,13 @@
     // --------------------------------------------------- role checkbox dropdown
     // baseId is 'vf-role' (HQ tab) or 'vfo-role' (Outlet tab) - same widget
     // shape as the status checkbox dropdown above, own independent state.
-    var DEFAULT_ROLES = ['Issuer', 'A', 'R', 'C', 'I'];
+    // Grade 4+/SuperAdmin see every card regardless of tag (no own-card
+    // scoping applies to them), so "None" (untagged) starts checked for them
+    // too. Everyone else starts with None unchecked, since for a scoped
+    // viewer an untagged row only ever appears via dept/outlet overlap.
+    var DEFAULT_ROLES = (CFG.userGrade >= 4 || CFG.isSuperAdmin)
+        ? ['Issuer', 'A', 'R', 'C', 'I', 'None']
+        : ['Issuer', 'A', 'R', 'C', 'I'];
 
     function buildRoleOptions(baseId, roleValues) {
         var listEl = $(baseId + '-list');
