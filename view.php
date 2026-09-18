@@ -103,6 +103,19 @@ if (isset($outlet) && $outlet !== '') {
 }
 $_view_outlet_scoped = (in_array((int)$atem_permission, [1, 2, 6], true) && !$_is_superadmin);
 
+// Grade 6 (Flexi KPI) is only granted the outlet-wide carve-out below (see
+// the row-filtering block further down) when they hold the Area Manager
+// position (status_rym = 134, same id used by the Outlet ATEM Area Manager
+// picker) - any other grade-6 position stays own-only. Mirrors api.php's
+// dashboard-stats/list-atems-scoped identical check.
+$_is_area_manager = false;
+if ((int)$atem_permission === 6 && !$_is_superadmin && (int)$staff_id > 0) {
+    $_am_res = mysqli_query($conn, "SELECT status_rym FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+    if ($_am_res && ($_am_row = mysqli_fetch_assoc($_am_res))) {
+        $_is_area_manager = ((int)$_am_row['status_rym'] === 134);
+    }
+}
+
 // Outlet filter + code lookup used to resolve atem_outlets.outlet_id to a
 // display code below. regional_id also lets each row resolve its region(s)
 // (odb.outlet.regional_id -> odb.outlet_regional.id) for the Region filter.
@@ -221,6 +234,7 @@ foreach ($rows as $a) {
         'title'           => isset($a['title']) ? $a['title'] : '',
         'atem_type'       => isset($a['atem_type']) ? (int) $a['atem_type'] : 1,
         'outlet_codes'    => $outlet_codes,
+        'outlet_ids'      => $outlet_ids,
         'region_names'    => $row_region_names,
         'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
         // Outlet-type ATEM -> Issuer's position; HQ-type ATEM -> Issuer's department.
@@ -257,9 +271,13 @@ foreach ($rows as $a) {
 
 // Apply server-side visibility filtering based on grade.
 if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_permission === 6) && !$_is_superadmin) {
-    // Grade 1, Grade 2, and dev-simulated Grade 6: own cards only (issuer or
-    // any ARCI role) - no department/outlet overlap scope.
+    // Grade 1, Grade 2, and a real grade-6 (Flexi KPI) staff record: own cards
+    // only (issuer or any ARCI role) - no department overlap scope.
     // Also show own suspended cards (soft-deleted with status Suspended).
+    // Exception: grade 6 Area Managers (status_rym = 134) additionally see
+    // every Outlet-type card whose outlet(s) overlap their own outlet(s) -
+    // a non-Area-Manager grade 6 stays own-only. Mirrors api.php's
+    // dashboard-stats/list-atems-scoped identical carve-out.
     $filtered = array();
     foreach ($view_rows as $r) {
         if ($r['is_deleted']) {
@@ -270,6 +288,11 @@ if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_pe
         }
         if ($r['issuer_staff_id'] === (int)$staff_id
                 || in_array((int)$staff_id, $r['arci_staff_ids'])) {
+            $filtered[] = $r;
+            continue;
+        }
+        if ((int)$atem_permission === 6 && $_is_area_manager && $r['atem_type'] === 2
+                && array_intersect($user_outlet_ids, $r['outlet_ids'])) {
             $filtered[] = $r;
         }
     }

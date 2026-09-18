@@ -2584,40 +2584,45 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     $_scopedUserStaff = (int)$staff_id;
 
+                    // Grade 6 (Flexi KPI) is only granted the outlet-wide carve-out
+                    // below when they hold the Area Manager position
+                    // (status_rym = 134) - any other grade-6 position stays own-only.
+                    $_scopedIsAreaManager = false;
+                    if ($_scopedPerm === 6 && $_scopedUserStaff > 0) {
+                        $_scopedAmRes = mysqli_query($conn, "SELECT status_rym FROM staff WHERE id = " . $_scopedUserStaff . " AND recycle != 1");
+                        if ($_scopedAmRes && ($_scopedAmRow = mysqli_fetch_assoc($_scopedAmRes))) {
+                            $_scopedIsAreaManager = ((int)$_scopedAmRow['status_rym'] === 134);
+                        }
+                    }
+
                     if ($_scopedIsSA) {
                         // SuperAdmin: no role-based filtering.
-                    } elseif ($_scopedPerm === 1 || $_scopedPerm === 6) {
-                        // Grade 1, and a real (non-SA) grade-6 staff record: own
-                        // cards only - no department/outlet overlap scope.
-                        $_scopedFiltered = array();
-                        foreach ($scopedItems as $_sItem) {
-                            $_sIssuerId = isset($_sItem['issuer_staff_id']) ? (int)$_sItem['issuer_staff_id'] : 0;
-                            $_sArciIds  = array();
-                            if (isset($_sItem['arci']) && is_array($_sItem['arci'])) {
-                                foreach ($_sItem['arci'] as $_sm) {
-                                    if (!empty($_sm['staff_id'])) { $_sArciIds[] = (int)$_sm['staff_id']; }
-                                }
-                            }
-                            if ($_sIssuerId === $_scopedUserStaff || in_array($_scopedUserStaff, $_sArciIds)) {
-                                $_scopedFiltered[] = $_sItem;
-                            }
-                        }
-                        $scopedItems = $_scopedFiltered;
-                    } elseif ($_scopedPerm === 2 && in_array(1, $_scopedUserDeptIds, true)) {
+                    } elseif ($_scopedPerm === 1 || $_scopedPerm === 2 || $_scopedPerm === 6) {
+                        // Grade 1, Grade 2, and a real (non-SA) grade-6 (Flexi KPI)
+                        // staff record: own cards only - no department overlap scope.
+                        // Mirrors view.php's own-only treatment of grade 2. Exception:
+                        // grade 6 Area Managers (status_rym = 134) additionally get
+                        // every Outlet-type card whose outlet(s) overlap their own
+                        // outlet(s) - a non-Area-Manager grade 6 stays own-only.
                         $_scopedFiltered = array();
                         foreach ($scopedItems as $_sItem) {
                             if (_atem_viewer_is_own($_sItem, $_scopedUserStaff)) {
                                 $_scopedFiltered[] = $_sItem;
                                 continue;
                             }
-                            $_sItemOutletIds = array();
-                            if (isset($_sItem['outlets']) && is_array($_sItem['outlets'])) {
-                                foreach ($_sItem['outlets'] as $_so) {
-                                    if (!empty($_so['outlet_id'])) { $_sItemOutletIds[] = (int)$_so['outlet_id']; }
+                            if ($_scopedPerm === 6 && $_scopedIsAreaManager) {
+                                $_sItemAtemType = isset($_sItem['atem_type']) ? (int)$_sItem['atem_type'] : 1;
+                                if ($_sItemAtemType === 2) {
+                                    $_sItemOutletIds = array();
+                                    if (isset($_sItem['outlets']) && is_array($_sItem['outlets'])) {
+                                        foreach ($_sItem['outlets'] as $_so) {
+                                            if (!empty($_so['outlet_id'])) { $_sItemOutletIds[] = (int)$_so['outlet_id']; }
+                                        }
+                                    }
+                                    if (array_intersect($_scopedUserOutletIds, $_sItemOutletIds)) {
+                                        $_scopedFiltered[] = $_sItem;
+                                    }
                                 }
-                            }
-                            if (array_intersect($_scopedUserOutletIds, $_sItemOutletIds)) {
-                                $_scopedFiltered[] = $_sItem;
                             }
                         }
                         $scopedItems = $_scopedFiltered;
@@ -2637,25 +2642,6 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                             $_sItemAtemType = isset($_sItem['atem_type']) ? (int)$_sItem['atem_type'] : 1;
                             if ($_sItemAtemType === 2 && $_scopedIsOutletDept) {
-                                $_scopedFiltered[] = $_sItem;
-                                continue;
-                            }
-                            $_sItemDept  = isset($_sItem['staff_dept_id']) ? (int)$_sItem['staff_dept_id'] : 0;
-                            $_sArciDepts = array();
-                            if (isset($_sItem['arci']) && is_array($_sItem['arci'])) {
-                                foreach ($_sItem['arci'] as $_sm) {
-                                    if (!empty($_sm['staff_dept_id'])) { $_sArciDepts[] = (int)$_sm['staff_dept_id']; }
-                                }
-                            }
-                            if (in_array($_sItemDept, $_scopedUserDeptIds) || array_intersect($_scopedUserDeptIds, $_sArciDepts)) {
-                                $_scopedFiltered[] = $_sItem;
-                            }
-                        }
-                        $scopedItems = $_scopedFiltered;
-                    } elseif ($_scopedPerm === 2) {
-                        $_scopedFiltered = array();
-                        foreach ($scopedItems as $_sItem) {
-                            if (_atem_viewer_is_own($_sItem, $_scopedUserStaff)) {
                                 $_scopedFiltered[] = $_sItem;
                                 continue;
                             }
@@ -2759,45 +2745,46 @@ if (!defined('API_JWT_INCLUDED')) {
                     }
                     $_userStaff = (int)$staff_id;
 
+                    // Grade 6 (Flexi KPI) is only granted the outlet-wide carve-out
+                    // below when they hold the Area Manager position
+                    // (status_rym = 134, same id used by the Outlet ATEM Area
+                    // Manager picker) - any other grade-6 position stays own-only.
+                    $_isAreaManager = false;
+                    if ($_perm === 6 && $_userStaff > 0) {
+                        $_amRes = mysqli_query($conn, "SELECT status_rym FROM staff WHERE id = " . $_userStaff . " AND recycle != 1");
+                        if ($_amRes && ($_amRow = mysqli_fetch_assoc($_amRes))) {
+                            $_isAreaManager = ((int)$_amRow['status_rym'] === 134);
+                        }
+                    }
+
                     if ($_isSA) {
                         // SuperAdmin: no role-based filtering.
-                    } elseif ($_perm === 1 || $_perm === 6) {
-                        // Grade 1, and a real (non-SA) grade-6 staff record: own
-                        // cards only - no department/outlet overlap scope.
-                        $roleFiltered = array();
-                        foreach ($items as $_item) {
-                            $_issuerId = isset($_item['issuer_staff_id']) ? (int)$_item['issuer_staff_id'] : 0;
-                            $_arciIds  = array();
-                            if (isset($_item['arci']) && is_array($_item['arci'])) {
-                                foreach ($_item['arci'] as $_m) {
-                                    if (!empty($_m['staff_id'])) { $_arciIds[] = (int)$_m['staff_id']; }
-                                }
-                            }
-                            if ($_issuerId === $_userStaff || in_array($_userStaff, $_arciIds)) {
-                                $roleFiltered[] = $_item;
-                            }
-                        }
-                        $items = $roleFiltered;
-                    } elseif ($_perm === 2 && in_array(1, $_userDeptIds, true)) {
-                        // Grade 2, Outlet department: narrowed to the viewer's own
-                        // specific outlet(s) (staff.outlet overlap with the card's own
-                        // linked outlets) - department=1 alone is shared by every
-                        // outlet company-wide, so the dept-overlap rule below would
-                        // show every outlet's cards.
+                    } elseif ($_perm === 1 || $_perm === 2 || $_perm === 6) {
+                        // Grade 1, Grade 2, and a real (non-SA) grade-6 (Flexi KPI)
+                        // staff record: own cards only - no department overlap scope.
+                        // Mirrors view.php's own-only treatment of grade 2. Exception:
+                        // grade 6 Area Managers (status_rym = 134) additionally get
+                        // every Outlet-type card whose outlet(s) overlap their own
+                        // outlet(s) - a non-Area-Manager grade 6 stays own-only.
                         $roleFiltered = array();
                         foreach ($items as $_item) {
                             if (_atem_viewer_is_own($_item, $_userStaff)) {
                                 $roleFiltered[] = $_item;
                                 continue;
                             }
-                            $_itemOutletIds = array();
-                            if (isset($_item['outlets']) && is_array($_item['outlets'])) {
-                                foreach ($_item['outlets'] as $_o) {
-                                    if (!empty($_o['outlet_id'])) { $_itemOutletIds[] = (int)$_o['outlet_id']; }
+                            if ($_perm === 6 && $_isAreaManager) {
+                                $_itemAtemType = isset($_item['atem_type']) ? (int)$_item['atem_type'] : 1;
+                                if ($_itemAtemType === 2) {
+                                    $_itemOutletIds = array();
+                                    if (isset($_item['outlets']) && is_array($_item['outlets'])) {
+                                        foreach ($_item['outlets'] as $_o) {
+                                            if (!empty($_o['outlet_id'])) { $_itemOutletIds[] = (int)$_o['outlet_id']; }
+                                        }
+                                    }
+                                    if (array_intersect($_userOutletIds, $_itemOutletIds)) {
+                                        $roleFiltered[] = $_item;
+                                    }
                                 }
-                            }
-                            if (array_intersect($_userOutletIds, $_itemOutletIds)) {
-                                $roleFiltered[] = $_item;
                             }
                         }
                         $items = $roleFiltered;
@@ -2807,7 +2794,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         // (dept 1) - a non-Outlet-dept grade 3 gets no such carve-out
                         // (matches the Outlet ATEM tab being hidden for them on
                         // index.php/view.php). HQ-type cards stay scoped to own
-                        // department(s) either way, same rule as grade 2 below.
+                        // department(s) either way.
                         $_isOutletDept = in_array(1, $_userDeptIds, true);
                         $roleFiltered = array();
                         foreach ($items as $_item) {
@@ -2817,27 +2804,6 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                             $_itemAtemType = isset($_item['atem_type']) ? (int)$_item['atem_type'] : 1;
                             if ($_itemAtemType === 2 && $_isOutletDept) {
-                                $roleFiltered[] = $_item;
-                                continue;
-                            }
-                            $_itemDept  = isset($_item['staff_dept_id']) ? (int)$_item['staff_dept_id'] : 0;
-                            $_arciDepts = array();
-                            if (isset($_item['arci']) && is_array($_item['arci'])) {
-                                foreach ($_item['arci'] as $_m) {
-                                    if (!empty($_m['staff_dept_id'])) { $_arciDepts[] = (int)$_m['staff_dept_id']; }
-                                }
-                            }
-                            if (in_array($_itemDept, $_userDeptIds) || array_intersect($_userDeptIds, $_arciDepts)) {
-                                $roleFiltered[] = $_item;
-                            }
-                        }
-                        $items = $roleFiltered;
-                    } elseif ($_perm === 2) {
-                        // Grade 2 (non-Outlet-dept): cards where the issuer or any ARCI
-                        // member belongs to ANY of the user's departments.
-                        $roleFiltered = array();
-                        foreach ($items as $_item) {
-                            if (_atem_viewer_is_own($_item, $_userStaff)) {
                                 $roleFiltered[] = $_item;
                                 continue;
                             }
@@ -2917,6 +2883,12 @@ if (!defined('API_JWT_INCLUDED')) {
 
                     $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'extended_status' => 0, 'failed' => 0, 'draft' => 0);
                     $total = 0;
+                    // Total ATEM Cards tile: all-time count (no year/month/quarter
+                    // filter), including Suspended/Force Terminated - only Deleted
+                    // and Draft are excluded. Kept separate from $total, which stays
+                    // period-filtered and Suspended/Force Terminated-excluded for
+                    // every other stat (Active/Closed/Failed/level-breakdown/etc).
+                    $totalAll = 0;
                     $incentiveTotal = 0.0;
                     $overdueCount = 0;
                     $todayStr = date('Y-m-d');
@@ -3009,6 +2981,10 @@ if (!defined('API_JWT_INCLUDED')) {
                                 }
                             }
                             if (!$itemInRegion) { continue; }
+                        }
+
+                        if ($statusVal !== 'Deleted' && $statusVal !== 'Draft' && $statusVal !== '' && empty($item['deleted_at'])) {
+                            $totalAll++;
                         }
 
                         if ($statusVal === 'Suspended' || $statusVal === 'Force Terminated') {
@@ -3375,6 +3351,7 @@ if (!defined('API_JWT_INCLUDED')) {
                         'success' => true,
                         'data'    => array(
                             'total'           => $total,
+                            'total_all'       => $totalAll,
                             'by_status'       => $byStatus,
                             'by_level'        => $byLevel,
                             'by_pillar'       => $byPillar,

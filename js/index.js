@@ -670,7 +670,7 @@
             }
         }
 
-        setText('dash-total',    formatNumber(total));
+        setText('dash-total',    formatNumber(data.total_all || 0));
         setText('dash-active',   formatNumber(active));
         setText('dash-closed',   formatNumber(closed));
         setText('dash-failed',   formatNumber(failed));
@@ -822,7 +822,7 @@
             }
         }
 
-        setText('dasho-total',    formatNumber(total));
+        setText('dasho-total',    formatNumber(data.total_all || 0));
         setText('dasho-active',   formatNumber(active));
         setText('dasho-closed',   formatNumber(closed));
         setText('dasho-failed',   formatNumber(failed));
@@ -1311,12 +1311,12 @@
                 resetQuarterDropdown('dash-quarter');
                 if (deptEl)    { deptEl.value    = ''; }
                 resetStaffDropdown();
-                loadDashboard({ filter_year: 2026 });
+                loadDashboard({ filter_year: 2026, filter_atem_type: 1 });
             });
         }
 
         // Default load: 2026 data
-        if (CFG.tabSingleView !== 'outlet') { loadDashboard({ filter_year: 2026 }); }
+        if (CFG.tabSingleView !== 'outlet') { loadDashboard({ filter_year: 2026, filter_atem_type: 1 }); }
 
         // Stat card click navigation
         var dashStats = document.querySelectorAll('.atem-dash-stat');
