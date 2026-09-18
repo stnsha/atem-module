@@ -1,6 +1,8 @@
-/* ATEM edit/view: loads an existing card, renders read-only (mode=read) or
-   editable (mode=edit). In edit mode, children (ARCI, links, attachments) are
-   persisted immediately against the real id; the main fields + timeline save via
+/* ATEM edit/view: loads an existing card, renders read-only or editable
+   (mode=edit, default) per server-side $mode/$is_read from edit.php — read-only
+   is only forced by that page's permission backstops now, not a ?mode=read
+   query param. In edit mode, children (ARCI, links, attachments) are persisted
+   immediately against the real id; the main fields + timeline save via
    update-atem (PUT). Talks to the JWT proxy at atem/api.php. */
 (function () {
     'use strict';

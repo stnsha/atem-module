@@ -980,7 +980,7 @@ function renderEditAtemTable() {
             + '<td style="white-space:nowrap;">' + endHtml + '</td>'
             + '<td><span class="atem-pill" style="background-color:' + editEsc(a.status_color) + '">' + editEsc(a.status || '-') + '</span></td>'
             + '<td class="text-end">' + rewardHtml + '</td>'
-            + '<td><a class="btn btn-sm btn-outline-primary" href="' + window.ATEM_MODULE_BASE + 'edit.php?id=' + a.id + '&mode=read" title="View"><i class="bi bi-eye"></i></a></td>'
+            + '<td><a class="btn btn-sm btn-outline-primary" href="' + window.ATEM_MODULE_BASE + 'edit.php?id=' + a.id + '" title="View"><i class="bi bi-eye"></i></a></td>'
             + '<td class="text-center">' + payoutHtml + '</td>'
             + '</tr>';
     }

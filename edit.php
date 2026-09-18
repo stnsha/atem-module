@@ -1,7 +1,10 @@
 <?php
-$mode = 'read';
-if (isset($_GET['mode']) && $_GET['mode'] === 'edit')         { $mode = 'edit'; }
-elseif (isset($_GET['mode']) && $_GET['mode'] === 'progress') { $mode = 'progress'; }
+// Read-only via ?mode=read (or any unrecognized mode) is no longer honored here —
+// it caused confusion where users landed on a read-only page without noticing.
+// Actual read-only enforcement still happens below via the $can_view/$can_edit
+// permission backstops (deleted/terminal cards, non-issuer, non-ARCI, etc.).
+$mode = 'edit';
+if (isset($_GET['mode']) && $_GET['mode'] === 'progress') { $mode = 'progress'; }
 $is_read     = ($mode !== 'edit');
 $is_progress = ($mode === 'progress');
 $page_title  = ($mode === 'edit') ? 'Edit ATEM' : 'ATEM';
