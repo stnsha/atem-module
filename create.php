@@ -27,7 +27,11 @@ $issuer_display = $issuer_name . ($issuer_department !== '' ? ' (' . $issuer_dep
 // simulation is active), so this naturally follows that simulation too.
 $_issuer_dept_ids = array_map('trim', explode(',', (string) $department));
 $_issuer_is_outlet_dept = in_array('1', $_issuer_dept_ids, true);
-$_forced_atem_type = $_issuer_is_outlet_dept ? 'outlet' : 'hq';
+// Grade 6 (Flexi KPI) is an Outlet-only role regardless of department - never
+// forced onto HQ, and never given the choice below (see
+// $_can_choose_atem_type).
+$_is_flexi_kpi = ((int) $atem_permission === 6 && !$_is_superadmin);
+$_forced_atem_type = ($_is_flexi_kpi || $_issuer_is_outlet_dept) ? 'outlet' : 'hq';
 
 // Build staff grouped by department (for the ARCI pickers).
 $departments   = array();
@@ -103,34 +107,6 @@ if ($outlet_res) {
     }
 }
 
-// Area Manager(s) picker (outlet-type ATEMs only): strictly staff whose
-// position is Area Manager (staff.status_rym = 134) and grade 3 or above.
-// LEFT JOIN keeps the position label available for display.
-$area_managers_list = [];
-$am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
-           FROM staff s
-           LEFT JOIN position_rymnet p ON p.id = s.status_rym
-           WHERE s.status_rym = 134 AND s.grade >= 3 AND s.recycle != 1
-           ORDER BY s.nama_staff";
-$am_res = mysqli_query($conn, $am_sql);
-if ($am_res) {
-    while ($arow = mysqli_fetch_assoc($am_res)) {
-        $am_outlet_ids = [];
-        foreach (explode(',', (string) $arow['outlet']) as $oid) {
-            $oid = (int) trim($oid);
-            if ($oid > 0) {
-                $am_outlet_ids[] = $oid;
-            }
-        }
-        $area_managers_list[] = [
-            'id'         => (int) $arow['id'],
-            'name'       => $arow['nama_staff'],
-            'position'   => $arow['position_name'] ?? '',
-            'outlet_ids' => $am_outlet_ids,
-        ];
-    }
-}
-
 // Staff grouped by outlet (for the ARCI picker on Outlet-type ATEMs). A staff
 // member can belong to several outlets (comma-separated staff.outlet), so they
 // are bucketed under every outlet id they belong to, not just one.
@@ -175,6 +151,23 @@ if (!empty($lookup_result['success']) && isset($lookup_result['data'])) {
 
 $issuer_auth = getStaffAuthData($staff_id);
 
+// Outlet ATEM cards are scoped to the issuer's own outlet(s) - no manual
+// tagging step. $outlet (comma-separated staff.outlet, set by api.php above)
+// is dev-view-override aware, so this naturally follows the toolbar's
+// HQ/Outlet simulation too. Also drives the ARCI Scope > Outlet dropdown
+// (js/create.js's populateDepartments()), which only ever offers these same
+// outlets.
+$_issuer_outlet_ids = [];
+if (isset($outlet) && $outlet !== '') {
+    foreach (explode(',', (string) $outlet) as $_oid) {
+        $_oid = (int) trim($_oid);
+        if ($_oid > 0) { $_issuer_outlet_ids[] = $_oid; }
+    }
+}
+$issuer_outlets = array_values(array_filter($outlets_list, function ($o) use ($_issuer_outlet_ids) {
+    return in_array($o['id'], $_issuer_outlet_ids, true);
+}));
+
 // Hydrate any in-progress draft saved to the session (survives refresh). Staged
 // attachments live in their own key; merge them in for the frontend to restore.
 $session_draft = isset($_SESSION['atem_draft']) ? $_SESSION['atem_draft'] : null;
@@ -186,10 +179,11 @@ if ($session_files !== null) {
     $session_draft['attachments'] = $session_files;
 }
 
-// Only grade 3+ (and SuperAdmin) may choose between HQ / Outlet ATEM. Lower
+// Only grade 4+ (and SuperAdmin) may choose between HQ / Outlet ATEM. Lower
 // grades never see the selector and are forced onto HQ/Outlet based on their
-// own department (see $_forced_atem_type above).
-$_can_choose_atem_type = ($atem_permission >= 3) || $_is_superadmin;
+// own department (see $_forced_atem_type above). Grade 6 (Flexi KPI) never
+// gets the choice either, regardless of grade value - they're Outlet-only.
+$_can_choose_atem_type = ($atem_permission >= 4 || $_is_superadmin) && !$_is_flexi_kpi;
 
 $atem_config = array(
     'atemId'        => 0,
@@ -211,7 +205,7 @@ $atem_config = array(
     'staffByDept'   => $staff_by_dept,
     'allStaff'      => $all_staff_flat,
     'outlets'       => $outlets_list,
-    'areaManagers'  => $area_managers_list,
+    'issuerOutlets' => $issuer_outlets,
     'staffByOutlet' => $staff_by_outlet,
     'draft'         => $session_draft,
 );
@@ -300,30 +294,6 @@ $api_unavailable = empty($lookup_result['success']);
                         <option value="">Select pillar</option>
                     </select>
                     <div class="atem-form-error" id="atem-pillars-error"></div>
-                </div>
-                <div class="col-12 atem-outlet-only atem-hidden" id="atem-am-tag-group">
-                    <label class="form-label">Area Manager(s) <span class="atem-req">*</span></label>
-                    <div class="row g-2">
-                        <div class="col-md-6">
-                            <div class="atem-outlet-picker" id="atem-am-picker-wrap">
-                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area
-                                    manager(s)...</div>
-                                <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
-                                    <div class="atem-outlet-picker-search-wrap">
-                                        <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
-                                            placeholder="Search area managers...">
-                                    </div>
-                                    <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
-                                </div>
-                            </div>
-                            <div class="atem-form-error" id="atem-am-error"></div>
-                        </div>
-                        <div class="col-md-6">
-                            <div id="atem-am-tags" class="atem-outlet-tags">
-                                <span class="atem-empty-state">No area manager tagged.</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
                 <div class="col-md-6">
                     <label for="tl-start" class="form-label">Start Date <span class="atem-req">*</span></label>

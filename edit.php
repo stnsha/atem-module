@@ -101,9 +101,12 @@ if ($outlet_res) {
     }
 }
 
-// Area Manager(s) picker (outlet-type ATEMs only): strictly staff whose
-// position is Area Manager (staff.status_rym = 134) and grade 3 or above.
-// LEFT JOIN keeps the position label available for display.
+// Area Manager lookup - the picker itself has been removed (new/edited cards
+// no longer add Area Manager ARCI members), but existing cards saved before
+// the removal can still carry one, stored as an ARCI-shaped member with no
+// staff_dept_id/outlet_id. Kept here purely to resolve that member's display
+// name/position below (see $area_managers_by_id) - not exposed to the JS
+// config, since there's no picker left to populate.
 $area_managers_list = [];
 $am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
            FROM staff s
@@ -562,7 +565,6 @@ $atem_config = array(
     'staffByDept'  => $staff_by_dept,
     'allStaff'     => $all_staff_flat,
     'outlets'      => $outlets_list,
-    'areaManagers' => $area_managers_list,
     'staffByOutlet' => $staff_by_outlet,
     'record'       => $record,
     'isIssuer'             => (bool) $is_issuer_now,
@@ -735,32 +737,6 @@ if ($_devIssuerEligible):
                         <option value="">Select pillar</option>
                     </select>
                     <div class="atem-form-error" id="atem-pillars-error"></div>
-                </div>
-                <div class="col-12 atem-outlet-only atem-hidden" id="atem-am-tag-group">
-                    <label class="form-label">Area Manager(s) <span class="atem-req">*</span></label>
-                    <div class="row g-2">
-                        <div class="col-md-6">
-                            <?php if ($suspended_issuer_edit || (!$is_read && !$issuer_completed_edit)): ?>
-                            <div class="atem-outlet-picker" id="atem-am-picker-wrap">
-                                <div class="atem-outlet-picker-btn" id="atem-am-picker-btn" tabindex="0">Select area
-                                    manager(s)...</div>
-                                <div class="atem-outlet-picker-dropdown" id="atem-am-picker-dropdown">
-                                    <div class="atem-outlet-picker-search-wrap">
-                                        <input class="atem-outlet-picker-search" id="atem-am-picker-search" type="search"
-                                            placeholder="Search area managers...">
-                                    </div>
-                                    <ul class="atem-outlet-picker-list" id="atem-am-picker-list"></ul>
-                                </div>
-                            </div>
-                            <?php endif; ?>
-                            <div class="atem-form-error" id="atem-am-error"></div>
-                        </div>
-                        <div class="col-md-6">
-                            <div id="atem-am-tags" class="atem-outlet-tags">
-                                <span class="atem-empty-state">No area manager tagged.</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
                 <div class="col-12 mt-2">
                     <label class="form-label">ATEM Description</label>

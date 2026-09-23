@@ -371,7 +371,7 @@ if ((int)$atem_permission <= 3 && !$_is_superadmin) {
 
 $_view_cur_year = max(2026, (int)date('Y'));
 $view_year_opts = array();
-for ($y = 2026; $y <= $_view_cur_year; $y++) {
+for ($y = 2025; $y <= $_view_cur_year; $y++) {
     $view_year_opts[] = $y;
 }
 

@@ -505,9 +505,7 @@ if ($type === 'performance') {
             $_status = ex_status_val($_a);
             if (!in_array($_status, $filter_statuses, true)) { continue; }
 
-            $_dateField = atem_status_period_field($_status);
-            $_dateStr   = isset($_a[$_dateField]) ? $_a[$_dateField] : null;
-            if (!atem_date_in_period($_dateStr, $period_months, $filter_year)) { continue; }
+            if (!atem_matches_period($_status, $_a, $period_months, $filter_year)) { continue; }
 
             emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a, false, $filter_roles);
         }
@@ -532,9 +530,7 @@ if ($type === 'performance') {
                 $_status = ex_status_val($_a);
                 if (!in_array($_status, $outlet_okr_statuses, true)) { continue; }
 
-                $_dateField = atem_status_period_field($_status);
-                $_dateStr   = isset($_a[$_dateField]) ? $_a[$_dateField] : null;
-                if (!atem_date_in_period($_dateStr, $period_months, $filter_year)) { continue; }
+                if (!atem_matches_period($_status, $_a, $period_months, $filter_year)) { continue; }
 
                 emit_atem_rows($out, $sid, $p_name, $p_dept, $p_grade, $p_struct, $_a, true, $filter_roles);
             }

@@ -478,20 +478,61 @@
     }
 
     // --------------------------------------------------------------- filtering
-    // Active/Draft cards haven't closed yet, so the Year/Month/From-To
-    // filters go by when they started; every other status (Completed family,
-    // Extended, Failed) is bucketed by when it closed - mirrors api.php's
-    // atem_status_period_field()/dashboard-stats convention, so the counts
-    // shown here and on the dashboard agree for the same filter selection.
+    // Active is matched by whether its start_date..end_date span overlaps the
+    // Year/Month filter (see spanOverlapsPeriod()); Draft (not started closing
+    // yet) by start_date alone; every other status (Completed family,
+    // Extended, Failed) by closure_date - mirrors api.php's
+    // atem_matches_period()/dashboard-stats convention, so the counts shown
+    // here and on the dashboard agree for the same filter selection.
     function periodDateOf(r) {
-        // Active/Draft haven't closed yet, so period by start_date; Suspended/
-        // Force Terminated never get a closure_date either (they're soft-deleted
-        // without ever actually closing) - period them by start_date too, or the
-        // Year/Month filter would silently exclude every one of them.
-        if (r.status === 'Active' || r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated') {
+        // Draft/Suspended/Force Terminated haven't closed yet, so period by
+        // start_date (Suspended/Force Terminated never get a closure_date
+        // either - they're soft-deleted without ever actually closing, or the
+        // Year/Month filter would silently exclude every one of them). Active/
+        // Extended are handled separately via spanOverlapsPeriod(). Deleted
+        // never gets a closure_date either (deletion only sets deleted_at/
+        // atem_status_id/remarks/closed_by) - period it by deleted_at, or
+        // every deleted card would bypass the Year/Month filter entirely.
+        if (r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated') {
             return r.start_date;
         }
+        if (r.status === 'Deleted') {
+            return r.deleted_at;
+        }
         return r.closure_date;
+    }
+
+    // True if an Active card's start_date..end_date span overlaps the
+    // selected year/month - a card merely touching the period matches (e.g. a
+    // card running Dec 2025-Jan 2026 matches both years). Mirrors api.php's
+    // atem_span_overlaps_period(). A missing start_date returns true (kept),
+    // matching this file's existing "no date = never filtered out" convention.
+    function spanOverlapsPeriod(startDate, endDate, year, month) {
+        if (!startDate) { return true; }
+        var startYM = parseInt(startDate.substring(0, 4), 10) * 100 + parseInt(startDate.substring(5, 7), 10);
+        var endM = endDate ? parseInt(endDate.substring(5, 7), 10) : parseInt(startDate.substring(5, 7), 10);
+        var endYM = endDate ? (parseInt(endDate.substring(0, 4), 10) * 100 + endM) : startYM;
+        if (endYM < startYM) { endYM = startYM; }
+
+        if (year) {
+            var yearStartYM = year * 100 + 1;
+            var yearEndYM = year * 100 + 12;
+            if (endYM < yearStartYM || startYM > yearEndYM) { return false; }
+            if (!month) { return true; }
+            var overlapStart = Math.max(startYM, yearStartYM);
+            var overlapEnd = Math.min(endYM, yearEndYM);
+            for (var ym = overlapStart; ym <= overlapEnd; ym++) {
+                if ((ym % 100) === month) { return true; }
+            }
+            return false;
+        }
+
+        if (month) {
+            var startM = parseInt(startDate.substring(5, 7), 10);
+            return startM === month || endM === month;
+        }
+
+        return true;
     }
 
     // Overdue is derived, not a status: an Active or Extended card whose
@@ -522,13 +563,22 @@
         var overdueOnly = $('vf-overdue') && $('vf-overdue').checked;
 
         return sourceRows.filter(function (r) {
-            var pDate = periodDateOf(r);
-            // Only exclude on period when the row actually has a period date.
-            // A dateless row (e.g. Extended with no closure_date yet) is kept,
-            // mirroring api.php's dashboard-stats "if ($periodDate && ...)" rule
-            // so the filtered list and the dashboard counts agree.
-            if (year  && pDate && parseInt(pDate.substring(0, 4), 10) !== year)  { return false; }
-            if (month && pDate && parseInt(pDate.substring(5, 7), 10) !== month) { return false; }
+            if (r.status === 'Active' || r.status === 'Extended') {
+                // Not closed yet (closure_date is always null for these two),
+                // so match by start_date..final_due_date span rather than a
+                // single date - final_due_date already resolves to the
+                // extended due date once extended (same field isRowOverdue()
+                // uses), so an extension is accounted for.
+                if ((year || month) && !spanOverlapsPeriod(r.start_date, r.final_due_date || r.end_date, year, month)) { return false; }
+            } else {
+                var pDate = periodDateOf(r);
+                // Only exclude on period when the row actually has a period date.
+                // A dateless row (e.g. Failed with no closure_date yet) is kept,
+                // mirroring api.php's dashboard-stats "if ($periodDate && ...)" rule
+                // so the filtered list and the dashboard counts agree.
+                if (year  && pDate && parseInt(pDate.substring(0, 4), 10) !== year)  { return false; }
+                if (month && pDate && parseInt(pDate.substring(5, 7), 10) !== month) { return false; }
+            }
             if (issuer && r.issuer_staff_id !== issuer && (!r.arci_staff_ids || r.arci_staff_ids.indexOf(issuer) === -1)) { return false; }
             if (level && r.level_label !== level) { return false; }
             if (dept) {
@@ -592,13 +642,22 @@
         var overdueOnly = $('vfo-overdue') && $('vfo-overdue').checked;
 
         return sourceRows.filter(function (r) {
-            var pDate = periodDateOf(r);
-            // Only exclude on period when the row actually has a period date.
-            // A dateless row (e.g. Extended with no closure_date yet) is kept,
-            // mirroring api.php's dashboard-stats "if ($periodDate && ...)" rule
-            // so the filtered list and the dashboard counts agree.
-            if (year  && pDate && parseInt(pDate.substring(0, 4), 10) !== year)  { return false; }
-            if (month && pDate && parseInt(pDate.substring(5, 7), 10) !== month) { return false; }
+            if (r.status === 'Active' || r.status === 'Extended') {
+                // Not closed yet (closure_date is always null for these two),
+                // so match by start_date..final_due_date span rather than a
+                // single date - final_due_date already resolves to the
+                // extended due date once extended (same field isRowOverdue()
+                // uses), so an extension is accounted for.
+                if ((year || month) && !spanOverlapsPeriod(r.start_date, r.final_due_date || r.end_date, year, month)) { return false; }
+            } else {
+                var pDate = periodDateOf(r);
+                // Only exclude on period when the row actually has a period date.
+                // A dateless row (e.g. Failed with no closure_date yet) is kept,
+                // mirroring api.php's dashboard-stats "if ($periodDate && ...)" rule
+                // so the filtered list and the dashboard counts agree.
+                if (year  && pDate && parseInt(pDate.substring(0, 4), 10) !== year)  { return false; }
+                if (month && pDate && parseInt(pDate.substring(5, 7), 10) !== month) { return false; }
+            }
             if (issuer && r.issuer_staff_id !== issuer && (!r.arci_staff_ids || r.arci_staff_ids.indexOf(issuer) === -1)) { return false; }
             if (statuses.length === 0) { return false; }
             if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }

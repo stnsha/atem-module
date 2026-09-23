@@ -1856,6 +1856,91 @@ function atem_date_in_period($dateStr, $months, $year)
     return true;
 }
 
+// True if the [$startDate, $endDate] span (an Active card's start_date to
+// end_date) overlaps $year and (if not null) one of $months - unlike
+// atem_date_in_period(), this matches a card whose active window merely
+// touches the selected period rather than requiring a single date to fall
+// inside it (e.g. a card running Dec 2025-Jan 2026 matches both years).
+// $endDate missing/empty is treated as still-open, collapsing to $startDate.
+function atem_span_overlaps_period($startDate, $endDate, $months, $year)
+{
+    if (!$startDate) {
+        return false;
+    }
+    $startY  = (int)substr($startDate, 0, 4);
+    $startM  = (int)substr($startDate, 5, 2);
+    $startYM = $startY * 100 + $startM;
+
+    if ($endDate) {
+        $endY  = (int)substr($endDate, 0, 4);
+        $endM  = (int)substr($endDate, 5, 2);
+        $endYM = $endY * 100 + $endM;
+    } else {
+        $endYM = $startYM;
+    }
+    if ($endYM < $startYM) {
+        $endYM = $startYM;
+    }
+
+    if ($year > 0) {
+        $yearStartYM = (int)$year * 100 + 1;
+        $yearEndYM   = (int)$year * 100 + 12;
+        if ($endYM < $yearStartYM || $startYM > $yearEndYM) {
+            return false;
+        }
+        if ($months === null) {
+            return true;
+        }
+        $overlapStart = max($startYM, $yearStartYM);
+        $overlapEnd   = min($endYM, $yearEndYM);
+        for ($ym = $overlapStart; $ym <= $overlapEnd; $ym++) {
+            if (in_array($ym % 100, $months, true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if ($months !== null) {
+        return in_array($startM, $months, true) || in_array($endM, $months, true);
+    }
+
+    return true;
+}
+
+// Applies each status's period date basis: Active is matched by whether its
+// start_date..end_date span overlaps the period (see
+// atem_span_overlaps_period()); every other status uses a single date via
+// atem_status_period_field() (Draft/Suspended/Force Terminated -> start_date,
+// everything else -> closure_date) via atem_date_in_period(). $strict controls
+// what happens when the relevant date is missing: strict (true) excludes the
+// item (used by Staff Performance's getStaffPerformanceLive()/export.php);
+// non-strict (false) keeps it, matching dashboard-stats'/js/view.js's existing
+// "no date = never filtered out" convention.
+function atem_matches_period($statusVal, $item, $months, $year, $strict = true)
+{
+    if ($statusVal === 'Active' || $statusVal === 'Extended') {
+        // Neither has closed yet (closure_date is always null for both), so
+        // match by start_date..final_due_date span rather than a single
+        // date. final_due_date already resolves to the extended due date
+        // once extended (same field the Overdue Cards stat uses), so an
+        // extension is accounted for.
+        $spanStart = isset($item['start_date']) ? $item['start_date'] : '';
+        $spanEnd   = isset($item['final_due_date']) ? $item['final_due_date']
+            : (isset($item['end_date']) ? $item['end_date'] : '');
+        if (!$spanStart) {
+            return !$strict;
+        }
+        return atem_span_overlaps_period($spanStart, $spanEnd, $months, $year);
+    }
+    $dateField = atem_status_period_field($statusVal);
+    $dateStr   = isset($item[$dateField]) ? $item[$dateField] : '';
+    if (!$dateStr) {
+        return !$strict;
+    }
+    return atem_date_in_period($dateStr, $months, $year);
+}
+
 // Mirrors CalculateBonusEligibility.php's per-column date basis exactly:
 // complete/extend/failed are bucketed by closure_date, active by start_date, atem = union of all four.
 function atem_matches_period_column($status, $start_date, $closure_date, $col, $month, $year, $quarter)
@@ -1962,11 +2047,12 @@ function atem_status_bucket($status)
     }
     if ($status === 'Active')   { return 'active'; }
     if ($status === 'Extended') { return 'extend'; }
-    // Suspended/Force Terminated never resolve into a completion - both count
-    // toward Failed, same as an outright Failed card. Draft and Deleted stay
-    // unbucketed (null): a Draft hasn't started anything to measure yet, and a
-    // Deleted card was withdrawn, not necessarily a performance failure.
-    if (in_array($status, array('Failed', 'Suspended', 'Force Terminated'), true)) { return 'failed'; }
+    // Force Terminated never resolves into a completion - it counts toward
+    // Failed, same as an outright Failed card. Suspended is excluded (it's
+    // only temporarily on hold, not a resolved failure). Draft and Deleted
+    // stay unbucketed (null): a Draft hasn't started anything to measure yet,
+    // and a Deleted card was withdrawn, not necessarily a performance failure.
+    if (in_array($status, array('Failed', 'Force Terminated'), true)) { return 'failed'; }
     return null;
 }
 
@@ -1977,7 +2063,12 @@ function atem_status_bucket($status)
 // same start_date fallback for these statuses).
 function atem_status_period_field($status)
 {
-    return in_array($status, array('Active', 'Suspended', 'Force Terminated'), true) ? 'start_date' : 'closure_date';
+    // Draft/Active/Suspended/Force Terminated never close (closure_date stays
+    // null), so they'd otherwise always bypass a period filter under the
+    // "no date = keep it" convention (atem_matches_period()'s $strict=false) -
+    // key them by start_date instead. Everything else (Completed family,
+    // Extended, Failed) has actually closed, so closure_date applies.
+    return in_array($status, array('Draft', 'Active', 'Suspended', 'Force Terminated'), true) ? 'start_date' : 'closure_date';
 }
 
 // Live, per-status equivalent of the old atem_bonus_eligibilities snapshot table.
@@ -2064,18 +2155,16 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
             }
         }
 
-        // Raw "ATEM" total (all statuses, all roles) - period-filtered only,
-        // using each status's normal date basis (start_date for Active,
-        // closure_date otherwise); a card with no usable date for its current
-        // status (e.g. an unclosed Draft) simply never falls "in" any period.
+        // Raw "ATEM" total (all statuses, all roles) - period-filtered by
+        // closure_date only, regardless of status (a card with no closure_date
+        // yet - Draft/Active/Suspended/etc. - never falls "in" any period).
         // This feeds the "ATEM" summary column, which now links straight to
         // edit.php instead of opening a filtered/narrowed modal - so it's
         // intentionally the broadest count on the page. Also guarantees every
         // involved staff gets an $aggregates entry even when the card's exact
         // status is never in $selectedStatuses (e.g. Draft/Suspended).
-        $rawDateField = atem_status_period_field($statusVal);
-        $rawDateStr   = isset($item[$rawDateField]) ? $item[$rawDateField] : '';
-        if (atem_date_in_period($rawDateStr, $months, $year)) {
+        $_closureDate = isset($item['closure_date']) ? $item['closure_date'] : '';
+        if (atem_date_in_period($_closureDate, $months, $year)) {
             foreach ($involved as $sid => $deptId) {
                 if (!isset($aggregates[$sid])) {
                     $aggregates[$sid] = array(
@@ -2094,9 +2183,7 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
 
         if (!in_array($statusVal, $selectedStatuses, true)) { continue; }
 
-        $dateField = atem_status_period_field($statusVal);
-        $dateStr   = isset($item[$dateField]) ? $item[$dateField] : '';
-        if (!atem_date_in_period($dateStr, $months, $year)) { continue; }
+        if (!atem_date_in_period($_closureDate, $months, $year)) { continue; }
 
         // Bucket is null for a selected-but-unbucketed status (Draft/Deleted) -
         // 'matched' below still counts it (it feeds the on-screen HQ ATEM/
@@ -2883,12 +2970,6 @@ if (!defined('API_JWT_INCLUDED')) {
 
                     $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'extended_status' => 0, 'failed' => 0, 'draft' => 0);
                     $total = 0;
-                    // Total ATEM Cards tile: all-time count (no year/month/quarter
-                    // filter), including Suspended/Force Terminated - only Deleted
-                    // and Draft are excluded. Kept separate from $total, which stays
-                    // period-filtered and Suspended/Force Terminated-excluded for
-                    // every other stat (Active/Closed/Failed/level-breakdown/etc).
-                    $totalAll = 0;
                     $incentiveTotal = 0.0;
                     $overdueCount = 0;
                     $todayStr = date('Y-m-d');
@@ -2983,10 +3064,6 @@ if (!defined('API_JWT_INCLUDED')) {
                             if (!$itemInRegion) { continue; }
                         }
 
-                        if ($statusVal !== 'Deleted' && $statusVal !== 'Draft' && $statusVal !== '' && empty($item['deleted_at'])) {
-                            $totalAll++;
-                        }
-
                         if ($statusVal === 'Suspended' || $statusVal === 'Force Terminated') {
                             // closure_date is always null for these statuses (they never
                             // actually closed), so period filtering falls back to
@@ -3023,15 +3100,14 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($statusVal === 'Deleted' || !empty($item['deleted_at'])) { continue; }
 
                         if ($filterYear > 0 || $filterMonth > 0 || !empty($filterQuarter)) {
-                            // Active/Draft cards haven't closed yet, so the period
-                            // filter goes by when they started; every other status
-                            // (Completed family, Extended, Failed) is bucketed by when it
-                            // closed — mirrors atem_status_period_field()'s convention
-                            // already used by Staff Performance, and js/view.js
-                            // periodDateOf(), instead of start_date for everything.
-                            $periodField = ($statusVal === 'Active' || $statusVal === 'Draft') ? 'start_date' : 'closure_date';
-                            $periodDate  = isset($item[$periodField]) ? $item[$periodField] : '';
-                            if ($periodDate && !atem_date_in_period($periodDate, $periodMonths, $filterYear)) {
+                            // Active is matched by whether its start_date..end_date
+                            // span overlaps the period; Draft (not started closing
+                            // yet) by start_date alone; every other status
+                            // (Completed family, Extended, Failed) by closure_date.
+                            // Mirrors js/view.js's periodDateOf()/spanOverlapsPeriod().
+                            // A dateless item is kept rather than filtered out
+                            // ($strict = false), same as before.
+                            if (!atem_matches_period($statusVal, $item, $periodMonths, $filterYear, false)) {
                                 continue;
                             }
                         }
@@ -3351,7 +3427,6 @@ if (!defined('API_JWT_INCLUDED')) {
                         'success' => true,
                         'data'    => array(
                             'total'           => $total,
-                            'total_all'       => $totalAll,
                             'by_status'       => $byStatus,
                             'by_level'        => $byLevel,
                             'by_pillar'       => $byPillar,
@@ -3952,6 +4027,10 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pl_grade      = isset($jsonData['grade'])   ? (int)$jsonData['grade']   : 0;
                     $pl_struct     = isset($jsonData['struct'])  ? (int)$jsonData['struct']  : 0;
                     $pl_staff      = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
+                    // 'active' (default) = staff.recycle != 1 only, 'inactive' = recycle
+                    // = 1 only, 'all' = no filtering on it.
+                    $pl_staff_status = isset($jsonData['staff_status']) ? (string)$jsonData['staff_status'] : 'active';
+                    if (!in_array($pl_staff_status, array('active', 'inactive', 'all'), true)) { $pl_staff_status = 'active'; }
 
                     if (!empty($pl_quarter)) { $pl_month = 0; }
                     if ($pl_month < 1 || $pl_month > 12) { $pl_month = 0; }
@@ -3997,23 +4076,30 @@ if (!defined('API_JWT_INCLUDED')) {
 
                     // Resolve current staff details from ODB directly (live, not a
                     // point-in-time snapshot) — name, department, grade, struct.
+                    // Recycled (recycle = 1, i.e. inactive) staff are included here too
+                    // (not excluded like most other staff lookups in this file) so a
+                    // deactivated staff member's past involvement still resolves a real
+                    // name/dept/grade instead of falling back to "Staff #<id>" - they're
+                    // flagged via $pl_staff_recycle instead, and filtered per
+                    // $pl_staff_status below.
                     $pl_staff_names      = array();
                     $pl_staff_grade      = array();
                     $pl_staff_struct     = array();
                     $pl_staff_dept_first = array();
+                    $pl_staff_recycle    = array();
                     $pl_dept_names       = array();
                     $pl_grade_labels     = array();
                     $pl_struct_labels    = array();
 
-                    $pl_sr = mysqli_query($conn, "SELECT s.id, s.nama_staff, s.grade, s.struct, s.department
-                                                   FROM staff s
-                                                   WHERE s.recycle != 1");
+                    $pl_sr = mysqli_query($conn, "SELECT s.id, s.nama_staff, s.grade, s.struct, s.department, s.recycle
+                                                   FROM staff s");
                     if ($pl_sr) {
                         while ($pl_r = mysqli_fetch_assoc($pl_sr)) {
                             $pl_id_ = (int)$pl_r['id'];
                             $pl_staff_names[$pl_id_]  = $pl_r['nama_staff'];
                             $pl_staff_grade[$pl_id_]  = ($pl_r['grade']  !== null) ? (int)$pl_r['grade']  : null;
                             $pl_staff_struct[$pl_id_] = ($pl_r['struct'] !== null) ? (int)$pl_r['struct'] : null;
+                            $pl_staff_recycle[$pl_id_] = ((int)$pl_r['recycle'] === 1);
                             // First department id, used only as a fallback dept when a
                             // staff has no ATEM aggregate row to inherit dept_id from.
                             $pl_staff_dept_first[$pl_id_] = 0;
@@ -4080,6 +4166,7 @@ if (!defined('API_JWT_INCLUDED')) {
                                 : (isset($pl_staff_dept_first[$pl_sid]) ? $pl_staff_dept_first[$pl_sid] : 0));
                         $pl_grade_id   = isset($pl_staff_grade[$pl_sid])  ? $pl_staff_grade[$pl_sid]  : null;
                         $pl_struct_id  = isset($pl_staff_struct[$pl_sid]) ? $pl_staff_struct[$pl_sid] : null;
+                        $pl_is_inactive = !empty($pl_staff_recycle[$pl_sid]);
 
                         if ($pl_own_only && $pl_sid !== (int)$staff_id) { continue; }
 
@@ -4087,6 +4174,8 @@ if (!defined('API_JWT_INCLUDED')) {
                         if ($pl_grade  > 0 && $pl_grade_id  !== $pl_grade)  { continue; }
                         if ($pl_struct > 0 && $pl_struct_id !== $pl_struct) { continue; }
                         if ($pl_staff  > 0 && $pl_sid        !== $pl_staff)  { continue; }
+                        if ($pl_staff_status === 'active' && $pl_is_inactive) { continue; }
+                        if ($pl_staff_status === 'inactive' && !$pl_is_inactive) { continue; }
 
                         // 'total_all' is the raw, ALL-status/all-role, period-filtered
                         // count (ignores the Status filter entirely) - used only to
@@ -4116,6 +4205,7 @@ if (!defined('API_JWT_INCLUDED')) {
                             'month'        => $pl_month,
                             'year'         => $pl_year,
                             'staff_name'   => isset($pl_staff_names[$pl_sid]) ? $pl_staff_names[$pl_sid] : ('Staff #' . $pl_sid),
+                            'is_inactive'  => $pl_is_inactive,
                             'dept_id'      => $pl_rec_dept,
                             'dept_name'    => ($pl_rec_dept && isset($pl_dept_names[$pl_rec_dept])) ? $pl_dept_names[$pl_rec_dept] : '-',
                             'grade_id'     => $pl_grade_id,
@@ -4480,27 +4570,44 @@ if (!defined('API_JWT_INCLUDED')) {
                         // everyone else) - re-check here since the frontend gate is
                         // bypassable via a direct API call. $atem_permission is not set
                         // in this direct-access request, so resolve grade/atem the same
-                        // way get-performance-list does above.
+                        // way get-performance-list does above. $_saIsSA is tracked
+                        // separately from $_saPerm - a real SuperAdmin (staff.atem = 1)
+                        // must never get folded into the same "6" sentinel as a real
+                        // grade-6 staff record, which would wrongly block them below
+                        // (grade 6 is a real, occupied grade id, and is Outlet-only -
+                        // see the atem_type === 1 check below).
                         $_saPerm = 0;
-                        if (isset($atem_permission)) {
+                        $_saIsSA = false;
+                        if (isset($_is_superadmin) && $_is_superadmin) {
+                            $_saIsSA = true;
+                        } elseif (isset($atem_permission)) {
                             $_saPerm = (int)$atem_permission;
                         } elseif (isset($_SESSION['atem_dev_role_override'])) {
                             $_saPerm = (int)$_SESSION['atem_dev_role_override'];
                         } elseif ($staff_id) {
                             $_saPerm_res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
                             if ($_saPerm_res && ($_saPerm_row = mysqli_fetch_assoc($_saPerm_res))) {
-                                $_saPerm = ((int)$_saPerm_row['atem'] === 1) ? 6 : (int)$_saPerm_row['grade'];
+                                $_saIsSA = ((int)$_saPerm_row['atem'] === 1);
+                                $_saPerm = (int)$_saPerm_row['grade'];
                             }
                         }
                         // Grade <3 outlet-department staff (department 1) are forced
                         // onto Outlet ATEM on the frontend rather than choosing it, so
                         // they're allowed through here too - only block Outlet for a
-                        // grade <3 issuer who isn't in department 1.
+                        // grade <4 issuer who isn't in department 1. Threshold mirrors
+                        // create.php's $_can_choose_atem_type.
                         $_saDeptIds = array_map('trim', explode(',', (string)$department));
                         $_saIsOutletDept = in_array('1', $_saDeptIds, true);
                         $_saAtemType = isset($data['atem_type']) ? (int)$data['atem_type'] : 1;
-                        if ($_saAtemType === 2 && $_saPerm < 3 && !$_saIsOutletDept) {
+                        if ($_saAtemType === 2 && !$_saIsSA && $_saPerm < 4 && !$_saIsOutletDept) {
                             $response = array('success' => false, 'message' => 'Insufficient permission to issue an Outlet ATEM');
+                            break;
+                        }
+                        // Grade 6 (Flexi KPI) is an Outlet-only role regardless of
+                        // department (create.php never shows them the HQ option
+                        // either - see $_is_flexi_kpi there).
+                        if ($_saAtemType === 1 && !$_saIsSA && $_saPerm === 6) {
+                            $response = array('success' => false, 'message' => 'Insufficient permission to issue an HQ ATEM');
                             break;
                         }
 

@@ -92,7 +92,7 @@ $init_month   = (int)date('n');
 $init_quarter = (int)ceil($init_month / 3);
 $init_year  = max(2026, (int)date('Y'));
 $year_options = array();
-for ($y = 2026; $y <= $init_year; $y++) {
+for ($y = 2025; $y <= $init_year; $y++) {
     $year_options[] = $y;
 }
 
@@ -104,9 +104,10 @@ for ($y = 2026; $y <= $init_year; $y++) {
 // Suspended + Force Terminated; every other status starts unchecked, so its
 // column reads 0 until explicitly selected. See atem_performance_status_options()/
 // atem_status_bucket() in api.php for which statuses actually count toward a
-// bucket - Suspended/Force Terminated both count toward Failed on-screen, but
-// the CSV export always shows each card's real exact status (never collapsed
-// to "Failed") since it reads the raw status value, not the bucket. Draft and
+// bucket - Force Terminated counts toward Failed on-screen, Suspended does
+// not (only temporarily on hold, not a resolved failure). The CSV export
+// always shows each card's real exact status (never collapsed to "Failed")
+// since it reads the raw status value, not the bucket. Draft, Suspended, and
 // Deleted are selectable here but always read 0.
 $_perf_lookups = getAtemLookups($staff_id);
 $_perf_can_see_deleted = ((int)$atem_permission >= 4 || $_is_superadmin);
@@ -312,6 +313,14 @@ if ($_perf_own_only) {
                     </ul>
                 </div>
             </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Staff Status</label>
+            <select id="perf-filter-active" class="form-select form-select-sm">
+                <option value="active" selected>Active staff only</option>
+                <option value="inactive">Inactive staff only</option>
+                <option value="all">All staff</option>
+            </select>
         </div>
         <div class="col-auto d-flex align-items-end gap-2 ms-auto">
             <button class="btn btn-sm btn-outline-secondary" id="perf-reset-filter">Reset</button>
@@ -770,10 +779,12 @@ function buildPayload() {
     var gradeEl = document.getElementById('perf-filter-grade');
     var structEl = document.getElementById('perf-filter-struct');
     var staffEl = document.getElementById('perf-staff-value');
+    var activeEl = document.getElementById('perf-filter-active');
     var dept = deptEl ? (parseInt(deptEl.value, 10) || 0) : 0;
     var grade = gradeEl ? (parseInt(gradeEl.value, 10) || 0) : 0;
     var struct = structEl ? (parseInt(structEl.value, 10) || 0) : 0;
     var staffId = staffEl ? (parseInt(staffEl.value, 10) || 0) : 0;
+    var staffStatus = activeEl ? activeEl.value : 'active';
     if (quarters.length) {
         month = 0;
     }
@@ -785,6 +796,7 @@ function buildPayload() {
         grade: grade,
         struct: struct,
         staff_id: staffId,
+        staff_status: staffStatus,
         statuses: getSelectedStatuses('perf'),
         roles: getSelectedRoles('perf')
     };
@@ -994,7 +1006,9 @@ function renderTable(data, payload) {
         html += '<tr>' +
             '<td><input type="checkbox" class="perf-row-cb" value="' + rec.id + '"></td>' +
             '<td>' +
-            '<div style="font-size:13px;font-weight:500;">' + escHtml(rec.staff_name) + '</div>' +
+            '<div style="font-size:13px;font-weight:500;">' + escHtml(rec.staff_name) +
+            (rec.is_inactive ? ' <span class="badge bg-secondary" style="font-weight:400;font-size:10px;">Inactive</span>' : '') +
+            '</div>' +
             '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.dept_name) + '</div>' +
             '</td>' +
             '<td>' + escHtml(rec.grade_label) + '</td>' +
@@ -1229,6 +1243,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (structEl) {
             structEl.value = '0';
         }
+        var activeEl = document.getElementById('perf-filter-active');
+        if (activeEl) {
+            activeEl.value = 'active';
+        }
         var statusBoxes = document.querySelectorAll('.perf-status-cb');
         for (var _si = 0; _si < statusBoxes.length; _si++) {
             statusBoxes[_si].checked = (PERF_CFG.defaultStatuses || []).indexOf(statusBoxes[_si]
@@ -1252,7 +1270,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Auto-apply on every other filter change
     var _perfAutoFilterIds = ['perf-filter-year', 'perf-filter-dept', 'perf-filter-grade',
-    'perf-filter-struct'];
+    'perf-filter-struct', 'perf-filter-active'];
     for (var _pfi = 0; _pfi < _perfAutoFilterIds.length; _pfi++) {
         var _pfEl = document.getElementById(_perfAutoFilterIds[_pfi]);
         if (_pfEl) {

@@ -23,7 +23,7 @@ $_okr_menu_visible = (in_array((int)$atem_permission, array(4, 5), true) || $_is
 <?php
 $_dash_cur_year = max(2026, (int)date('Y'));
 $dash_year_options = array();
-for ($y = 2026; $y <= $_dash_cur_year; $y++) {
+for ($y = 2025; $y <= $_dash_cur_year; $y++) {
     $dash_year_options[] = $y;
 }
 

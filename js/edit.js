@@ -40,8 +40,7 @@
     var progressUpdates = [];
     var chatMessages = [];
     var _chatPollTimer = null;
-    var outletTags = []; // [{ id, code }] - derived from areaManagerTags, read-only
-    var areaManagerTags = []; // [{ id, name, position, outlet_ids }] - outlet-type ATEMs only
+    var outletTags = []; // [{ id, code }] - the record's actual saved outlets, read-only
     var _inlineSaveTimer = null;
     var _lastCalcIncentive = 'RM0.00';
 
@@ -543,164 +542,24 @@
         if (incentiveSection) { incentiveSection.classList.toggle('atem-hidden', !isHq); }
     }
 
-    // --------------------------------------------------- area manager tagging
-    // Outlet Staff(s) are sourced by department/grade, not a single fixed
-    // position, so a match may have no position_rymnet row - omit the
-    // parenthetical entirely rather than showing "(...)" empty.
-    function amLabel(am) {
-        return am.position ? (am.name + ' (' + am.position + ')') : am.name;
-    }
-
-    function renderAreaManagerTags() {
-        var wrap = $('atem-am-tags');
-        if (!wrap) { return; }
-        if (!areaManagerTags.length) {
-            wrap.innerHTML = '<span class="atem-empty-state">No area manager tagged.</span>';
-            return;
-        }
-        var html = '';
-        for (var i = 0; i < areaManagerTags.length; i++) {
-            var label = amLabel(areaManagerTags[i]);
-            html += '<span class="atem-outlet-tag">' + escapeHtml(label)
-                + (READ ? '' : '<span class="atem-outlet-tag-remove" data-id="' + areaManagerTags[i].id + '">&times;</span>')
-                + '</span>';
-        }
-        wrap.innerHTML = html;
-    }
-
-    function syncAreaManagerPickerSelection() {
-        var listEl = $('atem-am-picker-list');
-        if (!listEl) { return; }
-        var items = listEl.querySelectorAll('li');
-        for (var i = 0; i < items.length; i++) {
-            var id = parseInt(items[i].getAttribute('data-id'), 10) || 0;
-            items[i].classList.toggle('selected', areaManagerTags.some(function (m) { return m.id === id; }));
-        }
-    }
-
-    function addAreaManagerTag(id) {
-        if (areaManagerTags.some(function (m) { return m.id === id; })) { return; }
-        var am = (CFG.areaManagers || []).filter(function (a) { return a.id === id; })[0];
-        if (!am) { return; }
-        areaManagerTags.push({ id: am.id, name: am.name, position: am.position, outlet_ids: am.outlet_ids });
-        renderAreaManagerTags();
-        syncAreaManagerPickerSelection();
-        recomputeDerivedOutlets();
-        autoAddAreaManagerToArci(am);
-        if (!READ) { saveInline(); }
-    }
-
-    // Area Managers are automatically tagged as Accountable (A) in the
-    // Project Team, since they own the outlet(s) in scope. Both
-    // staff_dept_id and outlet_id are left null - they aren't scoped to a
-    // single outlet/department like other members. Skipped if the staff is
-    // already assigned to any ARCI role (atem_arci is unique per staff per
-    // card).
-    function autoAddAreaManagerToArci(am) {
-        if (READ) { return; }
-        if (assignedStaffIds().indexOf(am.id) >= 0) { return; }
-        apiCall('arci-add', { id: CFG.atemId, data: { staff_id: am.id, staff_dept_id: null, outlet_id: null, role: 'A' } }).then(function (res) {
-            if (res && res.success) {
-                setArciState(res.data);
-            } else {
-                setError('arci-error', res && res.message ? res.message : 'Failed to auto-add Outlet Staff to Accountable.');
-            }
-        }).catch(function () {
-            setError('arci-error', 'Network error while adding Outlet Staff to Accountable.');
-        });
-    }
-
-    function removeAreaManagerTag(id) {
-        areaManagerTags = areaManagerTags.filter(function (m) { return m.id !== id; });
-        renderAreaManagerTags();
-        syncAreaManagerPickerSelection();
-        recomputeDerivedOutlets();
-        if (!READ) { saveInline(); }
-    }
-
-    function buildAreaManagerPicker() {
-        var listEl   = $('atem-am-picker-list');
-        var searchEl = $('atem-am-picker-search');
-        var btnEl    = $('atem-am-picker-btn');
-        var dropEl   = $('atem-am-picker-dropdown');
-        var wrapEl   = $('atem-am-picker-wrap');
-        if (!listEl || !btnEl || !dropEl) { return; }
-
-        var managers = CFG.areaManagers || [];
-        var html = '';
-        for (var i = 0; i < managers.length; i++) {
-            var label = amLabel(managers[i]);
-            html += '<li data-id="' + managers[i].id + '">' + escapeHtml(label) + '</li>';
-        }
-        listEl.innerHTML = html || '<div class="atem-outlet-picker-empty">No area managers available</div>';
-        syncAreaManagerPickerSelection();
-
-        function openDropdown() {
-            dropEl.classList.add('open');
-            if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
-        }
-        function closeDropdown() { dropEl.classList.remove('open'); }
-
-        function filterList(term) {
-            var items = listEl.querySelectorAll('li');
-            var lower = term.toLowerCase();
-            for (var j = 0; j < items.length; j++) {
-                var text = items[j].textContent || '';
-                items[j].classList.toggle('hidden', !(!lower || text.toLowerCase().indexOf(lower) >= 0));
-            }
-        }
-
-        btnEl.addEventListener('click', function (e) {
-            e.stopPropagation();
-            if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
-        });
-        btnEl.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
-        });
-        if (searchEl) {
-            searchEl.addEventListener('input', function () { filterList(this.value); });
-            searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
-        }
-        listEl.addEventListener('click', function (e) {
-            var li = e.target.closest ? e.target.closest('li') : null;
-            if (!li) { return; }
-            addAreaManagerTag(parseInt(li.getAttribute('data-id'), 10) || 0);
-        });
-        document.addEventListener('click', function (e) {
-            if (wrapEl && !wrapEl.contains(e.target)) { closeDropdown(); }
-        });
-
-        var tagsWrap = $('atem-am-tags');
-        if (tagsWrap) {
-            tagsWrap.addEventListener('click', function (e) {
-                if (e.target.classList.contains('atem-outlet-tag-remove')) {
-                    removeAreaManagerTag(parseInt(e.target.getAttribute('data-id'), 10) || 0);
-                }
-            });
-        }
-    }
-
-    // Unions outlet_ids across all selected Area Managers, keeps the derived
-    // outlet id/code set used by the outlet-mode ARCI "Outlet" select/staff
-    // list, and warns (inline banner, never a
-    // native dialog) if any existing ARCI member now references an outlet
-    // that dropped out of the derived set.
-    function recomputeDerivedOutlets() {
+    // --------------------------------------------------------- outlet tagging
+    // The Area Manager picker has been removed - Outlet ATEM cards no longer
+    // support re-tagging outlets after creation. outletTags is populated
+    // directly from the record's own saved outlets (REC.outlets, see
+    // hydrate()) and is read-only here; it still feeds the outlet-mode ARCI
+    // "Outlet" select/staff list via populateDepartments()/renderStaffList().
+    function applyRecordOutlets() {
         var outletsById = {};
         (CFG.outlets || []).forEach(function (o) { outletsById[o.id] = o.code; });
-
         var seen = {};
-        var unionIds = [];
-        areaManagerTags.forEach(function (m) {
-            (m.outlet_ids || []).forEach(function (oid) {
-                if (!seen[oid]) { seen[oid] = true; unionIds.push(oid); }
-            });
+        outletTags = [];
+        (REC.outlets || []).forEach(function (o) {
+            var oid = parseInt(o.outlet_id, 10) || 0;
+            if (oid && !seen[oid] && outletsById.hasOwnProperty(oid)) {
+                seen[oid] = true;
+                outletTags.push({ id: oid, code: outletsById[oid] });
+            }
         });
-
-        outletTags = unionIds
-            .filter(function (id) { return outletsById.hasOwnProperty(id); })
-            .map(function (id) { return { id: id, code: outletsById[id] }; });
-
         populateDepartments();
         renderStaffList();
         checkArciOutletOrphans();
@@ -786,8 +645,6 @@
         if (mem.staff_dept_id) {
             return { name: staffNameIn(mem.staff_dept_id, mem.staff_id), dept: deptName(mem.staff_dept_id) };
         }
-        var am = (CFG.areaManagers || []).filter(function (a) { return parseInt(a.id, 10) === parseInt(mem.staff_id, 10); })[0];
-        if (am) { return { name: am.name + ' (' + am.position + ')', dept: 'All Outlets' }; }
         return { name: '', dept: '' };
     }
     function renderArci() {
@@ -1469,12 +1326,10 @@
         setError('tl-closure-error', '');
         setError('tl-remarks-error', '');
         setError('reflink-section-error', ''); setError('atem-save-error', ''); setError('tl-reward-decision-error', '');
-        setError('atem-am-error', ''); setError('atem-reward-label-error', '');
+        setError('atem-reward-label-error', '');
         var isOutletType = (parseInt(REC.atem_type, 10) || 1) === 2;
         if (!$('atem-title').value.trim()) { setError('atem-title-error', 'ATEM Title is required.'); return false; }
-        if (isOutletType) {
-            if (!areaManagerTags.length) { setError('atem-am-error', 'At least one Area Manager is required.'); return false; }
-        } else if (!$('atem-level').value) {
+        if (!isOutletType && !$('atem-level').value) {
             setError('atem-level-error', 'ATEM Complexity Levelis required.'); return false;
         }
         if (!$('tl-start').value) { setError('tl-start-error', 'Start Date is required.'); return false; }
@@ -1592,7 +1447,6 @@
             pillar_id: pillarId ? parseInt(pillarId, 10) : null,
             reward_label: rewardLabel || null,
             outlet_ids: outletTags.map(function (o) { return o.id; }),
-            area_manager_ids: areaManagerTags.map(function (m) { return m.id; }),
             start_date: $('tl-start').value || null,
             end_date: $('tl-end').value || null,
             is_extended: $('tl-extended').checked,
@@ -1642,7 +1496,6 @@
             pillar_id: pillarId ? parseInt(pillarId, 10) : null,
             reward_label: rewardLabel || null,
             outlet_ids: outletTags.map(function (o) { return o.id; }),
-            area_manager_ids: areaManagerTags.map(function (m) { return m.id; }),
             start_date: $('tl-start').value || null,
             end_date: $('tl-end').value || null,
             is_extended: $('tl-extended').checked,
@@ -1976,17 +1829,7 @@
         }
         if (REC.pillar_id && $('atem-pillars')) { $('atem-pillars').value = REC.pillar_id; }
         if ($('atem-reward-label')) { $('atem-reward-label').value = REC.reward_label || ''; }
-        var amById = {};
-        (CFG.areaManagers || []).forEach(function (a) { amById[a.id] = a; });
-        areaManagerTags = (REC.area_managers || [])
-            .map(function (a) { return parseInt(a.staff_id, 10) || 0; })
-            .filter(function (id) { return amById.hasOwnProperty(id); })
-            .map(function (id) {
-                return { id: id, name: amById[id].name, position: amById[id].position, outlet_ids: amById[id].outlet_ids };
-            });
-        renderAreaManagerTags();
-        syncAreaManagerPickerSelection();
-        recomputeDerivedOutlets();
+        applyRecordOutlets();
         applyAtemTypeView();
 
         syncStatusOptions();
@@ -2705,7 +2548,6 @@
     document.addEventListener('DOMContentLoaded', function () {
         populateLookups();
         populateDepartments();
-        buildAreaManagerPicker();
         var orphanCloseBtn = $('atem-arci-orphan-warning-close');
         if (orphanCloseBtn) {
             orphanCloseBtn.addEventListener('click', function () {

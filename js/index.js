@@ -670,7 +670,7 @@
             }
         }
 
-        setText('dash-total',    formatNumber(data.total_all || 0));
+        setText('dash-total',    formatNumber(total));
         setText('dash-active',   formatNumber(active));
         setText('dash-closed',   formatNumber(closed));
         setText('dash-failed',   formatNumber(failed));
@@ -822,7 +822,7 @@
             }
         }
 
-        setText('dasho-total',    formatNumber(data.total_all || 0));
+        setText('dasho-total',    formatNumber(total));
         setText('dasho-active',   formatNumber(active));
         setText('dasho-closed',   formatNumber(closed));
         setText('dasho-failed',   formatNumber(failed));
