@@ -224,11 +224,6 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                             </select>
                         </div>
                         <?php endif; ?>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label">Staff Name</label>
-                            <input type="text" id="ac-filter-name" class="form-control form-control-sm"
-                                placeholder="Search name...">
-                        </div>
                         <?php if ($_is_superadmin): ?>
                         <div class="col-md-4 col-sm-6">
                             <label class="form-label">Grade</label>
@@ -243,6 +238,12 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                             </select>
                         </div>
                         <?php endif; ?>
+                        <div class="w-100"></div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label">Staff Name</label>
+                            <input type="text" id="ac-filter-name" class="form-control form-control-sm"
+                                placeholder="Search name...">
+                        </div>
                         <div class="col-auto d-flex align-items-end gap-2">
                             <button class="btn btn-sm btn-outline-secondary" id="ac-reset-filter">Reset</button>
                         </div>
@@ -302,11 +303,6 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                                 <input type="hidden" id="aco-filter-outlet-value" value="0">
                             </div>
                         </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label">Staff Name</label>
-                            <input type="text" id="aco-filter-name" class="form-control form-control-sm"
-                                placeholder="Search name...">
-                        </div>
                         <?php if ($_is_superadmin): ?>
                         <div class="col-md-4 col-sm-6">
                             <label class="form-label">Grade</label>
@@ -321,6 +317,12 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                             </select>
                         </div>
                         <?php endif; ?>
+                        <div class="w-100"></div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label">Staff Name</label>
+                            <input type="text" id="aco-filter-name" class="form-control form-control-sm"
+                                placeholder="Search name...">
+                        </div>
                         <div class="col-auto d-flex align-items-end gap-2">
                             <button class="btn btn-sm btn-outline-secondary" id="aco-reset-filter">Reset</button>
                         </div>
