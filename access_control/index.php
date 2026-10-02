@@ -370,6 +370,10 @@ if ($atem_permission >= 2 || $_is_superadmin) {
                 Create/Update
                 Staff Grade and Evaluation Structure</p>
 
+            <p class="mb-3" style="font-size: 11px; color: #b58100; margin-top: -8px;">
+                Staff not listed? Their Evaluation Structure has not been updated yet.
+            </p>
+
             <div id="form-alert" class="alert alert-dismissible fade show mb-3" role="alert"
                 style="display:none !important; font-size: 12px !important;">
                 <span id="form-alert-msg" style="font-size:12px;"></span>
