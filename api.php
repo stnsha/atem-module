@@ -453,6 +453,12 @@ function getAuthToken($staff_id)
  */
 function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id = null, $curlTimeout = 30)
 {
+    // Any write through the API may change card data, so the short-lived full
+    // ATEM list cache (getAtemListCached()) is dropped before it is sent.
+    if (strtoupper((string)$method) !== 'GET') {
+        clearAtemListCache();
+    }
+
     logJWTOperation(
         'getApiDataWithJWT',
         'Starting API call',
@@ -796,6 +802,64 @@ function getAtemList($staff_id, $include_deleted = false)
             'data' => array()
         );
     }
+}
+
+/**
+ * Full ATEM list cache file. Kept outside the web root (system temp dir) since
+ * it holds every card's data.
+ */
+function atemListCachePath(): string
+{
+    return rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'odb_atem_list_cache.json';
+}
+
+function clearAtemListCache(): void
+{
+    $path = atemListCachePath();
+    if (is_file($path)) {
+        @unlink($path);
+    }
+}
+
+/**
+ * Slim ATEM list (atem?slim=1) with a short file cache - for
+ * getStaffPerformanceLive() only, since slim rows omit most card fields. The unfiltered list is the same for
+ * every caller (the API is reached through one shared service account), is
+ * several MB of JSON, and takes seconds to build - Staff Performance used to
+ * re-download it on every filter change even though only the PHP-side
+ * period/status/dept filtering differed. Any non-GET call through
+ * getApiDataWithJWT() clears the cache, so writes made from this app show up
+ * immediately; changes made elsewhere appear within $ttl seconds.
+ */
+function getAtemListCached($staff_id, int $ttl = 60): array
+{
+    $path = atemListCachePath();
+    if (is_file($path) && (time() - (int)@filemtime($path)) < $ttl) {
+        $cached = json_decode((string)@file_get_contents($path), true);
+        if (is_array($cached)) {
+            return ['success' => true, 'data' => $cached];
+        }
+    }
+
+    // ?slim=1 trims the payload to what getStaffPerformanceLive() reads (the
+    // only consumer of this cache). An atem-api without slim support simply
+    // ignores the param and returns the full list, which is a superset.
+    $api = getApiDataWithJWT('atem?slim=1', null, 'GET', $staff_id);
+    $decoded = json_decode((string)$api['response'], true);
+    $result = ((int)$api['httpCode'] === 200)
+        ? ['success' => true, 'data' => $decoded['data'] ?? []]
+        : ['success' => false, 'message' => $decoded['message'] ?? 'Failed to retrieve ATEM list', 'data' => []];
+    if (!empty($result['success'])) {
+        // Write to a temp file then rename, so a concurrent reader never sees
+        // a partially written cache.
+        $tmp = $path . '.' . getmypid() . '.tmp';
+        if (@file_put_contents($tmp, json_encode($result['data'])) !== false) {
+            if (!@rename($tmp, $path)) {
+                @unlink($tmp);
+            }
+        }
+    }
+    return $result;
 }
 
 /**
@@ -4124,7 +4188,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     session_write_close();
 
                     // One full-list fetch shared by both the HQ and Outlet passes.
-                    $pl_atem_list = getAtemList($staff_id);
+                    $pl_atem_list = getAtemListCached($staff_id);
                     if (empty($pl_atem_list['success'])) {
                         $response = ['success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.'];
                         break;

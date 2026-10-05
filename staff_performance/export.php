@@ -353,7 +353,7 @@ if ($type === 'performance') {
     // exportable too. Est. Reward stays HQ ATEM only - Outlet ATEM and OKR
     // rows are emitted further below with a blank Est. Reward.
     // One full-list fetch shared by both the HQ and Outlet passes.
-    $atem_list = getAtemList($staff_id);
+    $atem_list = getAtemListCached($staff_id);
     $live = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 1, 0, $filter_roles, $atem_list);
     $live_outlet = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 2, 0, $filter_roles, $atem_list);
     if (empty($live['success']) || empty($live_outlet['success'])) {
