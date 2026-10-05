@@ -2125,9 +2125,12 @@ function atem_status_period_field($status)
 // directly from current ATEM records, counting ONLY the caller-selected exact
 // statuses — any status not in $selectedStatuses contributes nothing anywhere,
 // so its bucket reads 0 rather than a stale/mismatched snapshot value.
-function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $staff_id, $filterAtemType = 0, $filterOutletId = 0, $filterRoles = null)
+function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $staff_id, $filterAtemType = 0, $filterOutletId = 0, $filterRoles = null, ?array $prefetchedList = null)
 {
-    $listResult = getAtemList($staff_id);
+    // $prefetchedList lets a caller that needs several atem_type passes (HQ +
+    // Outlet) reuse one getAtemList() result instead of re-fetching the full,
+    // unpaged ATEM list from atem-api on every pass.
+    $listResult = $prefetchedList ?? getAtemList($staff_id);
     if (!$listResult['success']) {
         return array('success' => false, 'message' => 'Failed to load ATEM data', 'data' => array());
     }
@@ -4111,12 +4114,27 @@ if (!defined('API_JWT_INCLUDED')) {
                     // (see staff_performance/index.php's column comment). OKR has no
                     // ARCI/Issuer role concept of its own, so $pl_roles only narrows the
                     // HQ/Outlet calls - OKR's Completed/Failed counts stay owner-only.
-                    $pl_live_hq = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 1, 0, $pl_roles);
+                    //
+                    // The JWT is resolved first (it may write to the session), then the
+                    // session lock is released: this is a read-only action, and holding
+                    // the lock through the slow atem-api round trip would serialize
+                    // every other request from the same browser session behind it
+                    // (e.g. several quick filter changes queueing up one by one).
+                    getAuthToken($staff_id);
+                    session_write_close();
+
+                    // One full-list fetch shared by both the HQ and Outlet passes.
+                    $pl_atem_list = getAtemList($staff_id);
+                    if (empty($pl_atem_list['success'])) {
+                        $response = ['success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.'];
+                        break;
+                    }
+                    $pl_live_hq = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 1, 0, $pl_roles, $pl_atem_list);
                     if (empty($pl_live_hq['success'])) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;
                     }
-                    $pl_live_outlet = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 2, 0, $pl_roles);
+                    $pl_live_outlet = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 2, 0, $pl_roles, $pl_atem_list);
                     if (empty($pl_live_outlet['success'])) {
                         $response = array('success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.');
                         break;

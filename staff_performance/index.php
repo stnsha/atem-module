@@ -1044,6 +1044,8 @@ function renderTable(data, payload) {
 }
 
 var _perfReqSeq = 0;
+var _perfDebounceTimer = null;
+var _perfAbortCtl = null;
 
 function loadPerformance(payload) {
     _currentPayload = payload;
@@ -1078,12 +1080,30 @@ function loadPerformance(payload) {
         }
     }
 
+    // Debounce: ticking several checkboxes / changing several selects in quick
+    // succession only sends the last state, instead of one full server-side
+    // recompute per click. Any request already in flight is aborted.
+    clearTimeout(_perfDebounceTimer);
+    if (_perfAbortCtl) {
+        _perfAbortCtl.abort();
+        _perfAbortCtl = null;
+    }
+    _perfDebounceTimer = setTimeout(function() {
+        if (reqSeq !== _perfReqSeq) { return; }
+        sendPerformanceRequest(body, payload, reqSeq, tbody);
+    }, 300);
+}
+
+function sendPerformanceRequest(body, payload, reqSeq, tbody) {
+    _perfAbortCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+
     fetch(PERF_API_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: _perfAbortCtl ? _perfAbortCtl.signal : undefined
         })
         .then(function(r) {
             return r.json();
