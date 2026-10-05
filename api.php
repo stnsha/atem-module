@@ -1722,12 +1722,61 @@ function getAtemNotifications($staff_id, $limit = 20)
     if ($httpCode == 200) {
         return array(
             'success' => true,
-            'data' => isset($decoded['data']) ? $decoded['data'] : array(),
+            'data' => attachNotificationActorNames(isset($decoded['data']) ? $decoded['data'] : array()),
             'unread_count' => isset($decoded['meta']['unread_count']) ? (int)$decoded['meta']['unread_count'] : 0
         );
     } else {
         return array('success' => false, 'message' => 'Failed to load notifications');
     }
+}
+
+/**
+ * Resolve the staff member who triggered each notification (chat sender,
+ * suspender/terminator, appellant) from the payload id and attach their
+ * display name as `actor_name`. atem-api stores ids only; names are resolved
+ * here from the ODB staff table in a single query.
+ */
+function attachNotificationActorNames(array $items): array
+{
+    global $conn;
+
+    $actorKeys = ['sender_staff_id', 'actor_staff_id', 'appealed_by'];
+    $actorIds = [];
+
+    foreach ($items as $i => $item) {
+        $payload = is_array($item['payload'] ?? null) ? $item['payload'] : [];
+        $actorId = 0;
+        foreach ($actorKeys as $key) {
+            if (!empty($payload[$key])) {
+                $actorId = (int)$payload[$key];
+                break;
+            }
+        }
+        $items[$i]['actor_staff_id'] = $actorId;
+        $items[$i]['actor_name'] = null;
+        if ($actorId > 0) {
+            $actorIds[$actorId] = true;
+        }
+    }
+
+    if (!$actorIds) {
+        return $items;
+    }
+
+    $idList = implode(',', array_map('intval', array_keys($actorIds)));
+    $names = [];
+    $result = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE id IN ($idList)");
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $names[(int)$row['id']] = $row['nama_staff'];
+        }
+    }
+
+    foreach ($items as $i => $item) {
+        $items[$i]['actor_name'] = $names[$item['actor_staff_id']] ?? null;
+    }
+
+    return $items;
 }
 
 function markAtemNotificationRead($notif_id, $staff_id)

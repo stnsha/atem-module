@@ -218,14 +218,23 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
         for (var i = 0; i < items.length; i++) {
             var n = items[i];
             var snippet;
+            var actor = n.actor_name || '';
             if (n.type === 'chat_message' && n.atem_id) {
-                snippet = 'You received a chat on ATEM ID ' + n.atem_id;
+                snippet = actor
+                    ? actor + ' left a chat on ATEM ID ' + n.atem_id + '.'
+                    : 'You received a chat on ATEM ID ' + n.atem_id + '.';
             } else if (n.type === 'atem_suspended' && n.atem_id) {
-                snippet = 'Your ATEM ID ' + n.atem_id + ' has been suspended.';
+                snippet = 'Your ATEM ID ' + n.atem_id + ' has been suspended'
+                    + (actor ? ' by ' + actor : '') + '.';
             } else if (n.type === 'atem_appealed' && n.atem_id) {
-                snippet = 'An appeal was submitted for ATEM ID ' + n.atem_id + '.';
+                snippet = actor
+                    ? actor + ' submitted an appeal for ATEM ID ' + n.atem_id + '.'
+                    : 'An appeal was submitted for ATEM ID ' + n.atem_id + '.';
+            } else if (n.type === 'atem_force_terminated' && n.atem_id) {
+                snippet = 'Your ATEM ID ' + n.atem_id + ' has been force terminated'
+                    + (actor ? ' by ' + actor : '') + '.';
             } else {
-                snippet = 'New activity on ATEM #' + n.atem_id;
+                snippet = 'New activity on ATEM ID ' + n.atem_id + '.';
             }
             html += '<div class="atem-notif-item' + (!n.read_at ? ' atem-notif-item-unread' : '') + '" data-id="' + n.id + '" data-atem-id="' + (n.atem_id || '') + '">'
                 + '<div class="atem-notif-item-snippet">' + escapeHtml(snippet) + '</div>'
