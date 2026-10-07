@@ -1803,7 +1803,14 @@
         if ($('tl-status') && REC.atem_status_id) { $('tl-status').value = REC.atem_status_id; }
         if ($('tl-final-due')) { $('tl-final-due').value = dateOnly(REC.final_due_date); }
         if ($('tl-closure')) { $('tl-closure').value = dateOnly(REC.closure_date); }
-        if ($('tl-remarks')) { $('tl-remarks').value = REC.remarks || ''; }
+        if ($('tl-remarks')) {
+            $('tl-remarks').value = REC.remarks || '';
+            // Grow to fit saved multi-line remarks so every line is visible on load
+            var remarksEl = $('tl-remarks');
+            if (remarksEl.scrollHeight > remarksEl.clientHeight) {
+                remarksEl.style.height = (remarksEl.scrollHeight + 2) + 'px';
+            }
+        }
         if ($('tl-extended')) {
             $('tl-extended').checked = !!REC.is_extended;
             if (REC.is_extended) {

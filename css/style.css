@@ -247,6 +247,12 @@ button {
   padding-right: 0.75rem;
 }
 
+/* Textareas must honour their rows attribute rather than being clamped to the
+   single-line control height set above. */
+textarea.form-control {
+  height: auto;
+}
+
 .form-control::placeholder {
   font-size: 14px;
   font-weight: 400;
