@@ -3629,6 +3629,26 @@ if (!defined('API_JWT_INCLUDED')) {
 
                 case 'suspend-atem':
                     if (isset($jsonData['id'])) {
+                        // Access: CEO/Board (grade 5) or SuperAdmin only - mirrors
+                        // edit.php's $can_suspend gate. Resolved fresh from DB since
+                        // api.php is hit directly over AJAX here (no header.php in
+                        // this request, so $atem_permission isn't set); same
+                        // $is_api_superadmin / dev-role-override pattern used above
+                        // and by bulk-lock-payout.
+                        $susp_grade = 0;
+                        if (isset($_SESSION['atem_dev_role_override'])) {
+                            $susp_grade = (int)$_SESSION['atem_dev_role_override'];
+                        } elseif ($staff_id) {
+                            $_susp_res = mysqli_query($conn, "SELECT grade FROM staff WHERE id = " . (int)$staff_id . " AND recycle != 1");
+                            if ($_susp_res && ($_susp_row = mysqli_fetch_assoc($_susp_res))) {
+                                $susp_grade = (int)$_susp_row['grade'];
+                            }
+                        }
+                        if (!$is_api_superadmin && $susp_grade !== 5) {
+                            $response = array('success' => false, 'message' => 'Insufficient permission to suspend this ATEM.');
+                            break;
+                        }
+
                         $suspend_remarks = isset($jsonData['remarks']) ? (string)$jsonData['remarks'] : '';
                         // Fetch the record before suspending so we still have the
                         // issuer/title even after the status changes (suspend() itself
