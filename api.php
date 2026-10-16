@@ -455,7 +455,10 @@ function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id =
 {
     // Any write through the API may change card data, so the short-lived full
     // ATEM list cache (getAtemListCached()) is dropped before it is sent.
-    if (strtoupper((string)$method) !== 'GET') {
+    // Export audit logging (atem/export-logs) never touches card data, so it
+    // keeps the cache - otherwise every export would force the next Staff
+    // Performance load to re-download the full list.
+    if (strtoupper((string)$method) !== 'GET' && $endpoint !== 'atem/export-logs') {
         clearAtemListCache();
     }
 
@@ -2140,15 +2143,42 @@ function isPayoutLockWindowOpen($conn)
 
 // Records one export event per target staff, shown in the Logs section of
 // staff_performance/edit.php alongside ATEM lock events. $exportType is
-// a free-form label (e.g. 'atem', 'performance') just for display context.
-function logAtemExport($conn, $targetStaffId, $actorStaffId, $exportType)
+// a free-form label (e.g. 'atem', 'performance', 'payout-lock') just for
+// display context. Stored in atem-api's atem_export_logs table (POST
+// /atem/export-logs) - one batched request per export regardless of how many
+// staff it covers. A logging failure is recorded but never aborts the export.
+function logAtemExport(array $targetStaffIds, int $actorStaffId, string $exportType): void
 {
-    $targetStaffId = (int)$targetStaffId;
-    $actorStaffId  = (int)$actorStaffId;
-    if ($targetStaffId <= 0 || $actorStaffId <= 0) { return; }
-    $exportTypeEsc = mysqli_real_escape_string($conn, (string)$exportType);
-    mysqli_query($conn, "INSERT INTO atem_export_logs (target_staff_id, actor_staff_id, export_type)
-                          VALUES ($targetStaffId, $actorStaffId, '$exportTypeEsc')");
+    $targetStaffIds = array_values(array_unique(array_filter(array_map('intval', $targetStaffIds), fn($id) => $id > 0)));
+    if (empty($targetStaffIds) || $actorStaffId <= 0) { return; }
+
+    $result = getApiDataWithJWT('atem/export-logs', [
+        'target_staff_ids' => $targetStaffIds,
+        'actor_id'         => $actorStaffId,
+        'export_type'      => $exportType,
+    ], 'POST', $actorStaffId);
+
+    $httpCode = (int)($result['httpCode'] ?? 0);
+    if ($httpCode < 200 || $httpCode >= 300) {
+        logJWTOperation('EXPORT_LOG', 'Failed to record export log', [
+            'http_code' => $httpCode,
+            'response'  => $result['response'] ?? '',
+        ], 'ERROR');
+    }
+}
+
+// Most recent export events for one staff (newest first), from atem-api.
+// Returns [] on any failure so the Logs section simply shows no exports.
+function getAtemExportLogs(int $targetStaffId, int $staff_id, int $limit = 15): array
+{
+    if ($targetStaffId <= 0) { return []; }
+    $result = getApiDataWithJWT(
+        'atem/export-logs?' . http_build_query(['target_staff_id' => $targetStaffId, 'limit' => $limit]),
+        null, 'GET', $staff_id
+    );
+    if ((int)($result['httpCode'] ?? 0) !== 200) { return []; }
+    $decoded = json_decode($result['response'] ?? '', true);
+    return (isset($decoded['data']) && is_array($decoded['data'])) ? $decoded['data'] : [];
 }
 
 // Which performance-table column ('complete'/'active'/'extend'/'failed') a status
@@ -2527,6 +2557,35 @@ function resolvePayoutAtemIds($month, $year, $quarter, $selectedStatuses, $staff
 }
 
 /**
+ * Staff Performance "Payout" filter value from a request body:
+ * 'unlocked' (default), 'locked', or 'all'.
+ */
+function atem_parse_payout_filter(array $jsonData): string
+{
+    $value = isset($jsonData['payout_status']) ? (string)$jsonData['payout_status'] : 'unlocked';
+    return in_array($value, ['unlocked', 'locked', 'all'], true) ? $value : 'unlocked';
+}
+
+/**
+ * Whether a staff row passes the Staff Performance "Payout" filter, given the
+ * HQ ATEM has_locked/has_unlocked flags from getStaffPerformanceLive().
+ * - 'unlocked': anything not fully locked - at least one unlocked payout card,
+ *   or no payout-terminal card at all (e.g. only Active statuses selected).
+ * - 'locked':   at least one locked payout card.
+ * - 'all':      no filtering.
+ * A partially locked staff member therefore appears under both Unlocked and
+ * Locked, since each view still has an action available for them.
+ */
+function atem_payout_filter_matches(string $filter, bool $hasLocked, bool $hasUnlocked): bool
+{
+    return match ($filter) {
+        'locked'   => $hasLocked,
+        'all'      => true,
+        default    => $hasUnlocked || !$hasLocked,
+    };
+}
+
+/**
  * Resolves which staff a bulk payout lock/unlock action targets.
  *
  * If the request carries an explicit staff_ids array (row-level "Selected"
@@ -2569,21 +2628,33 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
         ? array_values(array_intersect($jsonData['roles'], $allowedRoles))
         : null;
 
+    $payoutFilter = atem_parse_payout_filter($jsonData);
+
     // Staff Performance is HQ ATEM only (Outlet ATEM removed).
     $live = getStaffPerformanceLive($month, $year, $quarter, $statuses, $staff_id, 1, 0, $roleFilter);
     if (empty($live['success'])) {
         return array();
     }
 
+    // Staff Status filter - same 'active' (default) / 'inactive' / 'all'
+    // values as get-performance-list. Recycled (inactive) staff are loaded
+    // too, as in get-performance-list, and filtered below - previously they
+    // were left out of this lookup but never excluded from the target list,
+    // so "Active staff only" lock/unlock still reached inactive staff.
+    $staffStatusF = isset($jsonData['staff_status']) ? (string)$jsonData['staff_status'] : 'active';
+    if (!in_array($staffStatusF, ['active', 'inactive', 'all'], true)) { $staffStatusF = 'active'; }
+
     $staffGrade  = array();
     $staffStruct = array();
     $staffDeptFirst = array();
-    $sgr = mysqli_query($conn, "SELECT id, grade, struct, department FROM staff WHERE recycle != 1");
+    $staffInactive  = [];
+    $sgr = mysqli_query($conn, "SELECT id, grade, struct, department, recycle FROM staff");
     if ($sgr) {
         while ($r = mysqli_fetch_assoc($sgr)) {
             $id_ = (int)$r['id'];
             $staffGrade[$id_]  = ($r['grade']  !== null) ? (int)$r['grade']  : null;
             $staffStruct[$id_] = ($r['struct'] !== null) ? (int)$r['struct'] : null;
+            $staffInactive[$id_] = ((int)$r['recycle'] === 1);
             $staffDeptFirst[$id_] = 0;
             foreach (explode(',', (string)$r['department']) as $_d) {
                 $_d = (int)trim($_d);
@@ -2605,6 +2676,12 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
         if ($gradeF  > 0 && $gradeId  !== $gradeF)  { continue; }
         if ($structF > 0 && $structId !== $structF) { continue; }
         if ($staffF  > 0 && $sid      !== $staffF)  { continue; }
+        $isInactive = !empty($staffInactive[$sid]);
+        if ($staffStatusF === 'active'   && $isInactive)  { continue; }
+        if ($staffStatusF === 'inactive' && !$isInactive) { continue; }
+        // Same Payout filter as the on-screen list, so a bar-level "all
+        // filtered" lock/unlock only ever touches staff currently shown.
+        if (!atem_payout_filter_matches($payoutFilter, !empty($rec['has_locked']), !empty($rec['has_unlocked']))) { continue; }
 
         $staffIds[] = $sid;
     }
@@ -4167,6 +4244,7 @@ if (!defined('API_JWT_INCLUDED')) {
                     // = 1 only, 'all' = no filtering on it.
                     $pl_staff_status = isset($jsonData['staff_status']) ? (string)$jsonData['staff_status'] : 'active';
                     if (!in_array($pl_staff_status, array('active', 'inactive', 'all'), true)) { $pl_staff_status = 'active'; }
+                    $pl_payout_filter = atem_parse_payout_filter($jsonData);
 
                     if (!empty($pl_quarter)) { $pl_month = 0; }
                     if ($pl_month < 1 || $pl_month > 12) { $pl_month = 0; }
@@ -4343,12 +4421,8 @@ if (!defined('API_JWT_INCLUDED')) {
 
                         $pl_has_locked   = !empty($pl_hq_rec['has_locked']);
                         $pl_has_unlocked = !empty($pl_hq_rec['has_unlocked']);
-                        // Once a staff member's HQ payout is fully locked (nothing left
-                        // unlocked), drop them from the on-screen list entirely - there's
-                        // nothing actionable left for them here. They still appear in
-                        // the Export CSV (with a "Payout" column), which is the actual
-                        // record of who's been paid.
-                        if ($pl_has_locked && !$pl_has_unlocked) { continue; }
+                        // Payout filter - see atem_payout_filter_matches().
+                        if (!atem_payout_filter_matches($pl_payout_filter, $pl_has_locked, $pl_has_unlocked)) { continue; }
 
                         $pl_out[] = array(
                             'id'           => $pl_sid,
@@ -4427,7 +4501,13 @@ if (!defined('API_JWT_INCLUDED')) {
                         break;
                     }
 
-                    $pyk_staff_ids = resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn);
+                    // Lock Payout always covers both active and inactive staff,
+                    // regardless of the page's Staff Status filter, so the
+                    // payout lock export (which lists exactly the locked staff,
+                    // with an Active Staff column) is complete. Undo Payout
+                    // still honours the filter, so inactive staff can be undone
+                    // on their own.
+                    $pyk_staff_ids = resolvePayoutTargetStaffIds(['staff_status' => 'all'] + $jsonData, $staff_id, $conn);
                     if (empty($pyk_staff_ids)) {
                         $response = array('success' => false, 'message' => 'No staff matched the current filter.');
                         break;
@@ -4456,10 +4536,34 @@ if (!defined('API_JWT_INCLUDED')) {
                         $response = $pyk_atem_result;
                         break;
                     }
+                    // Every successful lock (bar-level, Selected, or per-row) is
+                    // followed by an automatic Excel export of the staff it
+                    // targeted. The target list can be large (bar-level "lock all
+                    // filtered"), so it is parked in the session under a one-time
+                    // token rather than passed on the export URL - export.php's
+                    // 'payout-lock' type consumes and discards it.
+                    $pyk_export_token = bin2hex(random_bytes(8));
+                    $_SESSION['atem_payout_lock_exports'] = array_filter(
+                        $_SESSION['atem_payout_lock_exports'] ?? [],
+                        fn($ctx) => isset($ctx['created']) && $ctx['created'] > time() - 3600
+                    );
+                    $_SESSION['atem_payout_lock_exports'][$pyk_export_token] = [
+                        'created'   => time(),
+                        'staff_ids' => array_values(array_unique(array_map('intval', $pyk_staff_ids))),
+                        'month'     => $pyk_month,
+                        'year'      => $pyk_year,
+                        'quarter'   => $pyk_quarter,
+                        'statuses'  => $pyk_statuses,
+                        'roles'     => (isset($jsonData['roles']) && is_array($jsonData['roles']))
+                            ? array_values(array_intersect($jsonData['roles'], ['Issuer', 'A', 'R', 'C', 'I']))
+                            : null,
+                    ];
+
                     $response = array(
                         'success'      => true,
                         'atem_locked'  => (int)(isset($pyk_atem_result['locked']) ? $pyk_atem_result['locked'] : 0),
                         'atem_skipped' => (int)(isset($pyk_atem_result['skipped']) ? $pyk_atem_result['skipped'] : 0),
+                        'export_token' => $pyk_export_token,
                     );
                     break;
 

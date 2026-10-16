@@ -313,7 +313,7 @@ if ($type === 'staff-atem') {
     $atem_result = getStaffAtemList($target_staff, $staff_id);
     $atem_rows   = (!empty($atem_result['success']) && isset($atem_result['data'])) ? $atem_result['data'] : array();
 
-    logAtemExport($conn, $target_staff, $staff_id, 'atem');
+    logAtemExport([$target_staff], $staff_id, 'atem');
 
     $sname    = preg_replace('/[^A-Za-z0-9_\-]/', '_', $t_name);
     $filename = 'atem_' . $sname . '_' . date('Y-m-d') . '.csv';
@@ -340,6 +340,264 @@ if ($type === 'staff-atem') {
     }
 
     fclose($out);
+    exit;
+}
+
+// ----------------------------------------
+// Minimal XLSX writer
+// ----------------------------------------
+// Laragon's PHP 8.2 build ships without ext-zip and the ATEM module has no
+// Composer dependencies, so the workbook is packed by hand as an uncompressed
+// (STORED) zip. A real .xlsx is used here instead of CSV so Excel keeps Staff
+// IC as text - in a CSV, a 12-digit IC is coerced to a number and shown as
+// 9.00101E+11 / loses leading zeros.
+
+function xlsx_xml_text(string $v): string {
+    // Strip characters XML 1.0 forbids (control chars), then escape.
+    $v = preg_replace('/[^\x{9}\x{A}\x{D}\x{20}-\x{D7FF}\x{E000}-\x{FFFD}\x{10000}-\x{10FFFF}]/u', '', $v) ?? '';
+    return htmlspecialchars($v, ENT_QUOTES | ENT_XML1, 'UTF-8');
+}
+
+function xlsx_col_letter(int $index): string {
+    $letters = '';
+    $index++;
+    while ($index > 0) {
+        $mod = ($index - 1) % 26;
+        $letters = chr(65 + $mod) . $letters;
+        $index = intdiv($index - 1, 26);
+    }
+    return $letters;
+}
+
+/**
+ * Builds a single-sheet workbook.
+ *
+ * @param string[] $headers     Header row (rendered bold, frozen).
+ * @param array[]  $rows        Data rows; each cell is a string (always written
+ *                              as text) or an int/float (written as a number).
+ * @param int[]    $moneyCols   Zero-based column indexes formatted as #,##0.00.
+ * @param float[]  $colWidths   Column widths in Excel character units.
+ */
+function xlsx_build(string $sheetName, array $headers, array $rows, array $moneyCols = [], array $colWidths = []): string {
+    $sheetRows = '';
+    $allRows = array_merge([$headers], $rows);
+    foreach ($allRows as $r => $row) {
+        $rowNum = $r + 1;
+        $cells = '';
+        foreach (array_values($row) as $c => $val) {
+            $ref = xlsx_col_letter($c) . $rowNum;
+            if ($r === 0) {
+                $cells .= '<c r="' . $ref . '" t="inlineStr" s="1"><is><t>' . xlsx_xml_text((string)$val) . '</t></is></c>';
+            } elseif (is_int($val) || is_float($val)) {
+                $style = in_array($c, $moneyCols, true) ? ' s="2"' : '';
+                $cells .= '<c r="' . $ref . '"' . $style . '><v>' . $val . '</v></c>';
+            } else {
+                $cells .= '<c r="' . $ref . '" t="inlineStr"><is><t xml:space="preserve">' . xlsx_xml_text((string)$val) . '</t></is></c>';
+            }
+        }
+        $sheetRows .= '<row r="' . $rowNum . '">' . $cells . '</row>';
+    }
+
+    $cols = '';
+    if (!empty($colWidths)) {
+        $cols = '<cols>';
+        foreach (array_values($colWidths) as $i => $w) {
+            $cols .= '<col min="' . ($i + 1) . '" max="' . ($i + 1) . '" width="' . (float)$w . '" customWidth="1"/>';
+        }
+        $cols .= '</cols>';
+    }
+
+    $xmlHead = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n";
+    $mainNs  = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    $relNs   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+    $files = [
+        '[Content_Types].xml' => $xmlHead
+            . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            . '<Default Extension="xml" ContentType="application/xml"/>'
+            . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            . '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            . '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            . '</Types>',
+        '_rels/.rels' => $xmlHead
+            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            . '<Relationship Id="rId1" Type="' . $relNs . '/officeDocument" Target="xl/workbook.xml"/>'
+            . '</Relationships>',
+        'xl/workbook.xml' => $xmlHead
+            . '<workbook xmlns="' . $mainNs . '" xmlns:r="' . $relNs . '">'
+            . '<sheets><sheet name="' . xlsx_xml_text(substr($sheetName, 0, 31)) . '" sheetId="1" r:id="rId1"/></sheets>'
+            . '</workbook>',
+        'xl/_rels/workbook.xml.rels' => $xmlHead
+            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            . '<Relationship Id="rId1" Type="' . $relNs . '/worksheet" Target="worksheets/sheet1.xml"/>'
+            . '<Relationship Id="rId2" Type="' . $relNs . '/styles" Target="styles.xml"/>'
+            . '</Relationships>',
+        // cellXfs: 0 = default, 1 = bold header, 2 = #,##0.00 (built-in numFmt 4)
+        'xl/styles.xml' => $xmlHead
+            . '<styleSheet xmlns="' . $mainNs . '">'
+            . '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+            . '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
+            . '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+            . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+            . '<cellXfs count="3">'
+            . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+            . '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+            . '<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+            . '</cellXfs>'
+            . '</styleSheet>',
+        'xl/worksheets/sheet1.xml' => $xmlHead
+            . '<worksheet xmlns="' . $mainNs . '" xmlns:r="' . $relNs . '">'
+            . '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+            . $cols
+            . '<sheetData>' . $sheetRows . '</sheetData>'
+            . '</worksheet>',
+    ];
+
+    return xlsx_zip_stored($files);
+}
+
+/** Packs [name => contents] into an uncompressed zip archive. */
+function xlsx_zip_stored(array $files): string {
+    $now     = getdate();
+    $dosTime = ($now['hours'] << 11) | ($now['minutes'] << 5) | intdiv($now['seconds'], 2);
+    $dosDate = (max($now['year'] - 1980, 0) << 9) | ($now['mon'] << 5) | $now['mday'];
+
+    $body    = '';
+    $central = '';
+    $count   = 0;
+    foreach ($files as $name => $data) {
+        $crc    = crc32($data);
+        $size   = strlen($data);
+        $offset = strlen($body);
+
+        $body .= pack('VvvvvvVVVvv', 0x04034b50, 20, 0, 0, $dosTime, $dosDate, $crc, $size, $size, strlen($name), 0)
+               . $name . $data;
+        $central .= pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 20, 20, 0, 0, $dosTime, $dosDate, $crc, $size, $size,
+                         strlen($name), 0, 0, 0, 0, 0, $offset)
+                  . $name;
+        $count++;
+    }
+
+    return $body . $central
+         . pack('VvvvvVVv', 0x06054b50, 0, 0, $count, $count, strlen($central), strlen($body), 0);
+}
+
+// ----------------------------------------
+// Export: payout lock summary (Excel)
+// ----------------------------------------
+// Downloaded automatically by staff_performance/index.php right after a
+// successful Lock Payout (bar-level, Selected, or per-row). The target staff
+// and the filter the lock ran under are read from the one-time session token
+// written by api.php's 'bulk-lock-payout' case, so the figures match the
+// on-screen table for exactly the staff whose payout was just locked:
+// Total Completed = HQ + Outlet ATEM + OKR Completed-family counts, Total
+// Payout = HQ ATEM Est. Reward (same as get-performance-list's
+// complete_total_count / total_incentive).
+if ($type === 'payout-lock') {
+    $token = isset($_GET['token']) ? preg_replace('/[^a-f0-9]/', '', (string)$_GET['token']) : '';
+    $ctx   = ($token !== '' && isset($_SESSION['atem_payout_lock_exports'][$token]))
+        ? $_SESSION['atem_payout_lock_exports'][$token]
+        : null;
+    if ($ctx === null) {
+        http_response_code(404);
+        exit('This payout lock export has expired or was already downloaded.');
+    }
+    unset($_SESSION['atem_payout_lock_exports'][$token]);
+    // Release the session lock before the slow atem-api round trips below.
+    session_write_close();
+
+    $pl_staff_ids = array_map('intval', $ctx['staff_ids'] ?? []);
+    $pl_month     = (int)($ctx['month'] ?? 0);
+    $pl_year      = (int)($ctx['year'] ?? date('Y'));
+    $pl_quarter   = $ctx['quarter'] ?? [];
+    $pl_statuses  = $ctx['statuses'] ?? ['Completed', 'Completed with Excellence', 'Completed with Extension'];
+    $pl_roles     = $ctx['roles'] ?? null;
+
+    $atem_list   = getAtemListCached($staff_id);
+    $live_hq     = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 1, 0, $pl_roles, $atem_list);
+    $live_outlet = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 2, 0, $pl_roles, $atem_list);
+    if (empty($live_hq['success']) || empty($live_outlet['success'])) {
+        http_response_code(502);
+        exit('Unable to reach the ATEM API. Please try again later.');
+    }
+    $okr_live = getOkrPerformanceLive($conn, $pl_month, $pl_year, $pl_quarter, $pl_statuses);
+
+    // Staff details resolved live from ODB. Recycled (inactive) staff are
+    // included so a deactivated staff member still resolves name/IC/dept.
+    // Staff IC is staff.username.
+    $pl_staff = [];
+    if (!empty($pl_staff_ids)) {
+        $pl_ids_sql = implode(',', $pl_staff_ids);
+        $pl_sr = mysqli_query($conn, "SELECT id, nama_staff, username, grade, struct, department, recycle
+                                      FROM staff WHERE id IN ($pl_ids_sql)");
+        if ($pl_sr) {
+            while ($r = mysqli_fetch_assoc($pl_sr)) {
+                $first_dept = 0;
+                foreach (explode(',', (string)$r['department']) as $_d) {
+                    $_d = (int)trim($_d);
+                    if ($_d > 0) { $first_dept = $_d; break; }
+                }
+                $pl_staff[(int)$r['id']] = [
+                    'name'       => (string)$r['nama_staff'],
+                    'ic'         => (string)$r['username'],
+                    'grade'      => $r['grade']  !== null ? (int)$r['grade']  : null,
+                    'struct'     => $r['struct'] !== null ? (int)$r['struct'] : null,
+                    'first_dept' => $first_dept,
+                    'active'     => (int)$r['recycle'] !== 1,
+                ];
+            }
+        }
+    }
+
+    $records = [];
+    foreach ($pl_staff_ids as $sid) {
+        $hq     = $live_hq['data'][$sid]     ?? null;
+        $outlet = $live_outlet['data'][$sid] ?? null;
+        $okr    = $okr_live['data'][$sid]    ?? null;
+        if ($hq === null && $outlet === null && $okr === null) { continue; }
+
+        $info    = $pl_staff[$sid] ?? null;
+        $dept_id = !empty($hq['dept_id'])
+            ? (int)$hq['dept_id']
+            : (!empty($outlet['dept_id']) ? (int)$outlet['dept_id'] : ($info['first_dept'] ?? 0));
+        $grade_id  = $info['grade']  ?? null;
+        $struct_id = $info['struct'] ?? null;
+
+        $records[] = [
+            'staff_id' => $sid,
+            'row'      => [
+                $info['name'] ?? ('Staff #' . $sid),
+                $info['ic'] ?? '',
+                ($dept_id && isset($dept_names[$dept_id])) ? $dept_names[$dept_id] : '-',
+                ($grade_id !== null && isset($grade_labels[$grade_id])) ? $grade_labels[$grade_id] : '-',
+                ($struct_id !== null && isset($struct_labels[$struct_id])) ? $struct_labels[$struct_id] : '-',
+                ($info['active'] ?? false) ? 'Yes' : 'No',
+                (int)(($hq['complete'] ?? 0) + ($outlet['complete'] ?? 0) + ($okr['complete'] ?? 0)),
+                round((float)($hq['total_incentive'] ?? 0), 2),
+            ],
+        ];
+    }
+
+    // Highest payout first - matches the on-screen table's default sort.
+    usort($records, fn($a, $b) => $b['row'][7] <=> $a['row'][7]);
+
+    logAtemExport(array_column($records, 'staff_id'), $staff_id, 'payout-lock');
+
+    $xlsx = xlsx_build(
+        'Payout Lock',
+        ['Staff Name', 'Staff IC', 'Staff Department', 'Staff Grade', 'Staff Evaluation Structure', 'Active Staff', 'Total Completed', 'Total Payout (RM)'],
+        array_column($records, 'row'),
+        [7],
+        [32, 18, 26, 22, 26, 13, 16, 18]
+    );
+
+    $filename = 'payout_lock_' . date('Y-m-d_His') . '.xlsx';
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . strlen($xlsx));
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    echo $xlsx;
     exit;
 }
 
@@ -433,9 +691,7 @@ if ($type === 'performance') {
         return $b['total_incentive'] <=> $a['total_incentive'];
     });
 
-    foreach ($out_records as $_rec) {
-        logAtemExport($conn, $_rec['staff_id'], $staff_id, 'performance');
-    }
+    logAtemExport(array_column($out_records, 'staff_id'), $staff_id, 'performance');
 
     // Fetch all ATEMs once (both HQ and Outlet cards - unfiltered by type,
     // the loop below filters HQ vs Outlet itself)

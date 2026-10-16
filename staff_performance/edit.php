@@ -161,21 +161,15 @@ foreach ($atem_rows as $_a) {
 
 // Export events - written by export.php's logAtemExport() every time this
 // staff's data is included in an export (single-staff or bulk performance).
-$_exp_res = mysqli_query($conn, "SELECT actor_staff_id, export_type, exported_at
-                                  FROM atem_export_logs
-                                  WHERE target_staff_id = " . $target_sid . "
-                                  ORDER BY exported_at DESC
-                                  LIMIT 15");
-if ($_exp_res) {
-    while ($_exp = mysqli_fetch_assoc($_exp_res)) {
-        $_exp_actor_id = (int)$_exp['actor_staff_id'];
-        $activity_logs[] = array(
-            'type'  => 'Export',
-            'ref'   => ucfirst($_exp['export_type']),
-            'actor' => isset($staff_names[$_exp_actor_id]) ? $staff_names[$_exp_actor_id] : ('Staff #' . $_exp_actor_id),
-            'when'  => $_exp['exported_at'],
-        );
-    }
+// Stored in atem-api (atem_export_logs), fetched via getAtemExportLogs().
+foreach (getAtemExportLogs((int)$target_sid, (int)$staff_id) as $_exp) {
+    $_exp_actor_id = (int)($_exp['actor_staff_id'] ?? 0);
+    $activity_logs[] = array(
+        'type'  => 'Export',
+        'ref'   => ucfirst((string)($_exp['export_type'] ?? '')),
+        'actor' => isset($staff_names[$_exp_actor_id]) ? $staff_names[$_exp_actor_id] : ('Staff #' . $_exp_actor_id),
+        'when'  => (string)($_exp['exported_at'] ?? ''),
+    );
 }
 
 // Newest first, capped so this doesn't grow unbounded on the page over time.

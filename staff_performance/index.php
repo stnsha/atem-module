@@ -6,8 +6,10 @@ include('../header.php');
 
 // Page access: grade 3+ or SuperAdmin. Lock Payout itself is further
 // restricted to SuperAdmin only, and only during the configurable payout
-// lock window (see $_show_lock_ui below and api.php's bulk-lock-payout) -
-// permanent, no unlock capability.
+// lock window (see $_show_lock_ui below and api.php's bulk-lock-payout).
+// Undo (Unlock Payout) is SuperAdmin only but available at any time, so a
+// mistaken lock can always be reverted (see $_show_unlock_ui and api.php's
+// bulk-unlock-payout).
 $_perf_dept_ids = array();
 if (isset($department) && $department !== '') {
     foreach (explode(',', (string)$department) as $_perf_d) {
@@ -37,6 +39,8 @@ include(dirname(__FILE__) . '/../api.php');
 $_can_lock_payout  = $_is_superadmin;
 $_payout_lock_open = isPayoutLockWindowOpen($conn);
 $_show_lock_ui     = $_can_lock_payout && $_payout_lock_open;
+// Undo is not tied to the lock window - only to SuperAdmin.
+$_show_unlock_ui   = $_can_lock_payout;
 
 // "Opens on [date]" note for someone who CAN lock but the window is currently
 // shut - finds the next quarter-opening month (Jan/Apr/Jul/Oct) strictly
@@ -322,11 +326,22 @@ if ($_perf_own_only) {
                 <option value="all">All staff</option>
             </select>
         </div>
+        <div class="col-md-3 col-sm-6">
+            <label class="form-label">Payout</label>
+            <select id="perf-filter-payout" class="form-select form-select-sm">
+                <option value="unlocked" selected>Unlocked</option>
+                <option value="locked">Locked</option>
+                <option value="all">All</option>
+            </select>
+        </div>
         <div class="col-auto d-flex align-items-end gap-2 ms-auto">
             <button class="btn btn-sm btn-outline-secondary" id="perf-reset-filter">Reset</button>
             <a id="perf-export-all-btn" href="#" class="btn btn-outline-success btn-sm">Export</a>
             <?php if ($_show_lock_ui): ?>
             <button class="btn btn-danger btn-sm" id="perf-lock-btn">Lock Payout</button>
+            <?php endif; ?>
+            <?php if ($_show_unlock_ui): ?>
+            <button class="btn btn-outline-warning btn-sm" id="perf-unlock-btn">Undo Payout</button>
             <?php endif; ?>
         </div>
     </div>
@@ -385,6 +400,9 @@ if ($_perf_own_only) {
         <?php if ($_show_lock_ui): ?>
         <button class="btn btn-danger btn-sm" id="perf-lock-selected-btn" disabled>Lock Selected</button>
         <?php endif; ?>
+        <?php if ($_show_unlock_ui): ?>
+        <button class="btn btn-outline-warning btn-sm" id="perf-unlock-selected-btn" disabled>Undo Selected</button>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -393,7 +411,7 @@ if ($_perf_own_only) {
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-lock-fill text-danger"></i> Lock Payout</h5>
+                <h5 class="modal-title" id="payout-lock-modal-title"><i class="bi bi-lock-fill text-danger"></i> Lock Payout</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -403,9 +421,17 @@ if ($_perf_own_only) {
                 <textarea id="payout-lock-remark" class="form-control" rows="3"
                     placeholder="Reason for locking payout..."></textarea>
                 <div class="atem-form-error" id="payout-lock-remark-error"></div>
+                <div id="payout-lock-progress" class="mt-3" style="display:none;">
+                    <div class="progress" style="height:8px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+                            style="width:100%"></div>
+                    </div>
+                    <div class="text-muted mt-1" style="font-size:12px;" id="payout-lock-progress-msg"></div>
+                </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" id="payout-lock-cancel-btn"
+                    data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" id="payout-lock-confirm-btn">Lock Payout</button>
             </div>
         </div>
@@ -426,6 +452,7 @@ var PERF_CFG = <?php echo json_encode(array(
     'staff'           => $perf_staff_options,
     'isSuperAdmin'    => $_is_superadmin,
     'canLockPayout'   => $_show_lock_ui,
+    'canUnlockPayout' => $_show_unlock_ui,
 )); ?>;
 
 var PERF_API_URL = PERF_CFG.apiUrl;
@@ -785,6 +812,8 @@ function buildPayload() {
     var struct = structEl ? (parseInt(structEl.value, 10) || 0) : 0;
     var staffId = staffEl ? (parseInt(staffEl.value, 10) || 0) : 0;
     var staffStatus = activeEl ? activeEl.value : 'active';
+    var payoutEl = document.getElementById('perf-filter-payout');
+    var payoutStatus = payoutEl ? payoutEl.value : 'unlocked';
     if (quarters.length) {
         month = 0;
     }
@@ -797,6 +826,7 @@ function buildPayload() {
         struct: struct,
         staff_id: staffId,
         staff_status: staffStatus,
+        payout_status: payoutStatus,
         statuses: getSelectedStatuses('perf'),
         roles: getSelectedRoles('perf')
     };
@@ -817,7 +847,7 @@ function buildLabel(payload) {
 }
 
 var _selectionButtonIds = {
-    perf: ['export-selected-btn', 'perf-lock-selected-btn']
+    perf: ['export-selected-btn', 'perf-lock-selected-btn', 'perf-unlock-selected-btn']
 };
 
 function updateExportSelected(prefix) {
@@ -834,17 +864,29 @@ function updateExportSelected(prefix) {
     // Lock Selected additionally requires at least one selected staff member
     // with something still lockable (has_unlocked) - a selection made up
     // entirely of already-fully-locked staff has nothing left to lock.
+    // Undo Selected likewise requires at least one selected staff member with
+    // something locked (has_locked).
     var lockBtn = document.getElementById(prefix + '-lock-selected-btn');
-    if (lockBtn) {
+    var unlockBtn = document.getElementById(prefix + '-unlock-selected-btn');
+    if (lockBtn || unlockBtn) {
         var ids = selectedStaffIds(prefix);
         var idSet = {};
         for (var j = 0; j < ids.length; j++) {
             idSet[ids[j]] = true;
         }
-        var anyLockable = (_perfAllData || []).some(function(rec) {
-            return idSet[rec.staff_id] && rec.has_unlocked;
+        var selectedRecs = (_perfAllData || []).filter(function(rec) {
+            return idSet[rec.staff_id];
         });
-        lockBtn.disabled = !hasSelection || !anyLockable;
+        if (lockBtn) {
+            lockBtn.disabled = !hasSelection || !selectedRecs.some(function(rec) {
+                return rec.has_unlocked;
+            });
+        }
+        if (unlockBtn) {
+            unlockBtn.disabled = !hasSelection || !selectedRecs.some(function(rec) {
+                return rec.has_locked;
+            });
+        }
     }
 }
 
@@ -1008,6 +1050,11 @@ function renderTable(data, payload) {
             '<td>' +
             '<div style="font-size:13px;font-weight:500;">' + escHtml(rec.staff_name) +
             (rec.is_inactive ? ' <span class="badge bg-secondary" style="font-weight:400;font-size:10px;">Inactive</span>' : '') +
+            (rec.has_locked ?
+                (rec.has_unlocked ?
+                    ' <span class="badge bg-warning text-dark" style="font-weight:400;font-size:10px;">Partially Locked</span>' :
+                    ' <span class="badge bg-danger" style="font-weight:400;font-size:10px;">Payout Locked</span>') :
+                '') +
             '</div>' +
             '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.dept_name) + '</div>' +
             '</td>' +
@@ -1028,13 +1075,13 @@ function renderTable(data, payload) {
             '" title="View"><i class="bi bi-eye"></i></a>' +
             '<a class="btn btn-sm btn-outline-success me-1 perf-row-export" href="' + escHtml(exportUrl) +
             '" title="Export"><i class="bi bi-download"></i></a>' +
-            (PERF_CFG.canLockPayout ?
-                (rec.has_unlocked ?
-                    '<button type="button" class="btn btn-sm btn-outline-danger me-1 perf-row-lock" data-staff-id="' +
-                    rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>' :
-                    (rec.has_locked ?
-                        '<button type="button" class="btn btn-sm btn-danger me-1" disabled title="Payout Locked"><i class="bi bi-lock-fill"></i></button>' :
-                        '')) :
+            (PERF_CFG.canLockPayout && rec.has_unlocked ?
+                '<button type="button" class="btn btn-sm btn-outline-danger me-1 perf-row-lock" data-staff-id="' +
+                rec.staff_id + '" title="Lock Payout"><i class="bi bi-lock-fill"></i></button>' :
+                '') +
+            (PERF_CFG.canUnlockPayout && rec.has_locked ?
+                '<button type="button" class="btn btn-sm btn-outline-warning me-1 perf-row-unlock" data-staff-id="' +
+                rec.staff_id + '" title="Undo Payout"><i class="bi bi-unlock-fill"></i></button>' :
                 '') +
             '</td>' +
             '</tr>';
@@ -1267,6 +1314,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (activeEl) {
             activeEl.value = 'active';
         }
+        var payoutEl = document.getElementById('perf-filter-payout');
+        if (payoutEl) {
+            payoutEl.value = 'unlocked';
+        }
         var statusBoxes = document.querySelectorAll('.perf-status-cb');
         for (var _si = 0; _si < statusBoxes.length; _si++) {
             statusBoxes[_si].checked = (PERF_CFG.defaultStatuses || []).indexOf(statusBoxes[_si]
@@ -1290,7 +1341,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Auto-apply on every other filter change
     var _perfAutoFilterIds = ['perf-filter-year', 'perf-filter-dept', 'perf-filter-grade',
-    'perf-filter-struct', 'perf-filter-active'];
+    'perf-filter-struct', 'perf-filter-active', 'perf-filter-payout'];
     for (var _pfi = 0; _pfi < _perfAutoFilterIds.length; _pfi++) {
         var _pfEl = document.getElementById(_perfAutoFilterIds[_pfi]);
         if (_pfEl) {
@@ -1363,8 +1414,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Lock payout — confirmation modal, remark required. Locking is permanent
-    // (no unlock capability - see git history if that ever needs revisiting).
+    // Lock / Undo payout — one shared confirmation modal, remark required.
+    // mode 'lock' posts bulk-lock-payout (SuperAdmin, lock window only) and
+    // auto-downloads the payout lock summary; mode 'unlock' posts
+    // bulk-unlock-payout (SuperAdmin, any time) to revert a lock.
     // _pendingLockAction records what the confirm button should act on: the
     // current filter payload (bar-level = 'all filtered', row-level = narrowed
     // further by an explicit staffIds list from the checked rows), plus where
@@ -1375,8 +1428,97 @@ document.addEventListener('DOMContentLoaded', function() {
     var bsPayoutLockModal = payoutLockModalEl ? new bootstrap.Modal(payoutLockModalEl) : null;
     var _pendingLockAction = null;
 
-    function openLockModal(filterPayload, staffIds, progressWrapId, progressMsgId, labelElId, reloadFn) {
+    var PAYOUT_MODAL_TEXT = {
+        lock: {
+            title: '<i class="bi bi-lock-fill text-danger"></i> Lock Payout',
+            msg: 'This will close payout for the matched ATEM records, for both active and inactive staff (the Staff Status filter is ignored). Only a SuperAdmin can undo it.',
+            placeholder: 'Reason for locking payout...',
+            confirm: 'Lock Payout',
+            busy: 'Locking...',
+            busyMsg: 'Locking payout and preparing the export. This can take a while for many staff - please keep this window open.',
+            confirmClass: 'btn btn-danger',
+            action: 'bulk-lock-payout',
+            failMsg: 'Failed to lock payout.'
+        },
+        unlock: {
+            title: '<i class="bi bi-unlock-fill text-warning"></i> Undo Payout',
+            msg: 'This will reopen payout for the matched locked ATEM records.',
+            placeholder: 'Reason for undoing the payout lock...',
+            confirm: 'Undo Payout',
+            busy: 'Undoing...',
+            busyMsg: 'Undoing payout lock. This can take a while for many staff - please keep this window open.',
+            confirmClass: 'btn btn-warning',
+            action: 'bulk-unlock-payout',
+            failMsg: 'Failed to undo payout.'
+        }
+    };
+
+    // Busy state while the lock/undo request runs (it can take a long time
+    // for many staff): indeterminate progress bar with elapsed seconds,
+    // spinner on the confirm button, and the modal cannot be dismissed.
+    var _payoutBusy = false;
+    var _payoutBusyTimer = null;
+
+    function setPayoutBusy(busy, text) {
+        _payoutBusy = busy;
+        var confirmEl = document.getElementById('payout-lock-confirm-btn');
+        var cancelEl = document.getElementById('payout-lock-cancel-btn');
+        var closeEl = payoutLockModalEl ? payoutLockModalEl.querySelector('.btn-close') : null;
+        var remarkEl = document.getElementById('payout-lock-remark');
+        var progEl = document.getElementById('payout-lock-progress');
+        var progMsgEl = document.getElementById('payout-lock-progress-msg');
+
+        if (confirmEl) {
+            confirmEl.disabled = busy;
+            if (busy) {
+                confirmEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>' +
+                    escHtml(text.busy);
+            } else {
+                confirmEl.textContent = text.confirm;
+            }
+        }
+        if (cancelEl) {
+            cancelEl.disabled = busy;
+        }
+        if (closeEl) {
+            closeEl.disabled = busy;
+        }
+        if (remarkEl) {
+            remarkEl.disabled = busy;
+        }
+        if (progEl) {
+            progEl.style.display = busy ? 'block' : 'none';
+        }
+
+        if (_payoutBusyTimer) {
+            clearInterval(_payoutBusyTimer);
+            _payoutBusyTimer = null;
+        }
+        if (busy && progMsgEl) {
+            var started = Date.now();
+            var renderMsg = function() {
+                progMsgEl.textContent = text.busyMsg + ' (' + Math.floor((Date.now() - started) / 1000) + 's)';
+            };
+            renderMsg();
+            _payoutBusyTimer = setInterval(renderMsg, 1000);
+        }
+    }
+
+    if (payoutLockModalEl) {
+        payoutLockModalEl.addEventListener('hide.bs.modal', function(e) {
+            if (_payoutBusy) {
+                e.preventDefault();
+            }
+        });
+    }
+
+    function openLockModal(mode, filterPayload, staffIds, progressWrapId, progressMsgId, labelElId, reloadFn) {
+        if (_payoutBusy) {
+            return;
+        }
+        var text = PAYOUT_MODAL_TEXT[mode];
         _pendingLockAction = {
+            mode: mode,
             filterPayload: filterPayload,
             staffIds: staffIds || null,
             progressWrapId: progressWrapId,
@@ -1384,9 +1526,23 @@ document.addEventListener('DOMContentLoaded', function() {
             labelElId: labelElId,
             reloadFn: reloadFn
         };
+        var titleEl = document.getElementById('payout-lock-modal-title');
+        if (titleEl) {
+            titleEl.innerHTML = text.title;
+        }
+        var msgEl = document.getElementById('payout-lock-modal-msg');
+        if (msgEl) {
+            msgEl.textContent = text.msg;
+        }
+        var confirmEl = document.getElementById('payout-lock-confirm-btn');
+        if (confirmEl) {
+            confirmEl.textContent = text.confirm;
+            confirmEl.className = text.confirmClass;
+        }
         var remarkEl = document.getElementById('payout-lock-remark');
         if (remarkEl) {
             remarkEl.value = '';
+            remarkEl.placeholder = text.placeholder;
         }
         var errEl = document.getElementById('payout-lock-remark-error');
         if (errEl) {
@@ -1398,25 +1554,26 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function wireLockButtons(prefix, buildPayloadFn, reloadFn, progressWrapId, progressMsgId) {
-        var barLockBtn = document.getElementById(prefix + '-lock-btn');
-        if (barLockBtn) {
-            barLockBtn.addEventListener('click', function() {
-                var payload = buildPayloadFn();
-                openLockModal(payload, null, progressWrapId, progressMsgId, prefix + '-filter-label',
-                    reloadFn);
-            });
-        }
-        var selLockBtn = document.getElementById(prefix + '-lock-selected-btn');
-        if (selLockBtn) {
-            selLockBtn.addEventListener('click', function() {
-                var staffIds = selectedStaffIds(prefix);
-                if (!staffIds.length) {
-                    return;
-                }
-                openLockModal(buildPayloadFn(), staffIds, progressWrapId, progressMsgId, prefix +
-                    '-filter-label', reloadFn);
-            });
-        }
+        ['lock', 'unlock'].forEach(function(mode) {
+            var barBtn = document.getElementById(prefix + '-' + mode + '-btn');
+            if (barBtn) {
+                barBtn.addEventListener('click', function() {
+                    openLockModal(mode, buildPayloadFn(), null, progressWrapId, progressMsgId,
+                        prefix + '-filter-label', reloadFn);
+                });
+            }
+            var selBtn = document.getElementById(prefix + '-' + mode + '-selected-btn');
+            if (selBtn) {
+                selBtn.addEventListener('click', function() {
+                    var staffIds = selectedStaffIds(prefix);
+                    if (!staffIds.length) {
+                        return;
+                    }
+                    openLockModal(mode, buildPayloadFn(), staffIds, progressWrapId, progressMsgId,
+                        prefix + '-filter-label', reloadFn);
+                });
+            }
+        });
     }
 
     wireLockButtons('perf', buildPayload, function() {
@@ -1444,8 +1601,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             var action = _pendingLockAction;
+            var text = PAYOUT_MODAL_TEXT[action.mode];
             var body = {
-                action: 'bulk-lock-payout',
+                action: text.action,
                 remarks: remark
             };
             for (var k in action.filterPayload) {
@@ -1457,7 +1615,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 body.staff_ids = action.staffIds;
             }
 
-            payoutLockConfirmBtn.disabled = true;
+            setPayoutBusy(true, text);
             fetch(PERF_API_URL, {
                     method: 'POST',
                     headers: {
@@ -1469,10 +1627,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     return r.json();
                 })
                 .then(function(res) {
-                    payoutLockConfirmBtn.disabled = false;
+                    // Cleared before hide() - the modal refuses to close while busy.
+                    setPayoutBusy(false, text);
                     if (!res.success) {
                         if (errEl) {
-                            errEl.textContent = res.message || 'Failed to lock payout.';
+                            errEl.textContent = res.message || text.failMsg;
                         }
                         return;
                     }
@@ -1481,16 +1640,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     var labelEl = document.getElementById(action.labelElId);
                     if (labelEl) {
-                        labelEl.textContent = 'Locked ' + res.atem_locked + ' ATEM, skipped ' + res
-                            .atem_skipped + '.';
+                        labelEl.textContent = action.mode === 'unlock' ?
+                            'Undid payout on ' + res.atem_unlocked + ' ATEM, skipped ' + res.atem_skipped + '.' :
+                            'Locked ' + res.atem_locked + ' ATEM, skipped ' + res.atem_skipped + '.';
                     }
                     _pendingLockAction = null;
                     if (action.reloadFn) {
                         action.reloadFn();
                     }
+                    // Every successful lock auto-downloads the payout lock
+                    // summary (.xlsx) for the staff it targeted - see
+                    // export.php's 'payout-lock' type.
+                    if (res.export_token) {
+                        triggerExport(window.ATEM_MODULE_BASE +
+                            'staff_performance/export.php?type=payout-lock&token=' +
+                            encodeURIComponent(res.export_token),
+                            action.progressWrapId, action.progressMsgId);
+                    }
                 })
                 .catch(function() {
-                    payoutLockConfirmBtn.disabled = false;
+                    setPayoutBusy(false, text);
                     if (errEl) {
                         errEl.textContent = 'Request failed. Please try again.';
                     }
@@ -1554,11 +1723,12 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Per-row Lock — same shared modal as the bar-level/Selected button.
-        var lockBtn = e.target.closest ? e.target.closest('.perf-row-lock') : null;
-        if (lockBtn) {
-            var lockSid = parseInt(lockBtn.getAttribute('data-staff-id'), 10);
-            openLockModal(buildPayload(), [lockSid], 'export-progress-wrap', 'export-progress-msg',
+        // Per-row Lock / Undo — same shared modal as the bar-level/Selected buttons.
+        var rowBtn = e.target.closest ? e.target.closest('.perf-row-lock, .perf-row-unlock') : null;
+        if (rowBtn) {
+            var rowSid = parseInt(rowBtn.getAttribute('data-staff-id'), 10);
+            var rowMode = rowBtn.classList.contains('perf-row-unlock') ? 'unlock' : 'lock';
+            openLockModal(rowMode, buildPayload(), [rowSid], 'export-progress-wrap', 'export-progress-msg',
                 'perf-filter-label',
                 function() {
                     loadPerformance(buildPayload());
