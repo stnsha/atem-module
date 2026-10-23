@@ -1139,15 +1139,41 @@ textarea.form-control {
 }
 
 /* Department list box fills its column down to the Add Selected button. */
-#arci-dept-select {
-  flex: 1 1 auto;
-  height: auto;
+/* Rendered as divs (not a native <select size> listbox) so Safari matches
+   Chrome and the search filter works; see renderDeptList() in create.js/edit.js. */
+.atem-arci-dept-list {
+  /* Zero basis: fill the stretched column without the item count growing the row. */
+  flex: 1 1 0;
   min-height: 120px;
   padding: 4px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: #fff;
 }
 
-#arci-dept-select option {
+.atem-arci-dept-item {
   padding: 6px 8px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atem-arci-dept-item:hover,
+.atem-arci-dept-item:focus {
+  background-color: #eef4ff;
+  outline: none;
+}
+
+.atem-arci-dept-item.active,
+.atem-arci-dept-item.active:hover,
+.atem-arci-dept-item.active:focus {
+  background-color: #0d6efd;
+  color: #fff;
 }
 
 .atem-arci-staff-list {

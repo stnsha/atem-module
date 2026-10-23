@@ -735,10 +735,33 @@
             var o = document.createElement('option'); o.value = depts[i].id; o.textContent = depts[i].name; sel.appendChild(o);
         }
     }
-    function filterDepartments() {
-        var term = $('arci-dept-search').value.toLowerCase(), opts = $('arci-dept-select').options;
-        for (var i = 0; i < opts.length; i++) { if (opts[i].value === '') { continue; } opts[i].hidden = opts[i].textContent.toLowerCase().indexOf(term) < 0; }
+    // The hidden #arci-dept-select holds the chosen value; #arci-dept-list is the
+    // visible list. A native <select size> listbox is not used because Safari
+    // ignores hidden <option>s (search filter had no effect) and its styling.
+    function renderDeptList() {
+        var sel = $('arci-dept-select'), listDiv = $('arci-dept-list');
+        if (!sel || !listDiv) { return; }
+        var term = $('arci-dept-search').value.toLowerCase(), isOutletScope = (currentArciScope() === 'outlet');
+        var scrollTop = listDiv.scrollTop, html = '';
+        for (var i = 0; i < sel.options.length; i++) {
+            var opt = sel.options[i];
+            if (opt.value === '') { continue; }
+            if (term && opt.textContent.toLowerCase().indexOf(term) < 0) { continue; }
+            var active = (opt.value === sel.value);
+            html += '<div class="atem-arci-dept-item' + (active ? ' active' : '') + '" role="option" tabindex="0" aria-selected="' + (active ? 'true' : 'false') + '" data-value="' + escapeHtml(opt.value) + '">' + escapeHtml(opt.textContent) + '</div>';
+        }
+        listDiv.innerHTML = html || '<div class="text-muted" style="font-size:13px;">No ' + (isOutletScope ? 'outlets' : 'departments') + ' found</div>';
+        listDiv.scrollTop = scrollTop;
     }
+    function pickDeptItem(e) {
+        var item = e.target.closest('.atem-arci-dept-item');
+        if (!item) { return; }
+        if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') { return; }
+        e.preventDefault();
+        $('arci-dept-select').value = item.getAttribute('data-value');
+        renderStaffList();
+    }
+    function filterDepartments() { renderDeptList(); }
     // Cross-scope name search: when no outlet/department is chosen yet, typing a
     // name lists matching staff from every outlet and department. Clicking a
     // result sets the Scope to that staff's first outlet (Outlet scope) or first
@@ -815,6 +838,7 @@
     }
 
     function renderStaffList() {
+        renderDeptList();
         var listDiv = $('arci-staff-list'); if (!listDiv) { return; }
         var deptId = $('arci-dept-select').value;
         var isOutletScope = (currentArciScope() === 'outlet');
@@ -2177,8 +2201,12 @@
             });
         }
 
-        if ($('arci-dept-search')) { $('arci-dept-search').addEventListener('keyup', filterDepartments); }
+        if ($('arci-dept-search')) { $('arci-dept-search').addEventListener('input', filterDepartments); }
         if ($('arci-dept-select')) { $('arci-dept-select').addEventListener('change', renderStaffList); }
+        if ($('arci-dept-list')) {
+            $('arci-dept-list').addEventListener('click', pickDeptItem);
+            $('arci-dept-list').addEventListener('keydown', pickDeptItem);
+        }
         if ($('arci-staff-search')) { $('arci-staff-search').addEventListener('keyup', renderStaffList); }
         if ($('arci-add-btn')) { $('arci-add-btn').addEventListener('click', addSelectedMembers); }
         if ($('arci-staff-list')) {

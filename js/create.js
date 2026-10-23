@@ -590,13 +590,41 @@
         }
     }
 
-    function filterDepartments() {
+    // The hidden #arci-dept-select holds the chosen value; #arci-dept-list is the
+    // visible list. A native <select size> listbox is not used because Safari
+    // ignores hidden <option>s (search filter had no effect) and its styling.
+    function renderDeptList() {
+        var sel = $('arci-dept-select');
+        var listDiv = $('arci-dept-list');
+        if (!sel || !listDiv) { return; }
         var term = $('arci-dept-search').value.toLowerCase();
-        var opts = $('arci-dept-select').options;
-        for (var i = 0; i < opts.length; i++) {
-            if (opts[i].value === '') { continue; }
-            opts[i].hidden = opts[i].textContent.toLowerCase().indexOf(term) < 0;
+        var isOutletScope = (currentArciScope() === 'outlet');
+        var scrollTop = listDiv.scrollTop;
+        var html = '';
+        for (var i = 0; i < sel.options.length; i++) {
+            var opt = sel.options[i];
+            if (opt.value === '') { continue; }
+            if (term && opt.textContent.toLowerCase().indexOf(term) < 0) { continue; }
+            var active = (opt.value === sel.value);
+            html += '<div class="atem-arci-dept-item' + (active ? ' active' : '') + '" role="option" tabindex="0"'
+                + ' aria-selected="' + (active ? 'true' : 'false') + '" data-value="' + escapeHtml(opt.value) + '">'
+                + escapeHtml(opt.textContent) + '</div>';
         }
+        listDiv.innerHTML = html || '<div class="text-muted" style="font-size:13px;">No ' + (isOutletScope ? 'outlets' : 'departments') + ' found</div>';
+        listDiv.scrollTop = scrollTop;
+    }
+
+    function pickDeptItem(e) {
+        var item = e.target.closest('.atem-arci-dept-item');
+        if (!item) { return; }
+        if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') { return; }
+        e.preventDefault();
+        $('arci-dept-select').value = item.getAttribute('data-value');
+        renderStaffList();
+    }
+
+    function filterDepartments() {
+        renderDeptList();
     }
 
     // Cross-scope name search: when no outlet/department is chosen yet, typing a
@@ -674,6 +702,7 @@
     }
 
     function renderStaffList() {
+        renderDeptList();
         var listDiv = $('arci-staff-list');
         var deptId = $('arci-dept-select').value;
         var isOutletScope = (currentArciScope() === 'outlet');
@@ -1204,8 +1233,10 @@
         if ($('atem-reward-label')) { $('atem-reward-label').addEventListener('change', markChanged); }
         if ($('atem-deduction-amount')) { $('atem-deduction-amount').addEventListener('change', markChanged); }
 
-        $('arci-dept-search').addEventListener('keyup', filterDepartments);
+        $('arci-dept-search').addEventListener('input', filterDepartments);
         $('arci-dept-select').addEventListener('change', renderStaffList);
+        $('arci-dept-list').addEventListener('click', pickDeptItem);
+        $('arci-dept-list').addEventListener('keydown', pickDeptItem);
         $('arci-staff-search').addEventListener('keyup', renderStaffList);
         $('arci-add-btn').addEventListener('click', addSelectedMembers);
         $('arci-staff-list').addEventListener('click', function (e) {

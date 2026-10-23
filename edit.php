@@ -869,9 +869,10 @@ if ($_devIssuerEligible):
                         </div>
                         <input type="text" class="form-control mb-1" id="arci-dept-search"
                             placeholder="Search department...">
-                        <select class="form-select" id="arci-dept-select" size="6">
+                        <select class="d-none" id="arci-dept-select" aria-hidden="true" tabindex="-1">
                             <option value="">Select department</option>
                         </select>
+                        <div class="atem-arci-dept-list" id="arci-dept-list" role="listbox"></div>
                     </div>
                     <div>
                         <label class="form-label">Staff</label>
