@@ -148,7 +148,8 @@ if ($_perf_own_only) {
 } else {
     // Inactive (recycled) staff are listed too, flagged so picking one can
     // switch the Staff Status filter to include them (see selectStaff()).
-    $_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department, recycle FROM staff ORDER BY nama_staff ASC");
+    // Active staff first, inactive last; each group alphabetical.
+    $_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department, recycle FROM staff ORDER BY (recycle = 1) ASC, nama_staff ASC");
     if ($_pso_res) {
         while ($_pso_row = mysqli_fetch_assoc($_pso_res)) {
             $_deptIds = array();
