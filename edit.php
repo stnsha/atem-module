@@ -12,10 +12,13 @@ include('header.php');
 
 // header.php bootstrapped $conn and the current staff. Build id -> name maps so
 // we can resolve the FK ids the atem-api returns (it stores ids only).
+// Inactive (recycled) staff are included on purpose: a card's issuer, ARCI
+// members, audit actors etc. must still show by name after they leave, never
+// as a bare id. Pickers use their own active-only queries below.
 $staff_names     = array();
 $staff_dept_ids  = array(); // staff id -> first (latest) dept id from staff.department
 $dept_names      = array();
-$staff_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1");
+$staff_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff");
 if ($staff_res) {
     while ($srow = mysqli_fetch_assoc($staff_res)) {
         $staff_names[(int) $srow['id']] = $srow['nama_staff'];
@@ -111,7 +114,7 @@ $area_managers_list = [];
 $am_sql = "SELECT s.id, s.nama_staff, s.outlet, p.position_name
            FROM staff s
            LEFT JOIN position_rymnet p ON p.id = s.status_rym
-           WHERE s.status_rym = 134 AND s.grade >= 3 AND s.recycle != 1
+           WHERE s.status_rym = 134 AND s.grade >= 3
            ORDER BY s.nama_staff";
 $am_res = mysqli_query($conn, $am_sql);
 if ($am_res) {
