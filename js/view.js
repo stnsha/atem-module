@@ -545,14 +545,22 @@
     }
 
     // ------------------------------------------------ active-filter highlight
-    // Mirrors consultcall's filter indicators: every control that differs from
-    // its Reset default gets .filter-active (coloured border), and the tab's
-    // Reset button turns amber while anything - including the control-less
-    // deep-link presets (preset=closed, min_level_id, mine=1) - is narrowing
-    // the table.
+    // Mirrors consultcall's filter indicators: every control that is narrowing
+    // the table gets .filter-active (coloured border) - including the
+    // preselected Status/Role defaults, since those already hide rows on first
+    // load - and the tab's Reset button turns amber while anything other than
+    // those defaults (including the control-less deep-link presets
+    // preset=closed, min_level_id, mine=1) is applied.
     function checkboxesDifferFromDefault(boxes, defaults) {
         for (var i = 0; i < boxes.length; i++) {
             if (boxes[i].checked !== (defaults.indexOf(boxes[i].value) !== -1)) { return true; }
+        }
+        return false;
+    }
+
+    function checkboxesNarrowing(boxes) {
+        for (var i = 0; i < boxes.length; i++) {
+            if (!boxes[i].checked) { return true; }
         }
         return false;
     }
@@ -580,8 +588,19 @@
             var valEl = $(pickerIds[j] + '-value');
             mark($(pickerIds[j] + '-btn'), !!valEl && (parseInt(valEl.value, 10) || 0) !== 0);
         }
-        mark($(p + '-status-btn'), checkboxesDifferFromDefault(allStatusCheckboxes(p + '-status'), DEFAULT_STATUSES));
-        mark($(p + '-role-btn'), checkboxesDifferFromDefault(allRoleCheckboxes(p + '-role'), DEFAULT_ROLES));
+        // Border: any unticked option means the dropdown is filtering, even
+        // when it is still on its preselected default. The Reset button only
+        // reacts when the selection departs from that default.
+        var statusBoxes = allStatusCheckboxes(p + '-status');
+        var roleBoxes   = allRoleCheckboxes(p + '-role');
+        var statusBtn   = $(p + '-status-btn');
+        var roleBtn     = $(p + '-role-btn');
+        if (statusBtn) { statusBtn.classList.toggle('filter-active', checkboxesNarrowing(statusBoxes)); }
+        if (roleBtn)   { roleBtn.classList.toggle('filter-active', checkboxesNarrowing(roleBoxes)); }
+        if (checkboxesDifferFromDefault(statusBoxes, DEFAULT_STATUSES) ||
+            checkboxesDifferFromDefault(roleBoxes, DEFAULT_ROLES)) {
+            anyActive = true;
+        }
 
         var overdueEl = $(p + '-overdue');
         if ((overdueEl && overdueEl.checked) || presetClosed || mineFilter || (prefix === 'hq' && minLevelId > 0)) {
