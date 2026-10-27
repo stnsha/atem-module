@@ -828,6 +828,20 @@ textarea.form-control {
   font-size: 13px;
 }
 
+/* Filter controls currently in use (differ from their Reset default) -
+   same look as consultcall's .filter-active. !important is needed on the
+   custom dropdown buttons (.vf-s2-selection): syncS2ButtonSize() copies an
+   inline border onto them, and their :hover rule resets border-color. */
+.atem-filter .form-control.filter-active,
+.atem-filter .form-select.filter-active,
+.atem-filter .vf-s2-selection.filter-active,
+.atem-filter .vf-s2-selection.filter-active:hover,
+.atem-filter .vf-s2-selection.filter-active:focus {
+  border-color: #0d6efd !important;
+  background-color: #eef4ff;
+  box-shadow: 0 0 0 1px #0d6efd;
+}
+
 /* Pager */
 .atem-pager {
   display: flex;

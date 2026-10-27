@@ -544,6 +544,58 @@
         return due !== '' && due < TODAY;
     }
 
+    // ------------------------------------------------ active-filter highlight
+    // Mirrors consultcall's filter indicators: every control that differs from
+    // its Reset default gets .filter-active (coloured border), and the tab's
+    // Reset button turns amber while anything - including the control-less
+    // deep-link presets (preset=closed, min_level_id, mine=1) - is narrowing
+    // the table.
+    function checkboxesDifferFromDefault(boxes, defaults) {
+        for (var i = 0; i < boxes.length; i++) {
+            if (boxes[i].checked !== (defaults.indexOf(boxes[i].value) !== -1)) { return true; }
+        }
+        return false;
+    }
+
+    function updateFilterIndicators(prefix) {
+        var p = (prefix === 'hq') ? 'vf' : 'vfo';
+        var fieldIds = (prefix === 'hq')
+            ? ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search']
+            : ['vfo-year', 'vfo-month', 'vfo-region', 'vfo-start-date', 'vfo-end-date', 'vfo-closure-from', 'vfo-closure-to', 'vfo-search'];
+        var pickerIds = (prefix === 'hq') ? ['vf-issuer'] : ['vfo-issuer', 'vfo-outlet'];
+        var anyActive = false;
+
+        function mark(el, isActive) {
+            if (el) { el.classList.toggle('filter-active', isActive); }
+            if (isActive) { anyActive = true; }
+        }
+
+        for (var i = 0; i < fieldIds.length; i++) {
+            var el = $(fieldIds[i]);
+            if (!el) { continue; }
+            var v = String(el.value || '').trim();
+            mark(el, v !== '' && v !== '0');
+        }
+        for (var j = 0; j < pickerIds.length; j++) {
+            var valEl = $(pickerIds[j] + '-value');
+            mark($(pickerIds[j] + '-btn'), !!valEl && (parseInt(valEl.value, 10) || 0) !== 0);
+        }
+        mark($(p + '-status-btn'), checkboxesDifferFromDefault(allStatusCheckboxes(p + '-status'), DEFAULT_STATUSES));
+        mark($(p + '-role-btn'), checkboxesDifferFromDefault(allRoleCheckboxes(p + '-role'), DEFAULT_ROLES));
+
+        var overdueEl = $(p + '-overdue');
+        if ((overdueEl && overdueEl.checked) || presetClosed || mineFilter || (prefix === 'hq' && minLevelId > 0)) {
+            anyActive = true;
+        }
+
+        var resetBtn = $(p + '-reset');
+        if (resetBtn) {
+            resetBtn.classList.toggle('btn-outline-secondary', !anyActive);
+            resetBtn.classList.toggle('btn-warning', anyActive);
+            resetBtn.title = anyActive ? 'Filters active - click to reset' : 'Reset Filters';
+        }
+    }
+
     function applyHqFilters(sourceRows) {
         var year  = $('vf-year')  ? parseInt($('vf-year').value,  10) || 0 : 0;
         var month = $('vf-month') ? parseInt($('vf-month').value, 10) || 0 : 0;
@@ -877,6 +929,7 @@
     function renderTable(prefix, sourceRows) {
         var st = tabState[prefix];
         updateSortIndicators(prefix);
+        updateFilterIndicators(prefix);
         var filtered = (prefix === 'hq') ? applyHqFilters(sourceRows) : applyOutletFilters(sourceRows);
         var list = sortRows(filtered, st.sortCol, st.sortDir);
         var total = list.length;

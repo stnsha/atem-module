@@ -146,7 +146,9 @@ if ($_perf_own_only) {
         $perf_staff_options[] = array('id' => (int)$_pso_row['id'], 'name' => $_pso_row['nama_staff'], 'dept_ids' => $_deptIds);
     }
 } else {
-    $_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC");
+    // Inactive (recycled) staff are listed too, flagged so picking one can
+    // switch the Staff Status filter to include them (see selectStaff()).
+    $_pso_res = mysqli_query($conn, "SELECT id, nama_staff, department, recycle FROM staff ORDER BY nama_staff ASC");
     if ($_pso_res) {
         while ($_pso_row = mysqli_fetch_assoc($_pso_res)) {
             $_deptIds = array();
@@ -154,7 +156,12 @@ if ($_perf_own_only) {
                 $_p = (int)trim($_p);
                 if ($_p > 0) { $_deptIds[] = $_p; }
             }
-            $perf_staff_options[] = array('id' => (int)$_pso_row['id'], 'name' => $_pso_row['nama_staff'], 'dept_ids' => $_deptIds);
+            $perf_staff_options[] = [
+                'id'       => (int)$_pso_row['id'],
+                'name'     => $_pso_row['nama_staff'],
+                'dept_ids' => $_deptIds,
+                'inactive' => (int)$_pso_row['recycle'] === 1,
+            ];
         }
     }
 }
@@ -689,7 +696,8 @@ function buildStaffDropdown() {
         var staff = visibleStaff();
         var html = '<li class="vf-s2-list-item" data-id="0">All staff</li>';
         for (var i = 0; i < staff.length; i++) {
-            html += '<li class="vf-s2-list-item" data-id="' + staff[i].id + '">' + escHtml(staff[i].name) + '</li>';
+            html += '<li class="vf-s2-list-item" data-id="' + staff[i].id + '">' + escHtml(staff[i].name) +
+                (staff[i].inactive ? ' <span class="text-muted">(inactive)</span>' : '') + '</li>';
         }
         listEl.innerHTML = html;
     }
@@ -717,12 +725,34 @@ function buildStaffDropdown() {
         }
     }
 
+    function findStaff(id) {
+        var all = PERF_CFG.staff || [];
+        for (var i = 0; i < all.length; i++) {
+            if (all[i].id === id) {
+                return all[i];
+            }
+        }
+        return null;
+    }
+
     function selectStaff(id, name) {
         if (valEl) {
             valEl.value = id;
         }
         if (btnEl) {
             btnEl.textContent = name;
+        }
+        // Keep Staff Status consistent with the picked person, otherwise the
+        // list would come back empty (e.g. an inactive staff under the
+        // default "Active staff only"). "All staff" already covers both.
+        var picked = id ? findStaff(id) : null;
+        var activeEl = document.getElementById('perf-filter-active');
+        if (picked && activeEl) {
+            if (picked.inactive && activeEl.value === 'active') {
+                activeEl.value = 'inactive';
+            } else if (!picked.inactive && activeEl.value === 'inactive') {
+                activeEl.value = 'active';
+            }
         }
         closeDropdown();
         loadPerformance(buildPayload());
@@ -781,6 +811,21 @@ function buildStaffDropdown() {
             }
         });
     }
+
+    // Same for Staff Status: switching to a status the selected person no
+    // longer matches clears the Staff selection. Registered before the
+    // generic auto-apply listener, so the reload sees the cleared value.
+    var activeFilterEl = document.getElementById('perf-filter-active');
+    if (activeFilterEl) {
+        activeFilterEl.addEventListener('change', function() {
+            var selectedId = valEl ? (parseInt(valEl.value, 10) || 0) : 0;
+            var picked = selectedId ? findStaff(selectedId) : null;
+            if (picked && ((this.value === 'active' && picked.inactive) ||
+                    (this.value === 'inactive' && !picked.inactive))) {
+                resetStaffDropdown();
+            }
+        });
+    }
 }
 
 function resetStaffDropdown() {
@@ -795,6 +840,60 @@ function resetStaffDropdown() {
     }
     if (dropEl) {
         dropEl.classList.remove('open');
+    }
+}
+
+// ------------------------------------------------ active-filter highlight
+// Mirrors consultcall's filter indicators: every control that differs from
+// its Reset default (see the perf-reset-filter handler) gets .filter-active
+// (coloured border), and the Reset button turns amber while any is set.
+function perfCheckboxesDiffer(selector, defaults) {
+    var boxes = document.querySelectorAll(selector);
+    for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked !== (defaults.indexOf(boxes[i].value) !== -1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function updateFilterIndicators() {
+    var anyActive = false;
+
+    function mark(id, isActive) {
+        var el = document.getElementById(id);
+        if (!el) {
+            return;
+        }
+        el.classList.toggle('filter-active', isActive);
+        if (isActive) {
+            anyActive = true;
+        }
+    }
+
+    function valueOf(id, fallback) {
+        var el = document.getElementById(id);
+        return el ? String(el.value) : fallback;
+    }
+
+    mark('perf-filter-year', valueOf('perf-filter-year', '') !== String(PERF_CFG.initYear));
+    mark('perf-filter-month', valueOf('perf-filter-month', '0') !== '0');
+    mark('perf-filter-dept', valueOf('perf-filter-dept', '0') !== '0');
+    mark('perf-filter-struct', valueOf('perf-filter-struct', '0') !== '0');
+    mark('perf-filter-grade', valueOf('perf-filter-grade', '0') !== '0');
+    mark('perf-filter-active', valueOf('perf-filter-active', 'active') !== 'active');
+    mark('perf-filter-payout', valueOf('perf-filter-payout', 'unlocked') !== 'unlocked');
+    mark('perf-staff-btn', (parseInt(valueOf('perf-staff-value', '0'), 10) || 0) !== 0);
+    mark('perf-quarter-btn', perfCheckboxesDiffer('.perf-quarter-cb',
+        PERF_CFG.initQuarter ? [String(PERF_CFG.initQuarter)] : []));
+    mark('perf-status-btn', perfCheckboxesDiffer('.perf-status-cb', PERF_CFG.defaultStatuses || []));
+    mark('perf-role-btn', perfCheckboxesDiffer('.perf-role-cb', PERF_CFG.defaultRoles || []));
+
+    var resetBtn = document.getElementById('perf-reset-filter');
+    if (resetBtn) {
+        resetBtn.classList.toggle('btn-outline-secondary', !anyActive);
+        resetBtn.classList.toggle('btn-warning', anyActive);
+        resetBtn.title = anyActive ? 'Filters active - click to reset' : 'Reset Filters';
     }
 }
 
@@ -1096,6 +1195,7 @@ var _perfAbortCtl = null;
 
 function loadPerformance(payload) {
     _currentPayload = payload;
+    updateFilterIndicators();
     // Guards against out-of-order responses when filters change faster than
     // the request round-trip (e.g. ticking several Status checkboxes in quick
     // succession) - only the reply matching the MOST RECENT call is applied,
