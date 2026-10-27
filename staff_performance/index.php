@@ -697,7 +697,7 @@ function buildStaffDropdown() {
         var html = '<li class="vf-s2-list-item" data-id="0">All staff</li>';
         for (var i = 0; i < staff.length; i++) {
             html += '<li class="vf-s2-list-item" data-id="' + staff[i].id + '">' + escHtml(staff[i].name) +
-                (staff[i].inactive ? ' <span class="text-muted">(inactive)</span>' : '') + '</li>';
+                (staff[i].inactive ? ' <span class="badge rounded-pill bg-secondary ms-1" style="font-size:inherit;font-weight:400;">Inactive</span>' : '') + '</li>';
         }
         listEl.innerHTML = html;
     }
@@ -785,7 +785,11 @@ function buildStaffDropdown() {
         if (!li) {
             return;
         }
-        selectStaff(parseInt(li.getAttribute('data-id'), 10) || 0, li.textContent);
+        var pickedId = parseInt(li.getAttribute('data-id'), 10) || 0;
+        var pickedRec = pickedId ? findStaff(pickedId) : null;
+        // Use the record's name, not li.textContent, so the Inactive pill
+        // text doesn't end up in the button label.
+        selectStaff(pickedId, pickedRec ? pickedRec.name : li.textContent);
     });
     document.addEventListener('click', function(e) {
         var wrap = document.getElementById('perf-staff-wrap');
