@@ -89,14 +89,16 @@ if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$r
 
 // Resolve target staff details from ODB
 $t_name   = isset($staff_names[$target_sid]) ? $staff_names[$target_sid] : ('Staff #' . $target_sid);
-$t_res    = mysqli_query($conn, "SELECT department, grade, struct FROM staff WHERE id = " . $target_sid);
+$t_res    = mysqli_query($conn, "SELECT department, grade, struct, recycle FROM staff WHERE id = " . $target_sid);
 $t_dept_id   = 0;
 $t_grade_id  = null;
 $t_struct_id = null;
+$t_inactive  = false;
 if ($t_res && ($t_row = mysqli_fetch_assoc($t_res))) {
     $t_dept_id   = (int)$t_row['department'];
     $t_grade_id  = (int)$t_row['grade'];
     $t_struct_id = isset($t_row['struct']) ? (int)$t_row['struct'] : null;
+    $t_inactive  = (int)$t_row['recycle'] === 1;
 }
 $t_dept   = ($t_dept_id   && isset($dept_names[$t_dept_id]))                  ? $dept_names[$t_dept_id]            : '-';
 $t_grade  = ($t_grade_id  !== null && isset($grade_labels[$t_grade_id]))       ? $grade_labels[$t_grade_id]         : '-';
@@ -203,7 +205,11 @@ $export_atem_url = ATEM_BASE . 'staff_performance/export.php?' . http_build_quer
             <table style="width:100%;font-size:13px;border-collapse:separate;border-spacing:0 8px;">
                 <tr>
                     <td style="width:40%;color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:top;padding-right:12px;">Name</td>
-                    <td style="font-size:13px;font-weight:500;"><?php echo htmlspecialchars($t_name); ?></td>
+                    <td style="font-size:13px;font-weight:500;"><?php echo htmlspecialchars($t_name); ?>
+                        <?php if ($t_inactive): ?>
+                        <span class="atem-pill atem-pill-draft ms-1" style="font-weight:400;font-size:11px;padding:1px 8px;">Inactive</span>
+                        <?php endif; ?>
+                    </td>
                 </tr>
                 <tr>
                     <td style="color:#6c757d;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;vertical-align:top;padding-right:12px;">Department</td>
