@@ -697,7 +697,7 @@ function buildStaffDropdown() {
         var html = '<li class="vf-s2-list-item" data-id="0">All staff</li>';
         for (var i = 0; i < staff.length; i++) {
             html += '<li class="vf-s2-list-item" data-id="' + staff[i].id + '">' + escHtml(staff[i].name) +
-                (staff[i].inactive ? ' <span class="badge rounded-pill bg-secondary ms-1" style="font-size:inherit;font-weight:400;">Inactive</span>' : '') + '</li>';
+                (staff[i].inactive ? ' <span class="atem-pill atem-pill-draft ms-1">Inactive</span>' : '') + '</li>';
         }
         listEl.innerHTML = html;
     }
@@ -1152,11 +1152,13 @@ function renderTable(data, payload) {
             '<td><input type="checkbox" class="perf-row-cb" value="' + rec.id + '"></td>' +
             '<td>' +
             '<div style="font-size:13px;font-weight:500;">' + escHtml(rec.staff_name) +
-            (rec.is_inactive ? ' <span class="badge bg-secondary" style="font-weight:400;font-size:10px;">Inactive</span>' : '') +
+            // .atem-pill, not Bootstrap .badge: legacy common/css/page.css
+            // turns .badge into an absolutely-positioned notification dot.
+            (rec.is_inactive ? ' <span class="atem-pill atem-pill-draft" style="font-weight:400;font-size:10px;padding:1px 6px;">Inactive</span>' : '') +
             (rec.has_locked ?
                 (rec.has_unlocked ?
-                    ' <span class="badge bg-warning text-dark" style="font-weight:400;font-size:10px;">Partially Locked</span>' :
-                    ' <span class="badge bg-danger" style="font-weight:400;font-size:10px;">Payout Locked</span>') :
+                    ' <span class="atem-pill atem-pill-yellow" style="font-weight:400;font-size:10px;padding:1px 6px;">Partially Locked</span>' :
+                    ' <span class="atem-pill atem-pill-red" style="font-weight:400;font-size:10px;padding:1px 6px;">Payout Locked</span>') :
                 '') +
             '</div>' +
             '<div class="text-muted" style="font-size:11px;">' + escHtml(rec.dept_name) + '</div>' +
