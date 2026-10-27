@@ -72,7 +72,10 @@ $dept_names    = array();
 $grade_labels  = array();
 $struct_labels = array();
 
-$sr = mysqli_query($conn, "SELECT id, nama_staff FROM staff WHERE recycle != 1");
+// Inactive (recycled) staff are included on purpose: the target staff, issuers,
+// ARCI members and lock actors must still show by name after they leave,
+// never as a bare id.
+$sr = mysqli_query($conn, "SELECT id, nama_staff FROM staff");
 if ($sr) { while ($row = mysqli_fetch_assoc($sr)) { $staff_names[(int)$row['id']] = $row['nama_staff']; } }
 
 $dr = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
@@ -86,7 +89,7 @@ if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$r
 
 // Resolve target staff details from ODB
 $t_name   = isset($staff_names[$target_sid]) ? $staff_names[$target_sid] : ('Staff #' . $target_sid);
-$t_res    = mysqli_query($conn, "SELECT department, grade, struct FROM staff WHERE id = " . $target_sid . " AND recycle != 1");
+$t_res    = mysqli_query($conn, "SELECT department, grade, struct FROM staff WHERE id = " . $target_sid);
 $t_dept_id   = 0;
 $t_grade_id  = null;
 $t_struct_id = null;
