@@ -1,4 +1,17 @@
 <?php
+// Opt-in load-time profiling (?debug=1, SuperAdmin only - checked again once
+// $_is_superadmin exists below): marks wall-clock time at each major stage so
+// a slow/hanging view.php can be narrowed down to a specific query or the
+// atem-api HTTP round trip without guessing. Rendered as a small panel near
+// the top of the page when enabled; otherwise these calls are a single
+// microtime() each, negligible overhead.
+$_view_t0 = microtime(true);
+$_view_timings = array();
+function _view_mark($label) {
+    global $_view_t0, $_view_timings;
+    $_view_timings[] = array($label, round((microtime(true) - $_view_t0) * 1000, 1));
+}
+
 $page_title = 'ATEM';
 // header.php (and its ATEM_BASE constant) hasn't been included yet at this point,
 // since header.php itself echoes $page_title_actions during its own run — so the
@@ -7,6 +20,7 @@ $_view_atem_base = '/odb/' . basename(__DIR__) . '/';
 $page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="' . $_view_atem_base . 'create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
 $extra_css = '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">';
 include('header.php');
+_view_mark('header.php (session/auth/db bootstrap)');
 
 // header.php bootstrapped the odb connection ($conn) and current staff.
 // Build id -> name maps from odb so we can show issuer and department names
@@ -31,11 +45,13 @@ if ($dept_res) {
         $dept_names[(int) $drow['id']] = $drow['depart_name'];
     }
 }
+_view_mark('staff_names/dept_names ODB queries');
 
 // Fetch the ATEM list + lookups via the JWT proxy (server-side).
 // api.php also sets $staff_id and $department from the session.
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
+_view_mark('api.php include (JWT bridge setup, no HTTP yet)');
 
 // staff.department is comma-separated (e.g. "3,7"); a user can belong to several
 // departments. Parse all of them so dept-scoped grades match any overlap.
@@ -147,17 +163,21 @@ if ($region_res) {
     }
 }
 
+_view_mark('ODB queries (issuer/outlet/region lists)');
+
 $lookups = ['levels' => [], 'rules' => [], 'statuses' => []];
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
 }
+_view_mark('getAtemLookups() - atem-api HTTP call #1');
 
 $include_deleted = ($atem_permission >= 4 || $_is_superadmin) && empty($_GET['no_deleted']);
 // Always fetch soft-deleted records; grade-based filtering below decides which ones to surface.
 $list_result = getAtemList($staff_id, true);
 $rows = (!empty($list_result['success']) && isset($list_result['data'])) ? $list_result['data'] : array();
 $api_unavailable = empty($list_result['success']);
+_view_mark('getAtemList() - atem-api HTTP call #2 (' . count($rows) . ' rows)');
 
 $atem_warning = '';
 if (isset($_SESSION['atem_warning'])) {
@@ -268,6 +288,7 @@ foreach ($rows as $a) {
     );
     $row_arci_dept_ids[] = $arci_dept_ids;
 }
+_view_mark('row-enrichment loop (' . count($view_rows) . ' rows)');
 
 // Apply server-side visibility filtering based on grade.
 if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_permission === 6) && !$_is_superadmin) {
@@ -353,6 +374,7 @@ if ($grade1_single_view === 'hq') {
         }
     }
 }
+_view_mark('grade-based visibility filtering (' . count($view_rows) . ' rows kept)');
 
 $dept_list = array();
 if ((int)$atem_permission <= 3 && !$_is_superadmin) {
@@ -388,7 +410,28 @@ $view_config = array(
     'userGrade'   => (int)$atem_permission,
     'tabSingleView' => $grade1_single_view,
 );
+_view_mark('PHP setup complete - handing off to HTML/view.js render');
+
+$_view_debug = $_is_superadmin && isset($_GET['debug']) && $_GET['debug'] === '1';
 ?>
+
+<?php if ($_view_debug): ?>
+<div class="atem-card mb-3" style="font-family:monospace;font-size:12px;">
+    <h6 class="atem-card-title"><i class="bi bi-speedometer2"></i> Load Time Debug (?debug=1, SuperAdmin only)</h6>
+    <table class="table table-sm mb-0">
+        <thead><tr><th>Stage</th><th style="width:110px;">Cumulative</th><th style="width:90px;">Delta</th></tr></thead>
+        <tbody>
+            <?php $_view_prev = 0.0; foreach ($_view_timings as $_vt): ?>
+            <tr>
+                <td><?php echo htmlspecialchars($_vt[0]); ?></td>
+                <td><?php echo $_vt[1]; ?> ms</td>
+                <td><?php echo round($_vt[1] - $_view_prev, 1); ?> ms</td>
+            </tr>
+            <?php $_view_prev = $_vt[1]; endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
 
 <?php if ($api_unavailable): ?>
 <div class="alert alert-warning" role="alert" style="font-size:13px;">

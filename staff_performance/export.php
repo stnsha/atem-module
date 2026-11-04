@@ -39,7 +39,23 @@ $filter_year    = isset($_GET['year'])     ? (int)$_GET['year']       : (int)dat
 $filter_quarter = isset($_GET['quarter'])  ? atem_parse_quarters($_GET['quarter']) : array();
 $filter_dept    = isset($_GET['dept'])     ? (int)$_GET['dept']       : 0;
 $filter_grade   = isset($_GET['grade'])    ? (int)$_GET['grade']      : 0;
-$filter_struct  = isset($_GET['struct'])   ? (int)$_GET['struct']     : 0;
+// Comma-separated list from the Evaluation Structure checkbox multi-select
+// (index.php's perfExportUrl()/updateActionUrls()). Empty/missing means no
+// filter at all (match every struct) - same convention this file already
+// uses for $filter_statuses below, not the on-screen list's "empty = match
+// nothing" rule (the export URL is always built from the current page's
+// payload, so an intentionally-empty selection there wouldn't make sense to
+// export as "nothing").
+$filter_struct = array();
+if (isset($_GET['struct'])) {
+    $_struct_raw = trim($_GET['struct']);
+    if ($_struct_raw !== '') {
+        foreach (explode(',', $_struct_raw) as $_fs) {
+            $_fs = trim($_fs);
+            if ($_fs !== '' && is_numeric($_fs)) { $filter_struct[] = (int)$_fs; }
+        }
+    }
+}
 $ids_raw        = isset($_GET['ids'])      ? trim($_GET['ids'])        : '';
 $target_staff   = isset($_GET['staff_id']) ? (int)$_GET['staff_id']   : 0;
 $statuses_raw   = isset($_GET['statuses']) ? trim($_GET['statuses'])   : '';
@@ -666,7 +682,7 @@ if ($type === 'performance') {
         if (!empty($ids)        && !in_array($sid, $ids, true))    { continue; }
         if ($filter_dept     > 0 && $dept_id !== $filter_dept)     { continue; }
         if ($filter_grade    > 0 && $grade_id !== $filter_grade)   { continue; }
-        if ($filter_struct   > 0 && $struct_id !== $filter_struct) { continue; }
+        if (!empty($filter_struct) && !in_array((int)$struct_id, $filter_struct, true)) { continue; }
         if ($filter_staff_id > 0 && $sid !== $filter_staff_id)     { continue; }
 
         $hq_total     = $rec        ? $rec['total_all']        : 0;

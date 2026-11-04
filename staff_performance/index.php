@@ -78,6 +78,16 @@ if ($gr) { while ($row = mysqli_fetch_assoc($gr)) { $grade_labels[(int)$row['id'
 $str_r = mysqli_query($conn, "SELECT id, struct_name FROM staff_struct ORDER BY id ASC");
 if ($str_r) { while ($row = mysqli_fetch_assoc($str_r)) { $struct_labels[(int)$row['id']] = $row['struct_name']; } }
 
+// Evaluation Structure filter defaults to only structs that actually carry an
+// ATEM component ("Baodi KPI + 2 ATEM", "8 ATEM", "2 OKR + 8 ATEM") - derived
+// from the live struct_name text rather than hardcoded ids, so a renamed/
+// added struct is picked up automatically. Structs with no ATEM component
+// ("No Structure", "KPI Only", "12 OKR") start unchecked.
+$default_struct_ids = array();
+foreach ($struct_labels as $sid2 => $sname) {
+    if (stripos($sname, 'ATEM') !== false) { $default_struct_ids[] = $sid2; }
+}
+
 // Only SuperAdmin and grade 4/5 see every department; everyone else who can
 // reach this page (grade 3, and grade 6 - a real, non-SA staff.grade value,
 // not just the dev toolbar's simulated one) is restricted to their own
@@ -221,7 +231,7 @@ if ($_perf_own_only) {
             <select id="perf-filter-month" class="form-select form-select-sm">
                 <option value="0">All Month</option>
                 <?php foreach (array(1=>'January',2=>'February',3=>'March',4=>'April',5=>'May',6=>'June',7=>'July',8=>'August',9=>'September',10=>'October',11=>'November',12=>'December') as $mn => $ml): ?>
-                <option value="<?php echo $mn; ?>">
+                <option value="<?php echo $mn; ?>"<?php echo ($mn === $init_month) ? ' selected' : ''; ?>>
                     <?php echo htmlspecialchars($ml); ?></option>
                 <?php endforeach; ?>
             </select>
@@ -278,12 +288,22 @@ if ($_perf_own_only) {
         <?php endif; ?>
         <div class="col-md-3 col-sm-6">
             <label class="form-label">Evaluation Structure</label>
-            <select id="perf-filter-struct" class="form-select form-select-sm">
-                <option value="0">All Evaluation Structure</option>
-                <?php foreach ($struct_labels as $sid2 => $sname): ?>
-                <option value="<?php echo $sid2; ?>"><?php echo htmlspecialchars($sname); ?></option>
-                <?php endforeach; ?>
-            </select>
+            <div class="vf-issuer-wrap" id="perf-struct-wrap">
+                <div class="vf-s2-selection" id="perf-struct-btn" tabindex="0">Loading...</div>
+                <div class="vf-s2-dropdown" id="perf-struct-dropdown">
+                    <ul class="vf-s2-list" style="padding:4px 0;">
+                        <?php foreach ($struct_labels as $sid2 => $sname): ?>
+                        <li class="vf-s2-list-item" style="cursor:default;">
+                            <label style="display:flex;align-items:center;gap:6px;width:100%;cursor:pointer;margin:0;">
+                                <input type="checkbox" class="perf-struct-cb" value="<?php echo $sid2; ?>"
+                                    <?php echo in_array($sid2, $default_struct_ids, true) ? ' checked' : ''; ?>>
+                                <?php echo htmlspecialchars($sname); ?>
+                            </label>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            </div>
         </div>
         <div class="col-md-3 col-sm-6">
             <label class="form-label">Grade</label>
@@ -456,6 +476,9 @@ var PERF_CFG = <?php echo json_encode(array(
     'initQuarter'     => $init_quarter,
     'initYear'        => $init_year,
     'defaultStatuses' => $perf_default_statuses,
+    // String-cast so JS-side comparisons against checkbox .value (always a
+    // string) work the same way defaultStatuses/defaultRoles already do.
+    'defaultStructs'  => array_map('strval', $default_struct_ids),
     'defaultRoles'    => array('A', 'R'),
     'staff'           => $perf_staff_options,
     'isSuperAdmin'    => $_is_superadmin,
@@ -575,6 +598,39 @@ function updateStatusButtonLabel(prefix) {
         btn.textContent = selected.join(', ');
     } else {
         btn.textContent = selected.length + ' statuses selected';
+    }
+}
+
+// ----------------------------------------------- evaluation structure filter
+function getSelectedStructs(prefix) {
+    var boxes = document.querySelectorAll('.' + prefix + '-struct-cb:checked');
+    var out = [];
+    for (var i = 0; i < boxes.length; i++) {
+        out.push(boxes[i].value);
+    }
+    return out;
+}
+
+function updateStructButtonLabel(prefix) {
+    var btn = document.getElementById(prefix + '-struct-btn');
+    if (!btn) {
+        return;
+    }
+    var allBoxes = document.querySelectorAll('.' + prefix + '-struct-cb');
+    var checked = document.querySelectorAll('.' + prefix + '-struct-cb:checked');
+    if (checked.length === 0) {
+        btn.textContent = 'No structure selected';
+    } else if (checked.length === allBoxes.length) {
+        btn.textContent = 'All Evaluation Structure';
+    } else if (checked.length <= 2) {
+        var labels = [];
+        for (var i = 0; i < checked.length; i++) {
+            var lbl = checked[i].closest('label');
+            labels.push(lbl ? lbl.textContent.trim() : checked[i].value);
+        }
+        btn.textContent = labels.join(', ');
+    } else {
+        btn.textContent = checked.length + ' structures selected';
     }
 }
 
@@ -882,9 +938,9 @@ function updateFilterIndicators() {
     }
 
     mark('perf-filter-year', valueOf('perf-filter-year', '') !== String(PERF_CFG.initYear));
-    mark('perf-filter-month', valueOf('perf-filter-month', '0') !== '0');
+    mark('perf-filter-month', valueOf('perf-filter-month', '0') !== String(PERF_CFG.initMonth || 0));
     mark('perf-filter-dept', valueOf('perf-filter-dept', '0') !== '0');
-    mark('perf-filter-struct', valueOf('perf-filter-struct', '0') !== '0');
+    mark('perf-struct-btn', perfCheckboxesDiffer('.perf-struct-cb', PERF_CFG.defaultStructs || []));
     mark('perf-filter-grade', valueOf('perf-filter-grade', '0') !== '0');
     mark('perf-filter-active', valueOf('perf-filter-active', 'active') !== 'active');
     mark('perf-filter-payout', valueOf('perf-filter-payout', 'unlocked') !== 'unlocked');
@@ -908,12 +964,11 @@ function buildPayload() {
     var quarters = getSelectedQuarters('perf');
     var deptEl = document.getElementById('perf-filter-dept');
     var gradeEl = document.getElementById('perf-filter-grade');
-    var structEl = document.getElementById('perf-filter-struct');
     var staffEl = document.getElementById('perf-staff-value');
     var activeEl = document.getElementById('perf-filter-active');
     var dept = deptEl ? (parseInt(deptEl.value, 10) || 0) : 0;
     var grade = gradeEl ? (parseInt(gradeEl.value, 10) || 0) : 0;
-    var struct = structEl ? (parseInt(structEl.value, 10) || 0) : 0;
+    var struct = getSelectedStructs('perf');
     var staffId = staffEl ? (parseInt(staffEl.value, 10) || 0) : 0;
     var staffStatus = activeEl ? activeEl.value : 'active';
     var payoutEl = document.getElementById('perf-filter-payout');
@@ -1016,7 +1071,7 @@ function perfExportUrl(payload, ids) {
         (ids && ids.length ? '&ids=' + ids.join(',') : '') +
         '&month=' + (payload.month || 0) + '&year=' + (payload.year || PERF_CFG.initYear) + '&quarter=' + (payload
             .quarter || []).join(',') +
-        '&dept=' + (payload.dept || 0) + '&grade=' + (payload.grade || 0) + '&struct=' + (payload.struct || 0) +
+        '&dept=' + (payload.dept || 0) + '&grade=' + (payload.grade || 0) + '&struct=' + (payload.struct || []).join(',') +
         '&staff_filter_id=' + (payload.staff_id || 0) +
         '&statuses=' + encodeURIComponent(statuses) +
         '&roles=' + encodeURIComponent(roles);
@@ -1029,7 +1084,7 @@ function updateActionUrls(payload) {
     var quarter = (payload.quarter || []).join(',');
     var dept = payload.dept || 0;
     var grade = payload.grade || 0;
-    var struct = payload.struct || 0;
+    var struct = (payload.struct || []).join(',');
     var staffId = payload.staff_id || 0;
 
     var exportBtn = document.getElementById('perf-export-all-btn');
@@ -1105,6 +1160,14 @@ function renderTable(data, payload) {
     }
     updateExportSelected('perf');
 
+    // A staff with Est. Reward RM0 carries no payout value at all - hide them
+    // from the on-screen summary only. Export/Lock Payout keep using the
+    // full unfiltered _perfAllData directly, so a zero-reward record is still
+    // exportable/lockable even though it's not shown here.
+    data = (data || []).filter(function(rec) {
+        return (rec.total_incentive || 0) > 0;
+    });
+
     if (!data || !data.length) {
         tbody.innerHTML =
             '<tr><td colspan="11" class="text-center text-muted py-4">No records found for this period.</td></tr>';
@@ -1132,7 +1195,7 @@ function renderTable(data, payload) {
     var quarter = (payload && payload.quarter) ? payload.quarter.join(',') : '';
     var dept = (payload && payload.dept) ? payload.dept : 0;
     var grade = (payload && payload.grade) ? payload.grade : 0;
-    var struct = (payload && payload.struct) ? payload.struct : 0;
+    var struct = (payload && payload.struct) ? payload.struct.join(',') : '';
     var statuses = (payload && payload.statuses) ? payload.statuses : [];
     var statusesQs = encodeURIComponent(statuses.join(','));
     var roles = (payload && payload.roles) ? payload.roles : [];
@@ -1329,6 +1392,39 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Evaluation Structure filter dropdown (checkbox list, same widget as Status above)
+    var structBtn = document.getElementById('perf-struct-btn');
+    var structDropdown = document.getElementById('perf-struct-dropdown');
+    var structWrap = document.getElementById('perf-struct-wrap');
+    updateStructButtonLabel('perf');
+    syncS2ButtonSize(structBtn, document.getElementById('perf-filter-year'));
+
+    if (structBtn && structDropdown) {
+        structBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            structDropdown.classList.toggle('open');
+        });
+        structBtn.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                structDropdown.classList.toggle('open');
+            }
+        });
+        document.addEventListener('click', function(e) {
+            if (structWrap && !structWrap.contains(e.target)) {
+                structDropdown.classList.remove('open');
+            }
+        });
+    }
+    if (structDropdown) {
+        structDropdown.addEventListener('change', function(e) {
+            if (e.target && e.target.classList.contains('perf-struct-cb')) {
+                updateStructButtonLabel('perf');
+                loadPerformance(buildPayload());
+            }
+        });
+    }
+
     // Quarter filter dropdown (checkbox list, same widget as Status above)
     var quarterBtn = document.getElementById('perf-quarter-btn');
     var quarterDropdown = document.getElementById('perf-quarter-dropdown');
@@ -1403,19 +1499,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Reset filter
     document.getElementById('perf-reset-filter').addEventListener('click', function() {
         document.getElementById('perf-filter-year').value = PERF_CFG.initYear;
-        document.getElementById('perf-filter-month').value = '0';
+        document.getElementById('perf-filter-month').value = String(PERF_CFG.initMonth || 0);
         resetQuarterDropdown('perf', PERF_CFG.initQuarter);
         var deptEl = document.getElementById('perf-filter-dept');
         var gradeEl = document.getElementById('perf-filter-grade');
-        var structEl = document.getElementById('perf-filter-struct');
         if (deptEl) {
             deptEl.value = '0';
         }
         if (gradeEl) {
             gradeEl.value = '0';
-        }
-        if (structEl) {
-            structEl.value = '0';
         }
         var activeEl = document.getElementById('perf-filter-active');
         if (activeEl) {
@@ -1431,6 +1523,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 .value) !== -1;
         }
         updateStatusButtonLabel('perf');
+        var structBoxes = document.querySelectorAll('.perf-struct-cb');
+        for (var _sti = 0; _sti < structBoxes.length; _sti++) {
+            structBoxes[_sti].checked = (PERF_CFG.defaultStructs || []).indexOf(structBoxes[_sti]
+                .value) !== -1;
+        }
+        updateStructButtonLabel('perf');
         resetRoleDropdown('perf', PERF_CFG.defaultRoles);
         resetStaffDropdown();
         loadPerformance(buildPayload());
@@ -1448,7 +1546,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Auto-apply on every other filter change
     var _perfAutoFilterIds = ['perf-filter-year', 'perf-filter-dept', 'perf-filter-grade',
-    'perf-filter-struct', 'perf-filter-active', 'perf-filter-payout'];
+    'perf-filter-active', 'perf-filter-payout'];
     for (var _pfi = 0; _pfi < _perfAutoFilterIds.length; _pfi++) {
         var _pfEl = document.getElementById(_perfAutoFilterIds[_pfi]);
         if (_pfEl) {

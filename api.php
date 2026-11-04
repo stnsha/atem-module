@@ -2614,7 +2614,14 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
     $quarter  = isset($jsonData['quarter']) ? atem_parse_quarters($jsonData['quarter']) : array();
     $dept     = isset($jsonData['dept'])     ? (int)$jsonData['dept']     : 0;
     $gradeF   = isset($jsonData['grade'])    ? (int)$jsonData['grade']    : 0;
-    $structF  = isset($jsonData['struct'])   ? (int)$jsonData['struct']   : 0;
+    // Evaluation Structure is now a checkbox multi-select on the frontend
+    // (struct_performance/index.php), same "empty selection = match nothing"
+    // convention as $statuses/$roleFilter below - an explicit, non-array
+    // struct is never sent anymore, but the isset/is_array guard keeps this
+    // safe either way.
+    $structF  = (isset($jsonData['struct']) && is_array($jsonData['struct']))
+        ? array_values(array_unique(array_map('intval', $jsonData['struct'])))
+        : array();
     $staffF   = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
     $allowedStatuses = atem_performance_status_options();
     $statuses = (isset($jsonData['statuses']) && is_array($jsonData['statuses']))
@@ -2674,7 +2681,7 @@ function resolvePayoutTargetStaffIds($jsonData, $staff_id, $conn)
 
         if ($dept    > 0 && $deptId   !== $dept)    { continue; }
         if ($gradeF  > 0 && $gradeId  !== $gradeF)  { continue; }
-        if ($structF > 0 && $structId !== $structF) { continue; }
+        if (empty($structF) || !in_array((int)$structId, $structF, true)) { continue; }
         if ($staffF  > 0 && $sid      !== $staffF)  { continue; }
         $isInactive = !empty($staffInactive[$sid]);
         if ($staffStatusF === 'active'   && $isInactive)  { continue; }
@@ -4238,7 +4245,12 @@ if (!defined('API_JWT_INCLUDED')) {
                     $pl_quarter    = isset($jsonData['quarter']) ? atem_parse_quarters($jsonData['quarter']) : array();
                     $pl_dept       = isset($jsonData['dept'])    ? (int)$jsonData['dept']    : 0;
                     $pl_grade      = isset($jsonData['grade'])   ? (int)$jsonData['grade']   : 0;
-                    $pl_struct     = isset($jsonData['struct'])  ? (int)$jsonData['struct']  : 0;
+                    // Evaluation Structure checkbox multi-select - empty selection
+                    // matches nothing, same convention as the Status filter (see
+                    // resolvePayoutTargetStaffIds()'s identical $structF above).
+                    $pl_struct     = (isset($jsonData['struct']) && is_array($jsonData['struct']))
+                        ? array_values(array_unique(array_map('intval', $jsonData['struct'])))
+                        : array();
                     $pl_staff      = isset($jsonData['staff_id']) ? (int)$jsonData['staff_id'] : 0;
                     // 'active' (default) = staff.recycle != 1 only, 'inactive' = recycle
                     // = 1 only, 'all' = no filtering on it.
@@ -4401,7 +4413,7 @@ if (!defined('API_JWT_INCLUDED')) {
 
                         if ($pl_dept   > 0 && $pl_rec_dept  !== $pl_dept)   { continue; }
                         if ($pl_grade  > 0 && $pl_grade_id  !== $pl_grade)  { continue; }
-                        if ($pl_struct > 0 && $pl_struct_id !== $pl_struct) { continue; }
+                        if (empty($pl_struct) || !in_array((int)$pl_struct_id, $pl_struct, true)) { continue; }
                         if ($pl_staff  > 0 && $pl_sid        !== $pl_staff)  { continue; }
                         if ($pl_staff_status === 'active' && $pl_is_inactive) { continue; }
                         if ($pl_staff_status === 'inactive' && !$pl_is_inactive) { continue; }
