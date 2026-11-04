@@ -173,8 +173,42 @@ if (!empty($lr['success']) && isset($lr['data'])) {
 _view_mark('getAtemLookups() - atem-api HTTP call #1');
 
 $include_deleted = ($atem_permission >= 4 || $_is_superadmin) && empty($_GET['no_deleted']);
+
+// Narrows the atem-api fetch itself to roughly what this viewer can see,
+// instead of always pulling the full company-wide dataset (a real bottleneck
+// once the table grows into the thousands - see ?debug=1's timing panel).
+// This is a *performance* optimisation only: the grade-based filtering loop
+// further below remains the authoritative visibility rule and still runs on
+// whatever comes back, so an over-inclusive scope here is safe. Grade 4/5/SA
+// genuinely need the full dataset, so they're left unscoped.
+$_atem_list_scope_params = array();
+if (!$_is_superadmin) {
+    if (in_array((int)$atem_permission, array(1, 2), true)
+            || ((int)$atem_permission === 6 && !$_is_area_manager)) {
+        // Own cards only (issuer or any ARCI role) - matches this grade's
+        // exact visibility rule, so no extra carve-out params are needed.
+        $_atem_list_scope_params['staff_id'] = (string)(int)$staff_id;
+    } elseif ((int)$atem_permission === 6 && $_is_area_manager) {
+        $_atem_list_scope_params['staff_id'] = (string)(int)$staff_id;
+        $_atem_list_scope_params['requester_scope'] = '6am';
+        if (!empty($user_outlet_ids)) {
+            $_atem_list_scope_params['requester_outlet_ids'] = implode(',', $user_outlet_ids);
+        }
+    } elseif ((int)$atem_permission === 3) {
+        $_atem_list_scope_params['staff_id'] = (string)(int)$staff_id;
+        $_atem_list_scope_params['requester_scope'] = '3';
+        if (!empty($user_dept_ids)) {
+            $_atem_list_scope_params['requester_dept_ids'] = implode(',', $user_dept_ids);
+        }
+        if (in_array(1, $user_dept_ids, true)) {
+            $_atem_list_scope_params['requester_outlet_dept_viewer'] = '1';
+        }
+    }
+    // Grades 0 (shouldn't reach this page) and 4/5 fall through unscoped.
+}
+
 // Always fetch soft-deleted records; grade-based filtering below decides which ones to surface.
-$list_result = getAtemList($staff_id, true);
+$list_result = getAtemList($staff_id, true, $_atem_list_scope_params);
 $rows = (!empty($list_result['success']) && isset($list_result['data'])) ? $list_result['data'] : array();
 $api_unavailable = empty($list_result['success']);
 _view_mark('getAtemList() - atem-api HTTP call #2 (' . count($rows) . ' rows)');

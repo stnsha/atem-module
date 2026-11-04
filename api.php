@@ -786,9 +786,17 @@ function _atem_viewer_is_own($item, $viewerStaffId)
     return false;
 }
 
-function getAtemList($staff_id, $include_deleted = false)
+// $extra_params (optional) lets a caller narrow the atem-api query itself -
+// e.g. view.php passes a staff_id/requester_scope combo so grade 1/2/6/3
+// viewers only fetch the subset of cards they can actually see, instead of
+// the full company-wide dataset (see view.php's $_atem_list_scope_params).
+// Defaults to empty so every pre-existing caller keeps its current
+// unscoped/full-fetch behavior unchanged.
+function getAtemList($staff_id, $include_deleted = false, $extra_params = array())
 {
-    $endpoint = $include_deleted ? 'atem?include_deleted=1' : 'atem';
+    $qs = $extra_params;
+    if ($include_deleted) { $qs['include_deleted'] = '1'; }
+    $endpoint = 'atem' . (!empty($qs) ? '?' . http_build_query($qs) : '');
     $result = getApiDataWithJWT($endpoint, null, 'GET', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded = json_decode($result['response'], true);
