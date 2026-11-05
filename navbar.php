@@ -86,12 +86,12 @@ if ($_navbar_isLocal && $_navbar_isRealSuperAdmin) {
 <?php } ?>
 
 <?php
-// LOAD TIME row: shown on every environment (production included), but only
-// to one specific staff account (staff.id 5609). $id_user is the logged-in
-// user's real staff.id set by lock_adv.php - not affected by the dev role or
-// "act as issuer" overrides. Separate from the localhost-only dev toolbar
-// above. Read-only: it only reads the browser's own timing data.
-$_navbar_showLoadTime = isset($id_user) && (int)$id_user === 5609;
+// LOAD TIME row: localhost only (never on production), and only for one
+// specific staff account (staff.id 5609). $id_user is the logged-in user's
+// real staff.id set by lock_adv.php - not affected by the dev role or "act as
+// issuer" overrides. Separate from the dev toolbar above. Read-only: it only
+// reads the browser's own timing data.
+$_navbar_showLoadTime = $_navbar_isLocal && isset($id_user) && (int)$id_user === 5609;
 if ($_navbar_showLoadTime) {
 ?>
 <div id="atem-dev-loadtime"
@@ -103,7 +103,7 @@ if ($_navbar_showLoadTime) {
     <span>Slowest request <strong id="atem-dev-lt-slow" style="color:#f0c040;">-</strong></span>
 </div>
 <script>
-// Load timing for staff.id 5609 only (see $_navbar_showLoadTime above).
+// Load timing, localhost + staff.id 5609 only (see $_navbar_showLoadTime above).
 // Read-only: uses the browser's Navigation/Resource Timing APIs, no requests.
 //   Server = time to first byte of this page (PHP + any atem-api calls made
 //            server-side before output starts)
