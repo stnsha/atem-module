@@ -278,7 +278,19 @@ if ($_perf_own_only) {
         <?php if (!empty($dept_filter_options)): ?>
         <div class="col-md-3 col-sm-6">
             <label class="form-label">Department</label>
-            <select id="perf-filter-dept" class="form-select form-select-sm">
+            <!-- Searchable dropdown (same widget as Staff). The hidden select
+                 below still holds the value, so every existing reader of
+                 #perf-filter-dept keeps working unchanged. -->
+            <div class="vf-issuer-wrap" id="perf-dept-wrap">
+                <div class="vf-s2-selection" id="perf-dept-btn" tabindex="0">All Department</div>
+                <div class="vf-s2-dropdown" id="perf-dept-dropdown">
+                    <div class="vf-s2-search-wrap">
+                        <input class="vf-s2-search" id="perf-dept-search" type="search" placeholder="Search department...">
+                    </div>
+                    <ul class="vf-s2-list" id="perf-dept-list"></ul>
+                </div>
+            </div>
+            <select id="perf-filter-dept" class="form-select form-select-sm d-none" aria-hidden="true" tabindex="-1">
                 <option value="0">All Department</option>
                 <?php foreach ($dept_filter_options as $did => $dname): ?>
                 <option value="<?php echo $did; ?>"><?php echo htmlspecialchars($dname); ?></option>
@@ -889,6 +901,108 @@ function buildStaffDropdown() {
     }
 }
 
+// ------------------------------------------- department searchable dropdown
+// Same widget/behaviour as Staff above. The hidden #perf-filter-dept select
+// stays the single source of the value: picking an entry sets it and fires
+// its 'change' event, so the existing listeners (staff reset, auto-apply
+// reload) and every reader of its value keep working unchanged. Options are
+// read from the select itself (rendered server-side from $dept_filter_options).
+function buildDeptDropdown() {
+    var listEl = document.getElementById('perf-dept-list');
+    var searchEl = document.getElementById('perf-dept-search');
+    var btnEl = document.getElementById('perf-dept-btn');
+    var dropEl = document.getElementById('perf-dept-dropdown');
+    var deptEl = document.getElementById('perf-filter-dept');
+    if (!listEl || !btnEl || !dropEl || !deptEl) {
+        return;
+    }
+
+    syncS2ButtonSize(btnEl, document.getElementById('perf-filter-year'));
+
+    var html = '';
+    for (var i = 0; i < deptEl.options.length; i++) {
+        html += '<li class="vf-s2-list-item" data-id="' + escHtml(deptEl.options[i].value) + '">' +
+            escHtml(deptEl.options[i].text) + '</li>';
+    }
+    listEl.innerHTML = html;
+
+    function filterList(term) {
+        var items = listEl.querySelectorAll('li');
+        var lower = term.toLowerCase();
+        for (var j = 0; j < items.length; j++) {
+            var text = items[j].textContent || '';
+            items[j].classList.toggle('hidden', !(!lower || text.toLowerCase().indexOf(lower) >= 0));
+        }
+    }
+
+    function openDropdown() {
+        dropEl.classList.add('open');
+        if (searchEl) {
+            searchEl.value = '';
+            filterList('');
+            searchEl.focus();
+        }
+    }
+
+    function closeDropdown() {
+        dropEl.classList.remove('open');
+    }
+
+    btnEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (dropEl.classList.contains('open')) {
+            closeDropdown();
+        } else {
+            openDropdown();
+        }
+    });
+    btnEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openDropdown();
+        }
+    });
+    if (searchEl) {
+        searchEl.addEventListener('input', function() {
+            filterList(this.value);
+        });
+        searchEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+    }
+    listEl.addEventListener('click', function(e) {
+        var li = e.target.closest ? e.target.closest('li') : null;
+        if (!li) {
+            return;
+        }
+        var newVal = li.getAttribute('data-id') || '0';
+        btnEl.textContent = li.textContent;
+        closeDropdown();
+        if (deptEl.value !== newVal) {
+            deptEl.value = newVal;
+            deptEl.dispatchEvent(new Event('change'));
+        }
+    });
+    document.addEventListener('click', function(e) {
+        var wrap = document.getElementById('perf-dept-wrap');
+        if (wrap && !wrap.contains(e.target)) {
+            closeDropdown();
+        }
+    });
+}
+
+function resetDeptDropdown() {
+    var btnEl = document.getElementById('perf-dept-btn');
+    var dropEl = document.getElementById('perf-dept-dropdown');
+    var deptEl = document.getElementById('perf-filter-dept');
+    if (btnEl) {
+        btnEl.textContent = (deptEl && deptEl.options.length) ? deptEl.options[0].text : 'All Department';
+    }
+    if (dropEl) {
+        dropEl.classList.remove('open');
+    }
+}
+
 function resetStaffDropdown() {
     var valEl = document.getElementById('perf-staff-value');
     var btnEl = document.getElementById('perf-staff-btn');
@@ -939,7 +1053,9 @@ function updateFilterIndicators() {
 
     mark('perf-filter-year', valueOf('perf-filter-year', '') !== String(PERF_CFG.initYear));
     mark('perf-filter-month', valueOf('perf-filter-month', '0') !== String(PERF_CFG.initMonth || 0));
-    mark('perf-filter-dept', valueOf('perf-filter-dept', '0') !== '0');
+    // Highlight goes on the visible searchable button; the value still lives
+    // in the hidden #perf-filter-dept select.
+    mark('perf-dept-btn', valueOf('perf-filter-dept', '0') !== '0');
     mark('perf-struct-btn', perfCheckboxesDiffer('.perf-struct-cb', PERF_CFG.defaultStructs || []));
     mark('perf-filter-grade', valueOf('perf-filter-grade', '0') !== '0');
     mark('perf-filter-active', valueOf('perf-filter-active', 'active') !== 'active');
@@ -1357,6 +1473,7 @@ function sendPerformanceRequest(body, payload, reqSeq, tbody) {
 
 document.addEventListener('DOMContentLoaded', function() {
 
+    buildDeptDropdown();
     buildStaffDropdown();
 
     // Status filter dropdown (checkbox list, styled like the Issuer searchable dropdown)
@@ -1530,6 +1647,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         updateStructButtonLabel('perf');
         resetRoleDropdown('perf', PERF_CFG.defaultRoles);
+        resetDeptDropdown();
         resetStaffDropdown();
         loadPerformance(buildPayload());
     });

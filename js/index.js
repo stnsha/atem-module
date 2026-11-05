@@ -166,6 +166,85 @@
         }
     }
 
+    // Searchable Department dropdown (same widget/behaviour as Staff above).
+    // The hidden #dash-filter-dept select stays the single source of the
+    // value: picking an entry sets it and fires its 'change' event, so the
+    // existing listeners (staff reset, dashboard reload) and every reader of
+    // deptEl.value / selected option text keep working unchanged.
+    function buildDeptDropdown() {
+        var listEl   = document.getElementById('dash-dept-list');
+        var searchEl = document.getElementById('dash-dept-search');
+        var btnEl    = document.getElementById('dash-dept-btn');
+        var dropEl   = document.getElementById('dash-dept-dropdown');
+        var deptEl   = document.getElementById('dash-filter-dept');
+        if (!listEl || !btnEl || !dropEl || !deptEl) { return; }
+
+        var refEl = document.getElementById('dash-filter-year');
+        if (refEl) {
+            var refStyle = window.getComputedStyle(refEl);
+            btnEl.style.height       = refEl.offsetHeight + 'px';
+            btnEl.style.border       = refStyle.border;
+            btnEl.style.borderRadius = refStyle.borderRadius;
+            btnEl.style.fontSize     = refStyle.fontSize;
+            btnEl.style.color        = refStyle.color;
+        }
+
+        var html = '<li class="vf-s2-list-item" data-id="">All Departments</li>';
+        var depts = CFG.departments || [];
+        for (var i = 0; i < depts.length; i++) {
+            html += '<li class="vf-s2-list-item" data-id="' + depts[i].id + '">' + escapeHtml(depts[i].name) + '</li>';
+        }
+        listEl.innerHTML = html;
+
+        function filterList(term) {
+            var items = listEl.querySelectorAll('li');
+            var lower = term.toLowerCase();
+            for (var j = 0; j < items.length; j++) {
+                var text = items[j].textContent || '';
+                items[j].classList.toggle('hidden', !(!lower || text.toLowerCase().indexOf(lower) >= 0));
+            }
+        }
+        function openDropdown() {
+            dropEl.classList.add('open');
+            if (searchEl) { searchEl.value = ''; filterList(''); searchEl.focus(); }
+        }
+        function closeDropdown() { dropEl.classList.remove('open'); }
+
+        btnEl.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (dropEl.classList.contains('open')) { closeDropdown(); } else { openDropdown(); }
+        });
+        btnEl.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDropdown(); }
+        });
+        if (searchEl) {
+            searchEl.addEventListener('input', function () { filterList(this.value); });
+            searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
+        listEl.addEventListener('click', function (e) {
+            var li = e.target.closest ? e.target.closest('li') : null;
+            if (!li) { return; }
+            var newVal = li.getAttribute('data-id') || '';
+            btnEl.textContent = li.textContent;
+            closeDropdown();
+            if (deptEl.value !== newVal) {
+                deptEl.value = newVal;
+                deptEl.dispatchEvent(new Event('change'));
+            }
+        });
+        document.addEventListener('click', function (e) {
+            var wrap = document.getElementById('dash-dept-wrap');
+            if (wrap && !wrap.contains(e.target)) { closeDropdown(); }
+        });
+    }
+
+    function resetDeptDropdown() {
+        var btnEl  = document.getElementById('dash-dept-btn');
+        var dropEl = document.getElementById('dash-dept-dropdown');
+        if (btnEl)  { btnEl.textContent = 'All Departments'; }
+        if (dropEl) { dropEl.classList.remove('open'); }
+    }
+
     function resetStaffDropdown() {
         var valEl = document.getElementById('dash-staff-value');
         var btnEl = document.getElementById('dash-staff-btn');
@@ -1291,6 +1370,7 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         populateDeptSelect();
+        buildDeptDropdown();
         buildStaffDropdown();
 
         var resetBtn  = document.getElementById('dash-reset-filter');
@@ -1318,6 +1398,7 @@
             resetBtn.addEventListener('click', function () {
                 applyDefaultPeriod(yearEl, monthEl, 'dash-quarter');
                 if (deptEl)    { deptEl.value    = ''; }
+                resetDeptDropdown();
                 resetStaffDropdown();
                 loadDashboard(buildPayload());
             });

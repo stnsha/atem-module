@@ -278,7 +278,20 @@ window.ATEM_DASH = <?php echo json_encode(array(
                 <div class="col-md-3 col-sm-6" id="dash-dept-col"
                     <?php if (empty($dash_dept_options)) { echo ' style="display:none;"'; } ?>>
                     <label class="form-label">Department</label>
-                    <select id="dash-filter-dept" class="form-select form-select-sm">
+                    <!-- Searchable dropdown (same widget as Staff). The hidden
+                         select below still holds the value, so every existing
+                         reader of #dash-filter-dept keeps working unchanged. -->
+                    <div class="vf-issuer-wrap" id="dash-dept-wrap">
+                        <div class="vf-s2-selection" id="dash-dept-btn" tabindex="0">All Departments</div>
+                        <div class="vf-s2-dropdown" id="dash-dept-dropdown">
+                            <div class="vf-s2-search-wrap">
+                                <input class="vf-s2-search" id="dash-dept-search" type="search"
+                                    placeholder="Search department...">
+                            </div>
+                            <ul class="vf-s2-list" id="dash-dept-list"></ul>
+                        </div>
+                    </div>
+                    <select id="dash-filter-dept" class="form-select form-select-sm d-none" aria-hidden="true" tabindex="-1">
                         <option value="">All Departments</option>
                     </select>
                 </div>
