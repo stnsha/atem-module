@@ -22,6 +22,8 @@ $_okr_menu_visible = (in_array((int)$atem_permission, array(4, 5), true) || $_is
 <?php endif; ?>
 <?php
 $_dash_cur_year = max(2026, (int)date('Y'));
+// Dashboard filters default to the current year with All months / All
+// quarters (both HQ and Outlet tabs, and on Reset - see js/index.js).
 $dash_year_options = array();
 for ($y = 2025; $y <= $_dash_cur_year; $y++) {
     $dash_year_options[] = $y;
@@ -123,7 +125,13 @@ include(dirname(__FILE__) . '/api.php');
 // onto the HQ-only tab. Un-collapse so the Outlet tab (and dashboard-stats'
 // own-scoped data within it) surfaces. Mirrors view.php's same override.
 if ($grade1_single_view === 'hq') {
-    $_dash_own_list = getAtemList($staff_id);
+    // atem-api returns only this viewer's own Outlet-type cards (issuer or
+    // ARCI) instead of the full company-wide list; the check below still runs.
+    $_dash_own_list = getAtemList($staff_id, false, [
+        'staff_id'  => (string)(int)$staff_id,
+        'atem_type' => 2,
+        'slim'      => 1,
+    ]);
     if (!empty($_dash_own_list['success']) && isset($_dash_own_list['data'])) {
         foreach ($_dash_own_list['data'] as $_dItem) {
             $_dItemType = isset($_dItem['atem_type']) ? (int)$_dItem['atem_type'] : 1;
@@ -178,6 +186,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
     'regions'        => $dash_region_options,
     'outlets'        => $dash_outlet_options,
     'tabSingleView'  => $grade1_single_view,
+    'defaultYear'    => $_dash_cur_year,
 )); ?>;
 </script>
 
@@ -212,7 +221,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     <select id="dash-filter-year" class="form-select form-select-sm">
                         <option value="">All Years</option>
                         <?php foreach ($dash_year_options as $y): ?>
-                        <option value="<?php echo $y; ?>" <?php echo ($y === 2026) ? ' selected' : ''; ?>>
+                        <option value="<?php echo $y; ?>" <?php echo ($y === $_dash_cur_year) ? ' selected' : ''; ?>>
                             <?php echo $y; ?>
                         </option>
                         <?php endforeach; ?>
@@ -573,7 +582,7 @@ window.ATEM_DASH = <?php echo json_encode(array(
                     <select id="dasho-filter-year" class="form-select form-select-sm">
                         <option value="">All Years</option>
                         <?php foreach ($dash_year_options as $y): ?>
-                        <option value="<?php echo $y; ?>" <?php echo ($y === 2026) ? ' selected' : ''; ?>>
+                        <option value="<?php echo $y; ?>" <?php echo ($y === $_dash_cur_year) ? ' selected' : ''; ?>>
                             <?php echo $y; ?>
                         </option>
                         <?php endforeach; ?>

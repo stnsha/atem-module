@@ -530,7 +530,9 @@ if ($type === 'payout-lock') {
     $pl_statuses  = $ctx['statuses'] ?? ['Completed', 'Completed with Excellence', 'Completed with Extension'];
     $pl_roles     = $ctx['roles'] ?? null;
 
-    $atem_list   = getAtemListCached($staff_id);
+    // Pre-filtered by atem-api to cards closed inside the period - the only
+    // cards getStaffPerformanceLive() counts.
+    $atem_list   = getAtemListCached($staff_id, 60, atemPeriodParams('closure', $pl_year, atem_period_months($pl_month, $pl_quarter)));
     $live_hq     = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 1, 0, $pl_roles, $atem_list);
     $live_outlet = getStaffPerformanceLive($pl_month, $pl_year, $pl_quarter, $pl_statuses, $staff_id, 2, 0, $pl_roles, $atem_list);
     if (empty($live_hq['success']) || empty($live_outlet['success'])) {
@@ -626,8 +628,10 @@ if ($type === 'performance') {
     // anyone visible on the on-screen table (which does the same union) is
     // exportable too. Est. Reward stays HQ ATEM only - Outlet ATEM and OKR
     // rows are emitted further below with a blank Est. Reward.
-    // One full-list fetch shared by both the HQ and Outlet passes.
-    $atem_list = getAtemListCached($staff_id);
+    // One list fetch shared by both the HQ and Outlet passes, pre-filtered by
+    // atem-api to cards closed inside the period (all getStaffPerformanceLive()
+    // counts).
+    $atem_list = getAtemListCached($staff_id, 60, atemPeriodParams('closure', $filter_year, atem_period_months($filter_month, $filter_quarter)));
     $live = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 1, 0, $filter_roles, $atem_list);
     $live_outlet = getStaffPerformanceLive($filter_month, $filter_year, $filter_quarter, $filter_statuses, $staff_id, 2, 0, $filter_roles, $atem_list);
     if (empty($live['success']) || empty($live_outlet['success'])) {

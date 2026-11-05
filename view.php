@@ -1,17 +1,4 @@
 <?php
-// Opt-in load-time profiling (?debug=1, SuperAdmin only - checked again once
-// $_is_superadmin exists below): marks wall-clock time at each major stage so
-// a slow/hanging view.php can be narrowed down to a specific query or the
-// atem-api HTTP round trip without guessing. Rendered as a small panel near
-// the top of the page when enabled; otherwise these calls are a single
-// microtime() each, negligible overhead.
-$_view_t0 = microtime(true);
-$_view_timings = array();
-function _view_mark($label) {
-    global $_view_t0, $_view_timings;
-    $_view_timings[] = array($label, round((microtime(true) - $_view_t0) * 1000, 1));
-}
-
 $page_title = 'ATEM';
 // header.php (and its ATEM_BASE constant) hasn't been included yet at this point,
 // since header.php itself echoes $page_title_actions during its own run — so the
@@ -20,38 +7,22 @@ $_view_atem_base = '/odb/' . basename(__DIR__) . '/';
 $page_title_actions = '<a class="btn btn-primary atem-btn-new d-inline-flex align-items-center" href="' . $_view_atem_base . 'create.php"><i class="bi bi-plus-lg me-1"></i>Create New ATEM</a>';
 $extra_css = '<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">';
 include('header.php');
-_view_mark('header.php (session/auth/db bootstrap)');
 
 // header.php bootstrapped the odb connection ($conn) and current staff.
-// Build id -> name maps from odb so we can show issuer and department names
-// for the FK ids returned by the atem-api.
-$staff_names      = array();
-$staff_positions  = array();
-$dept_names       = array();
-
-$staff_res = mysqli_query($conn, "SELECT s.id, s.nama_staff, p.position_name
-                                   FROM staff s
-                                   LEFT JOIN position_rymnet p ON p.id = s.status_rym
-                                   WHERE s.recycle != 1");
-if ($staff_res) {
-    while ($srow = mysqli_fetch_assoc($staff_res)) {
-        $staff_names[(int) $srow['id']]      = $srow['nama_staff'];
-        $staff_positions[(int) $srow['id']]  = $srow['position_name'];
-    }
-}
+// Department id -> name map for the Department filter dropdown. Card rows
+// themselves are built (names resolved by id) by api.php's view-list action.
+$dept_names = array();
 $dept_res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
 if ($dept_res) {
     while ($drow = mysqli_fetch_assoc($dept_res)) {
         $dept_names[(int) $drow['id']] = $drow['depart_name'];
     }
 }
-_view_mark('staff_names/dept_names ODB queries');
 
 // Fetch the ATEM list + lookups via the JWT proxy (server-side).
 // api.php also sets $staff_id and $department from the session.
 define('API_JWT_INCLUDED', true);
 include(dirname(__FILE__) . '/api.php');
-_view_mark('api.php include (JWT bridge setup, no HTTP yet)');
 
 // staff.department is comma-separated (e.g. "3,7"); a user can belong to several
 // departments. Parse all of them so dept-scoped grades match any overlap.
@@ -78,7 +49,7 @@ if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_pe
     // Grade 1, Grade 2, and dev-simulated Grade 6: own cards only, so the
     // issuer filter is limited to the viewer themself.
     $me_id = (int)$staff_id;
-    $issuer_list[] = array('id' => $me_id, 'name' => isset($staff_names[$me_id]) ? $staff_names[$me_id] : 'You');
+    $issuer_list[] = array('id' => $me_id, 'name' => (isset($nama_staff) && $nama_staff !== '') ? $nama_staff : 'You');
 } elseif ((int)$atem_permission === 3 && !$_is_superadmin) {
     if (!empty($user_dept_ids)) {
         $dept_parts = array();
@@ -163,55 +134,35 @@ if ($region_res) {
     }
 }
 
-_view_mark('ODB queries (issuer/outlet/region lists)');
 
 $lookups = ['levels' => [], 'rules' => [], 'statuses' => []];
 $lr = getAtemLookups($staff_id);
 if (!empty($lr['success']) && isset($lr['data'])) {
     $lookups = $lr['data'];
 }
-_view_mark('getAtemLookups() - atem-api HTTP call #1');
 
 $include_deleted = ($atem_permission >= 4 || $_is_superadmin) && empty($_GET['no_deleted']);
 
-// Narrows the atem-api fetch itself to roughly what this viewer can see,
-// instead of always pulling the full company-wide dataset (a real bottleneck
-// once the table grows into the thousands - see ?debug=1's timing panel).
-// This is a *performance* optimisation only: the grade-based filtering loop
-// further below remains the authoritative visibility rule and still runs on
-// whatever comes back, so an over-inclusive scope here is safe. Grade 4/5/SA
-// genuinely need the full dataset, so they're left unscoped.
-$_atem_list_scope_params = array();
-if (!$_is_superadmin) {
-    if (in_array((int)$atem_permission, array(1, 2), true)
-            || ((int)$atem_permission === 6 && !$_is_area_manager)) {
-        // Own cards only (issuer or any ARCI role) - matches this grade's
-        // exact visibility rule, so no extra carve-out params are needed.
-        $_atem_list_scope_params['staff_id'] = (string)(int)$staff_id;
-    } elseif ((int)$atem_permission === 6 && $_is_area_manager) {
-        $_atem_list_scope_params['staff_id'] = (string)(int)$staff_id;
-        $_atem_list_scope_params['requester_scope'] = '6am';
-        if (!empty($user_outlet_ids)) {
-            $_atem_list_scope_params['requester_outlet_ids'] = implode(',', $user_outlet_ids);
-        }
-    } elseif ((int)$atem_permission === 3) {
-        $_atem_list_scope_params['staff_id'] = (string)(int)$staff_id;
-        $_atem_list_scope_params['requester_scope'] = '3';
-        if (!empty($user_dept_ids)) {
-            $_atem_list_scope_params['requester_dept_ids'] = implode(',', $user_dept_ids);
-        }
-        if (in_array(1, $user_dept_ids, true)) {
-            $_atem_list_scope_params['requester_outlet_dept_viewer'] = '1';
-        }
-    }
-    // Grades 0 (shouldn't reach this page) and 4/5 fall through unscoped.
-}
-
-// Always fetch soft-deleted records; grade-based filtering below decides which ones to surface.
-$list_result = getAtemList($staff_id, true, $_atem_list_scope_params);
-$rows = (!empty($list_result['success']) && isset($list_result['data'])) ? $list_result['data'] : array();
-$api_unavailable = empty($list_result['success']);
-_view_mark('getAtemList() - atem-api HTTP call #2 (' . count($rows) . ' rows)');
+// Rows are no longer embedded in the page: js/view.js loads one page at a
+// time from api.php's view-list action, which atem-api filters, sorts and
+// paginates (POST /api/atem/search) under the exact grade visibility rule
+// built by atemViewViewerParams(). Here we only need the per-tab visible
+// counts - for the tab badges and to decide whether the Outlet tab shows.
+$_view_viewer = atemViewViewerParams(
+    (int)$atem_permission,
+    (bool)$_is_superadmin,
+    $_is_area_manager,
+    (int)$staff_id,
+    $user_dept_ids,
+    $user_outlet_ids,
+    !$include_deleted
+);
+$_view_counts_result = atemSearch(['viewer' => $_view_viewer, 'counts_only' => true], $staff_id);
+$api_unavailable = empty($_view_counts_result['success']);
+$view_counts = [
+    'hq'     => (int)($_view_counts_result['counts']['hq'] ?? 0),
+    'outlet' => (int)($_view_counts_result['counts']['outlet'] ?? 0),
+];
 
 $atem_warning = '';
 if (isset($_SESSION['atem_warning'])) {
@@ -219,211 +170,37 @@ if (isset($_SESSION['atem_warning'])) {
     unset($_SESSION['atem_warning']);
 }
 
-// Enrich each row with resolved names + flattened display fields.
-$view_rows         = array();
-$row_arci_dept_ids = array(); // parallel array used only for grade 3 server-side filtering
-foreach ($rows as $a) {
-    $issuer_id = isset($a['issuer_staff_id']) ? (int) $a['issuer_staff_id'] : 0;
-    $dept_id   = isset($a['staff_dept_id']) ? (int) $a['staff_dept_id'] : 0;
-    // Outlet-type ATEMs show Position for Issuer/Accountable instead of Department.
-    $is_outlet_type = ((int) (isset($a['atem_type']) ? $a['atem_type'] : 1) === 2);
-    $level     = isset($a['level_structure']) && $a['level_structure'] ? $a['level_structure'] : null;
-    $pillar    = isset($a['pillar']) && $a['pillar'] ? $a['pillar'] : null;
-    $status    = isset($a['status']) && $a['status'] ? $a['status'] : null;
-
-    $outlet_codes  = [];
-    $outlet_ids    = [];
-    $row_region_names = [];
-    if (isset($a['outlets']) && is_array($a['outlets'])) {
-        foreach ($a['outlets'] as $o) {
-            $o_id = isset($o['outlet_id']) ? (int) $o['outlet_id'] : 0;
-            if ($o_id) {
-                $outlet_codes[] = isset($outlet_names[$o_id]) ? $outlet_names[$o_id] : ('Outlet #' . $o_id);
-                $outlet_ids[]   = $o_id;
-                $o_region_id = isset($outlet_region_ids[$o_id]) ? $outlet_region_ids[$o_id] : 0;
-                if ($o_region_id && isset($region_names[$o_region_id])) {
-                    $row_region_names[] = $region_names[$o_region_id];
-                }
-            }
-        }
-    }
-    $row_region_names = array_values(array_unique($row_region_names));
-
-    $arci_ids        = array();
-    $arci_dept_ids   = array();
-    $arci_dept_names = array();
-    $user_roles    = array();
-    $accountable   = array();
-    if (isset($a['arci']) && is_array($a['arci'])) {
-        foreach ($a['arci'] as $m) {
-            if (!empty($m['staff_id'])) {
-                $m_id = (int) $m['staff_id'];
-                $arci_ids[] = $m_id;
-                if (!empty($m['staff_dept_id'])) {
-                    $m_dept_id = (int) $m['staff_dept_id'];
-                    $arci_dept_ids[] = $m_dept_id;
-                    if (isset($dept_names[$m_dept_id])) {
-                        $arci_dept_names[] = $dept_names[$m_dept_id];
-                    }
-                }
-                if ($m_id === (int) $staff_id && !empty($m['role'])) {
-                    $user_roles[] = $m['role'];
-                }
-                if (isset($m['role']) && $m['role'] === 'A') {
-                    $a_dept_id = isset($m['staff_dept_id']) ? (int) $m['staff_dept_id'] : 0;
-                    $accountable[] = array(
-                        'name' => isset($staff_names[$m_id]) ? $staff_names[$m_id] : ('Staff #' . $m_id),
-                        // Outlet-type ATEM -> show position; HQ-type ATEM -> show department.
-                        'dept' => $is_outlet_type
-                            ? (!empty($staff_positions[$m_id]) ? $staff_positions[$m_id] : '-')
-                            : (($a_dept_id && isset($dept_names[$a_dept_id])) ? $dept_names[$a_dept_id] : '-'),
-                    );
-                }
-            }
-        }
-    }
-
-    $view_rows[] = array(
-        'id'              => (int) (isset($a['id']) ? $a['id'] : 0),
-        'title'           => isset($a['title']) ? $a['title'] : '',
-        'atem_type'       => isset($a['atem_type']) ? (int) $a['atem_type'] : 1,
-        'outlet_codes'    => $outlet_codes,
-        'outlet_ids'      => $outlet_ids,
-        'region_names'    => $row_region_names,
-        'issuer_name'     => isset($staff_names[$issuer_id]) ? $staff_names[$issuer_id] : ($issuer_id ? ('Staff #' . $issuer_id) : '-'),
-        // Outlet-type ATEM -> Issuer's position; HQ-type ATEM -> Issuer's department.
-        'department_name' => $is_outlet_type
-            ? (!empty($staff_positions[$issuer_id]) ? $staff_positions[$issuer_id] : '-')
-            : (isset($dept_names[$dept_id]) ? $dept_names[$dept_id] : '-'),
-        'department_id'   => $dept_id,
-        'level_label'     => ($level && isset($level['level']))       ? $level['level']       : '',
-        'system_name'     => ($level && isset($level['system_name'])) ? $level['system_name'] : '',
-        'pillar_name'     => ($pillar && isset($pillar['name']))      ? $pillar['name']       : '',
-        // A NULL atem_status_id (card saved without a status) is surfaced as
-        // Draft so it still appears when filtering/searching by Draft instead
-        // of falling out of every status bucket.
-        'status'          => ($status && isset($status['value']) && $status['value'] !== '') ? $status['value'] : 'Draft',
-        'start_date'      => isset($a['start_date']) ? $a['start_date'] : '',
-        'end_date'        => isset($a['end_date']) ? $a['end_date'] : '',
-        'final_due_date'  => isset($a['final_due_date']) ? $a['final_due_date'] : '',
-        'closure_date'    => isset($a['closure_date']) ? $a['closure_date'] : '',
-        'extended_date_1' => isset($a['extended_date_1']) ? $a['extended_date_1'] : '',
-        'issuer_staff_id' => $issuer_id,
-        'arci_staff_ids'  => $arci_ids,
-        'arci_dept_names' => array_values(array_unique($arci_dept_names)),
-        'user_arci_roles' => $user_roles,
-        'accountable'     => $accountable,
-        'is_extended'     => !empty($a['is_extended']),
-        // Suspended is keyed off status alone (not just deleted_at) so a suspended
-        // card is always locked down even if its deleted_at drifted from its status.
-        'is_deleted'      => (!empty($a['deleted_at']) || ($status && $status['value'] === 'Suspended')),
-        'deleted_at'      => isset($a['deleted_at']) ? $a['deleted_at'] : null,
-        'payout_status'   => isset($a['payout_status']) ? $a['payout_status'] : null,
-    );
-    $row_arci_dept_ids[] = $arci_dept_ids;
-}
-_view_mark('row-enrichment loop (' . count($view_rows) . ' rows)');
-
-// Apply server-side visibility filtering based on grade.
-if (((int)$atem_permission === 1 || (int)$atem_permission === 2 || (int)$atem_permission === 6) && !$_is_superadmin) {
-    // Grade 1, Grade 2, and a real grade-6 (Flexi KPI) staff record: own cards
-    // only (issuer or any ARCI role) - no department overlap scope.
-    // Also show own suspended cards (soft-deleted with status Suspended).
-    // Exception: grade 6 Area Managers (status_rym = 134) additionally see
-    // every Outlet-type card whose outlet(s) overlap their own outlet(s) -
-    // a non-Area-Manager grade 6 stays own-only. Mirrors api.php's
-    // dashboard-stats/list-atems-scoped identical carve-out.
-    $filtered = array();
-    foreach ($view_rows as $r) {
-        if ($r['is_deleted']) {
-            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
-                $filtered[] = $r;
-            }
-            continue;
-        }
-        if ($r['issuer_staff_id'] === (int)$staff_id
-                || in_array((int)$staff_id, $r['arci_staff_ids'])) {
-            $filtered[] = $r;
-            continue;
-        }
-        if ((int)$atem_permission === 6 && $_is_area_manager && $r['atem_type'] === 2
-                && array_intersect($user_outlet_ids, $r['outlet_ids'])) {
-            $filtered[] = $r;
-        }
-    }
-    $view_rows = $filtered;
-} elseif ((int)$atem_permission === 3 && !$_is_superadmin) {
-    // Grade 3 (senior): Outlet-type cards are visible company-wide (all
-    // outlets) only when the viewer is themself in the Outlet department
-    // (dept 1). A non-Outlet-dept grade 3 (e.g. an HQ staff tagged as Area
-    // Manager on one outlet card) gets no such carve-out - they only see
-    // their own cards (issuer/ARCI/Area Manager tag counts as ARCI - see
-    // edit.php's $area_managers_by_id note) plus HQ-type cards via
-    // department overlap. Mirrors api.php's list-atems-scoped/dashboard-stats.
-    $_is_outlet_dept_viewer = in_array(1, $user_dept_ids, true);
-    $filtered = array();
-    foreach ($view_rows as $idx => $r) {
-        if ($r['is_deleted']) {
-            if ($r['status'] === 'Suspended' && $r['issuer_staff_id'] === (int)$staff_id) {
-                $filtered[] = $r;
-            }
-            continue;
-        }
-        // The viewer's own cards (issuer or any ARCI role, including a
-        // tagged Area Manager - stored as an ARCI member) are always shown.
-        if ($r['issuer_staff_id'] === (int)$staff_id
-                || in_array((int)$staff_id, $r['arci_staff_ids'])) {
-            $filtered[] = $r;
-            continue;
-        }
-        if ($r['atem_type'] === 2 && $_is_outlet_dept_viewer) {
-            $filtered[] = $r;
-            continue;
-        }
-        if (in_array($r['department_id'], $user_dept_ids)
-                || array_intersect($user_dept_ids, $row_arci_dept_ids[$idx])) {
-            $filtered[] = $r;
-        }
-    }
-    $view_rows = $filtered;
-} elseif (!$include_deleted) {
-    // Grade 4+/SA with ?no_deleted: strip all soft-deleted rows.
-    $filtered = array();
-    foreach ($view_rows as $r) {
-        if (!$r['is_deleted']) { $filtered[] = $r; }
-    }
-    $view_rows = $filtered;
-}
-// Grade 4+/SA (include_deleted=true): no filtering — all rows shown.
-
 // A non-Outlet-dept grade 1/2/3 viewer can still have own Outlet-type cards
-// (issuer, ARCI, or tagged Area Manager) surviving the filtering above even
-// though their own department collapsed them onto the HQ-only tab. Un-collapse
-// so that tab (and only their own outlet rows within it) becomes visible.
-if ($grade1_single_view === 'hq') {
-    foreach ($view_rows as $r) {
-        if ($r['atem_type'] === 2) {
-            $grade1_single_view = null;
-            break;
-        }
-    }
+// (issuer, ARCI, or tagged Area Manager) even though their own department
+// collapsed them onto the HQ-only tab. Un-collapse so that tab (and only
+// their own outlet rows within it) becomes visible.
+if ($grade1_single_view === 'hq' && $view_counts['outlet'] > 0) {
+    $grade1_single_view = null;
 }
-_view_mark('grade-based visibility filtering (' . count($view_rows) . ' rows kept)');
 
-$dept_list = array();
+// Department filter options as {id, name} for the searchable dropdown in
+// js/view.js. The filter itself still matches by NAME (api.php's view-list
+// maps the name to every department id carrying it), so a name shared by
+// several department ids is listed once, under its lowest id.
+$_dept_source = array();
 if ((int)$atem_permission <= 3 && !$_is_superadmin) {
     foreach ($user_dept_ids as $_uid) {
         if (isset($dept_names[$_uid])) {
-            $dept_list[] = $dept_names[$_uid];
+            $_dept_source[$_uid] = $dept_names[$_uid];
         }
     }
-    sort($dept_list);
 } else {
-    foreach ($dept_names as $dept_name_val) {
-        $dept_list[] = $dept_name_val;
-    }
-    sort($dept_list);
+    $_dept_source = $dept_names;
 }
+ksort($_dept_source);
+$_dept_by_name = array();
+foreach ($_dept_source as $_did => $_dname) {
+    if (!isset($_dept_by_name[$_dname])) {
+        $_dept_by_name[$_dname] = array('id' => (int)$_did, 'name' => $_dname);
+    }
+}
+ksort($_dept_by_name, SORT_STRING | SORT_FLAG_CASE);
+$dept_list = array_values($_dept_by_name);
 
 $_view_cur_year = max(2026, (int)date('Y'));
 $view_year_opts = array();
@@ -432,7 +209,8 @@ for ($y = 2025; $y <= $_view_cur_year; $y++) {
 }
 
 $view_config = array(
-    'rows'        => $view_rows,
+    'counts'      => $view_counts,
+    'noDeleted'   => !$include_deleted,
     'levels'      => isset($lookups['levels']) ? $lookups['levels'] : array(),
     'statuses'    => isset($lookups['statuses']) ? $lookups['statuses'] : array(),
     'departments' => $dept_list,
@@ -444,28 +222,8 @@ $view_config = array(
     'userGrade'   => (int)$atem_permission,
     'tabSingleView' => $grade1_single_view,
 );
-_view_mark('PHP setup complete - handing off to HTML/view.js render');
 
-$_view_debug = $_is_superadmin && isset($_GET['debug']) && $_GET['debug'] === '1';
 ?>
-
-<?php if ($_view_debug): ?>
-<div class="atem-card mb-3" style="font-family:monospace;font-size:12px;">
-    <h6 class="atem-card-title"><i class="bi bi-speedometer2"></i> Load Time Debug (?debug=1, SuperAdmin only)</h6>
-    <table class="table table-sm mb-0">
-        <thead><tr><th>Stage</th><th style="width:110px;">Cumulative</th><th style="width:90px;">Delta</th></tr></thead>
-        <tbody>
-            <?php $_view_prev = 0.0; foreach ($_view_timings as $_vt): ?>
-            <tr>
-                <td><?php echo htmlspecialchars($_vt[0]); ?></td>
-                <td><?php echo $_vt[1]; ?> ms</td>
-                <td><?php echo round($_vt[1] - $_view_prev, 1); ?> ms</td>
-            </tr>
-            <?php $_view_prev = $_vt[1]; endforeach; ?>
-        </tbody>
-    </table>
-</div>
-<?php endif; ?>
 
 <?php if ($api_unavailable): ?>
 <div class="alert alert-warning" role="alert" style="font-size:13px;">
@@ -563,9 +321,17 @@ $_view_debug = $_is_superadmin && isset($_GET['debug']) && $_GET['debug'] === '1
                     </div>
                     <div class="col">
                         <label class="form-label">Department</label>
-                        <select class="form-select form-select-sm" id="vf-dept">
-                            <option value="">All departments</option>
-                        </select>
+                        <div class="vf-issuer-wrap" id="vf-dept-wrap">
+                            <div class="vf-s2-selection" id="vf-dept-btn" tabindex="0">All departments</div>
+                            <div class="vf-s2-dropdown" id="vf-dept-dropdown">
+                                <div class="vf-s2-search-wrap">
+                                    <input class="vf-s2-search" id="vf-dept-search" type="search"
+                                        placeholder="Search department...">
+                                </div>
+                                <ul class="vf-s2-list" id="vf-dept-list"></ul>
+                            </div>
+                            <input type="hidden" id="vf-dept-value" value="0">
+                        </div>
                     </div>
                     <div class="col">
                         <label class="form-label">Staff</label>

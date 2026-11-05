@@ -11,7 +11,9 @@
                 if (payload.hasOwnProperty(k)) { body[k] = payload[k]; }
             }
         }
-        return fetch(CFG.apiUrl, {
+        // ?action= mirrors body.action (api.php reads either, same value) so the
+        // request is identifiable in DevTools and the dev LOAD TIME row.
+        return fetch(CFG.apiUrl + '?action=' + encodeURIComponent(action), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
@@ -455,6 +457,14 @@
         updateQuarterButtonLabel(baseId);
         var dropEl = document.getElementById(baseId + '-dropdown');
         if (dropEl) { dropEl.classList.remove('open'); }
+    }
+
+    // Restores a dashboard filter set to its page-load default: current year
+    // (CFG.defaultYear from index.php), All Months, All Quarters.
+    function applyDefaultPeriod(yearEl, monthEl, quarterBaseId) {
+        if (yearEl)  { yearEl.value  = String(CFG.defaultYear || ''); }
+        if (monthEl) { monthEl.value = ''; }
+        resetQuarterDropdown(quarterBaseId);
     }
 
     function buildQuarterDropdown(baseId, sizeRefId, onChange) {
@@ -1306,17 +1316,15 @@
 
         if (resetBtn) {
             resetBtn.addEventListener('click', function () {
-                if (yearEl)    { yearEl.value    = '2026'; }
-                if (monthEl)   { monthEl.value   = ''; }
-                resetQuarterDropdown('dash-quarter');
+                applyDefaultPeriod(yearEl, monthEl, 'dash-quarter');
                 if (deptEl)    { deptEl.value    = ''; }
                 resetStaffDropdown();
-                loadDashboard({ filter_year: 2026, filter_atem_type: 1 });
+                loadDashboard(buildPayload());
             });
         }
 
-        // Default load: 2026 data
-        if (CFG.tabSingleView !== 'outlet') { loadDashboard({ filter_year: 2026, filter_atem_type: 1 }); }
+        // Default load: current year / month / quarter (pre-selected by index.php)
+        if (CFG.tabSingleView !== 'outlet') { loadDashboard(buildPayload()); }
 
         // Stat card click navigation
         var dashStats = document.querySelectorAll('.atem-dash-stat');
@@ -1378,19 +1386,31 @@
 
         if (resetBtnO) {
             resetBtnO.addEventListener('click', function () {
-                if (yearElO)    { yearElO.value    = '2026'; }
-                if (monthElO)   { monthElO.value   = ''; }
-                resetQuarterDropdown('dasho-quarter');
+                applyDefaultPeriod(yearElO, monthElO, 'dasho-quarter');
                 var regionElO = document.getElementById('dasho-filter-region');
                 if (regionElO) { regionElO.value = ''; }
                 resetSearchDropdown('dasho-outlet', 'All outlets');
                 resetSearchDropdown('dasho-staff', 'All Area Managers');
-                loadDashboardOutlet({ filter_year: 2026, filter_atem_type: 2 });
+                loadDashboardOutlet(buildPayloadOutlet());
             });
         }
 
-        // Default load: 2026 data
-        if (CFG.tabSingleView !== 'hq') { loadDashboardOutlet({ filter_year: 2026, filter_atem_type: 2 }); }
+        // Default load: current year / month / quarter (pre-selected by index.php).
+        // Outlet-only viewers load it now. Viewers with both tabs load it the
+        // first time they open the Outlet tab - it is the heaviest request and
+        // would otherwise delay the HQ tab they actually see first.
+        if (CFG.tabSingleView === 'outlet') {
+            loadDashboardOutlet(buildPayloadOutlet());
+        } else if (CFG.tabSingleView === null && dashOutletTabBtn) {
+            var outletDashLoaded = false;
+            dashOutletTabBtn.addEventListener('shown.bs.tab', function () {
+                if (outletDashLoaded) { return; }
+                outletDashLoaded = true;
+                loadDashboardOutlet(buildPayloadOutlet());
+            });
+        } else if (CFG.tabSingleView !== 'hq') {
+            loadDashboardOutlet(buildPayloadOutlet());
+        }
 
         // Stat card click navigation (Outlet)
         var dashStatsOutlet = document.querySelectorAll('.atem-dash-stat-outlet');

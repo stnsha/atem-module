@@ -1,28 +1,25 @@
-/* ATEM listing: renders the table from server-injected rows with client-side
-   filtering, title search, sort and pagination (15/page). Filters/search always
-   run over the full dataset, then the result is paginated. */
+/* ATEM listing: server-side filtered, sorted and paginated table. Every
+   filter change, sort click or page change asks api.php's view-list action
+   for one page; atem-api (POST /api/atem/search) applies the grade-based
+   visibility rule, the filters, the sort and Laravel pagination, and returns
+   only that page plus the total. Nothing is filtered or sorted here. */
 (function () {
     'use strict';
 
-    var CFG = window.ATEM_VIEW || { rows: [], levels: [], statuses: [] };
-    var allRows    = CFG.rows || [];
-    var hqRows     = allRows.filter(function (r) { return (parseInt(r.atem_type, 10) || 1) === 1; });
-    var outletRows = allRows.filter(function (r) { return parseInt(r.atem_type, 10) === 2; });
-    // Looks up the current array by reference each call (rather than a
-    // snapshot object) so it stays correct after hqRows/outletRows are
-    // reassigned, e.g. by the delete-row handler.
-    function rowsForTab(prefix) { return (prefix === 'hq') ? hqRows : outletRows; }
+    var CFG = window.ATEM_VIEW || { levels: [], statuses: [], counts: { hq: 0, outlet: 0 } };
+    var API_URL = (window.ATEM_MODULE_BASE || 'atem/') + 'api.php';
 
     // HQ and Outlet tabs render into separate tables and are sorted/paginated
-    // independently, but share the one filter bar above them. Only the
-    // active tab is (re-)rendered when a filter changes; the other tab
-    // catches up with the current filters when it's switched to.
+    // independently, each with its own filter bar. Only the active tab is
+    // (re-)loaded when a filter changes; the other tab catches up with its
+    // current filters when it's switched to.
     // Defaults to the single-view tab when a grade-1 user only ever has one
     // (no tab nav exists to switch it via 'shown.bs.tab' in that case).
+    // seq drops a response that arrives after a newer request for that tab.
     var activeTab = (CFG.tabSingleView === 'outlet') ? 'outlet' : 'hq';
     var tabState = {
-        hq:     { page: 1, sortCol: null, sortDir: 1, perPage: 30 },
-        outlet: { page: 1, sortCol: null, sortDir: 1, perPage: 30 }
+        hq:     { page: 1, sortCol: null, sortDir: 1, perPage: 30, seq: 0 },
+        outlet: { page: 1, sortCol: null, sortDir: 1, perPage: 30, seq: 0 }
     };
 
     var TODAY           = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
@@ -75,16 +72,6 @@
     }
 
     // ----------------------------------------------------------- filter setup
-    function distinct(key) {
-        var seen = {}, out = [];
-        for (var i = 0; i < allRows.length; i++) {
-            var v = allRows[i][key];
-            if (v && !seen[v]) { seen[v] = true; out.push(v); }
-        }
-        out.sort();
-        return out;
-    }
-
     function fillSelect(selectEl, placeholder, options) {
         if (!selectEl) { return; }
         var html = '<option value="">' + escapeHtml(placeholder) + '</option>';
@@ -98,8 +85,13 @@
         var levels = (CFG.levels || []).map(function (l) { return l.level; });
         fillSelect($('vf-level'), 'All levels', levels);
 
-        var depts = CFG.departments || [];
-        fillSelect($('vf-dept'), 'All departments', depts);
+        // Searchable, same widget as Staff. Same resets as the plain controls
+        // (a manual pick clears the dashboard deep-link presets).
+        var depts = (CFG.departments || []).map(function (d) { return { id: d.id, label: d.name }; });
+        buildS2Dropdown('vf-dept', depts, 'All departments', 'vf-year', function () {
+            presetClosed = false; minLevelId = 0; mineFilter = false;
+            tabState.hq.page = 1; renderTable('hq');
+        });
 
         var regions = (CFG.regions || []).map(function (r) { return r.name; });
         fillSelect($('vfo-region'), 'All regions', regions);
@@ -112,34 +104,34 @@
         buildStatusOptions('vfo-status', statuses);
         buildStatusDropdown('vf-status', 'vf-year', function () {
             presetClosed = false; minLevelId = 0; mineFilter = false;
-            tabState.hq.page = 1; renderTable('hq', hqRows);
+            tabState.hq.page = 1; renderTable('hq');
         });
         buildStatusDropdown('vfo-status', 'vfo-year', function () {
             presetClosed = false; mineFilter = false;
-            tabState.outlet.page = 1; renderTable('outlet', outletRows);
+            tabState.outlet.page = 1; renderTable('outlet');
         });
 
         var roleOptions = ['Issuer', 'A', 'R', 'C', 'I', 'None'];
         buildRoleOptions('vf-role', roleOptions);
         buildRoleOptions('vfo-role', roleOptions);
         buildRoleDropdown('vf-role', 'vf-year', function () {
-            tabState.hq.page = 1; renderTable('hq', hqRows);
+            tabState.hq.page = 1; renderTable('hq');
         });
         buildRoleDropdown('vfo-role', 'vfo-year', function () {
-            tabState.outlet.page = 1; renderTable('outlet', outletRows);
+            tabState.outlet.page = 1; renderTable('outlet');
         });
 
         var issuers = (CFG.issuers || []).map(function (i) { return { id: i.id, label: i.name }; });
         buildS2Dropdown('vf-issuer', issuers, 'All staff', 'vf-year', function () {
-            tabState.hq.page = 1; renderTable('hq', hqRows);
+            tabState.hq.page = 1; renderTable('hq');
         });
         buildS2Dropdown('vfo-issuer', issuers, 'All staff', 'vfo-year', function () {
-            tabState.outlet.page = 1; renderTable('outlet', outletRows);
+            tabState.outlet.page = 1; renderTable('outlet');
         });
 
         var outlets = (CFG.outlets || []).map(function (o) { return { id: o.id, label: o.code }; });
         buildS2Dropdown('vfo-outlet', outlets, 'All outlets', 'vfo-year', function () {
-            tabState.outlet.page = 1; renderTable('outlet', outletRows);
+            tabState.outlet.page = 1; renderTable('outlet');
         });
     }
 
@@ -477,64 +469,7 @@
         return false;
     }
 
-    // --------------------------------------------------------------- filtering
-    // Active is matched by whether its start_date..end_date span overlaps the
-    // Year/Month filter (see spanOverlapsPeriod()); Draft (not started closing
-    // yet) by start_date alone; every other status (Completed family,
-    // Extended, Failed) by closure_date - mirrors api.php's
-    // atem_matches_period()/dashboard-stats convention, so the counts shown
-    // here and on the dashboard agree for the same filter selection.
-    function periodDateOf(r) {
-        // Draft/Suspended/Force Terminated haven't closed yet, so period by
-        // start_date (Suspended/Force Terminated never get a closure_date
-        // either - they're soft-deleted without ever actually closing, or the
-        // Year/Month filter would silently exclude every one of them). Active/
-        // Extended are handled separately via spanOverlapsPeriod(). Deleted
-        // never gets a closure_date either (deletion only sets deleted_at/
-        // atem_status_id/remarks/closed_by) - period it by deleted_at, or
-        // every deleted card would bypass the Year/Month filter entirely.
-        if (r.status === 'Draft' || r.status === 'Suspended' || r.status === 'Force Terminated') {
-            return r.start_date;
-        }
-        if (r.status === 'Deleted') {
-            return r.deleted_at;
-        }
-        return r.closure_date;
-    }
-
-    // True if an Active card's start_date..end_date span overlaps the
-    // selected year/month - a card merely touching the period matches (e.g. a
-    // card running Dec 2025-Jan 2026 matches both years). Mirrors api.php's
-    // atem_span_overlaps_period(). A missing start_date returns true (kept),
-    // matching this file's existing "no date = never filtered out" convention.
-    function spanOverlapsPeriod(startDate, endDate, year, month) {
-        if (!startDate) { return true; }
-        var startYM = parseInt(startDate.substring(0, 4), 10) * 100 + parseInt(startDate.substring(5, 7), 10);
-        var endM = endDate ? parseInt(endDate.substring(5, 7), 10) : parseInt(startDate.substring(5, 7), 10);
-        var endYM = endDate ? (parseInt(endDate.substring(0, 4), 10) * 100 + endM) : startYM;
-        if (endYM < startYM) { endYM = startYM; }
-
-        if (year) {
-            var yearStartYM = year * 100 + 1;
-            var yearEndYM = year * 100 + 12;
-            if (endYM < yearStartYM || startYM > yearEndYM) { return false; }
-            if (!month) { return true; }
-            var overlapStart = Math.max(startYM, yearStartYM);
-            var overlapEnd = Math.min(endYM, yearEndYM);
-            for (var ym = overlapStart; ym <= overlapEnd; ym++) {
-                if ((ym % 100) === month) { return true; }
-            }
-            return false;
-        }
-
-        if (month) {
-            var startM = parseInt(startDate.substring(5, 7), 10);
-            return startM === month || endM === month;
-        }
-
-        return true;
-    }
-
+    // --------------------------------------------------------- row display
     // Overdue is derived, not a status: an Active or Extended card whose
     // final_due_date (the end date, or the extension date once extended) is
     // already before today. Mirrors the dashboard-stats overdue_count in api.php.
@@ -568,9 +503,9 @@
     function updateFilterIndicators(prefix) {
         var p = (prefix === 'hq') ? 'vf' : 'vfo';
         var fieldIds = (prefix === 'hq')
-            ? ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search']
+            ? ['vf-year', 'vf-month', 'vf-level', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search']
             : ['vfo-year', 'vfo-month', 'vfo-region', 'vfo-start-date', 'vfo-end-date', 'vfo-closure-from', 'vfo-closure-to', 'vfo-search'];
-        var pickerIds = (prefix === 'hq') ? ['vf-issuer'] : ['vfo-issuer', 'vfo-outlet'];
+        var pickerIds = (prefix === 'hq') ? ['vf-issuer', 'vf-dept'] : ['vfo-issuer', 'vfo-outlet'];
         var anyActive = false;
 
         function mark(el, isActive) {
@@ -615,175 +550,52 @@
         }
     }
 
-    function applyHqFilters(sourceRows) {
-        var year  = $('vf-year')  ? parseInt($('vf-year').value,  10) || 0 : 0;
-        var month = $('vf-month') ? parseInt($('vf-month').value, 10) || 0 : 0;
-        var level = $('vf-level').value;
-        var dept = $('vf-dept').value;
-        var statuses = getSelectedStatuses('vf-status');
-        var allStatusCount = allStatusCheckboxes('vf-status').length;
-        var roles = getSelectedRoles('vf-role');
-        var allRoleCount = allRoleCheckboxes('vf-role').length;
-        var startDate = $('vf-start-date').value;
-        var endDate = $('vf-end-date').value;
-        var closureFrom = $('vf-closure-from').value;
-        var closureTo = $('vf-closure-to').value;
-        var term = $('vf-search').value.toLowerCase().trim();
-        var issuerValEl = $('vf-issuer-value');
-        var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
-        var overdueOnly = $('vf-overdue') && $('vf-overdue').checked;
-
-        return sourceRows.filter(function (r) {
-            if (r.status === 'Active' || r.status === 'Extended') {
-                // Not closed yet (closure_date is always null for these two),
-                // so match by start_date..final_due_date span rather than a
-                // single date - final_due_date already resolves to the
-                // extended due date once extended (same field isRowOverdue()
-                // uses), so an extension is accounted for.
-                if ((year || month) && !spanOverlapsPeriod(r.start_date, r.final_due_date || r.end_date, year, month)) { return false; }
-            } else {
-                var pDate = periodDateOf(r);
-                // Only exclude on period when the row actually has a period date.
-                // A dateless row (e.g. Failed with no closure_date yet) is kept,
-                // mirroring api.php's dashboard-stats "if ($periodDate && ...)" rule
-                // so the filtered list and the dashboard counts agree.
-                if (year  && pDate && parseInt(pDate.substring(0, 4), 10) !== year)  { return false; }
-                if (month && pDate && parseInt(pDate.substring(5, 7), 10) !== month) { return false; }
+    // Current filter bar values for one tab, as api.php's view-list action
+    // expects them. Name-based controls (department, region) are sent as
+    // names - api.php maps them to ids. Level and the deep-link min_level_id
+    // preset are sent as the list of level labels that may match.
+    function collectFilters(prefix) {
+        var p = (prefix === 'hq') ? 'vf' : 'vfo';
+        var f = {
+            year:         $(p + '-year')  ? (parseInt($(p + '-year').value, 10) || 0) : 0,
+            month:        $(p + '-month') ? (parseInt($(p + '-month').value, 10) || 0) : 0,
+            issuer_id:    $(p + '-issuer-value') ? (parseInt($(p + '-issuer-value').value, 10) || 0) : 0,
+            start_date:   $(p + '-start-date').value,
+            end_date:     $(p + '-end-date').value,
+            closure_from: $(p + '-closure-from').value,
+            closure_to:   $(p + '-closure-to').value,
+            term:         $(p + '-search').value.trim(),
+            overdue:      !!($(p + '-overdue') && $(p + '-overdue').checked),
+            statuses:       getSelectedStatuses(p + '-status'),
+            statuses_total: allStatusCheckboxes(p + '-status').length,
+            roles:        getSelectedRoles(p + '-role'),
+            preset_closed: presetClosed,
+            mine:         mineFilter
+        };
+        if (prefix === 'hq') {
+            // The dropdown holds a department id; the filter matches by name
+            // (api.php maps it to every department id with that name).
+            var deptId = $('vf-dept-value') ? (parseInt($('vf-dept-value').value, 10) || 0) : 0;
+            f.dept = '';
+            for (var di = 0; deptId && di < (CFG.departments || []).length; di++) {
+                if (CFG.departments[di].id === deptId) { f.dept = CFG.departments[di].name; break; }
             }
-            if (issuer && r.issuer_staff_id !== issuer && (!r.arci_staff_ids || r.arci_staff_ids.indexOf(issuer) === -1)) { return false; }
-            if (level && r.level_label !== level) { return false; }
-            if (dept) {
-                var deptMatches = (r.department_name === dept) ||
-                    (r.arci_dept_names && r.arci_dept_names.indexOf(dept) !== -1);
-                if (!deptMatches) { return false; }
+            var level = $('vf-level').value;
+            if (level || minLevelId > 0) {
+                f.level_labels = (CFG.levels || []).map(function (l) { return l.level; }).filter(function (lbl) {
+                    if (level && lbl !== level) { return false; }
+                    if (minLevelId > 0) {
+                        var num = parseInt(String(lbl || '').replace(/[^0-9]/g, ''), 10) || 0;
+                        if (num < minLevelId) { return false; }
+                    }
+                    return true;
+                });
             }
-            if (statuses.length === 0) { return false; }
-            if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
-            if (presetClosed) {
-                if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
-            }
-            if (overdueOnly && !isRowOverdue(r)) { return false; }
-            if (minLevelId > 0) {
-                var levelNum = parseInt(String(r.level_label || '').replace(/[^0-9]/g, ''), 10) || 0;
-                if (levelNum < minLevelId) { return false; }
-            }
-            if (roles.length === 0) { return false; }
-            if (roles.length < allRoleCount && !rowMatchesRoles(r, roles, CFG.staffId)) { return false; }
-            if (mineFilter) {
-                var isMyIssue = CFG.staffId && r.issuer_staff_id == CFG.staffId;
-                var isMyArci  = r.user_arci_roles && r.user_arci_roles.length > 0;
-                if (!isMyIssue && !isMyArci) { return false; }
-            }
-            if (startDate && (!r.start_date || String(r.start_date).substring(0, 10) !== startDate)) { return false; }
-            if (endDate && (!r.end_date || String(r.end_date).substring(0, 10) !== endDate)) { return false; }
-            if (closureFrom && (!r.closure_date || String(r.closure_date).substring(0, 10) < closureFrom)) { return false; }
-            if (closureTo && (!r.closure_date || String(r.closure_date).substring(0, 10) > closureTo)) { return false; }
-            if (term) {
-                var atemIdStr = 'at' + r.id;
-                var matchesTitle = String(r.title).toLowerCase().indexOf(term) >= 0;
-                var matchesId    = atemIdStr.indexOf(term.replace(/^#/, '')) >= 0;
-                if (!matchesTitle && !matchesId) { return false; }
-            }
-            return true;
-        });
-    }
-
-    function applyOutletFilters(sourceRows) {
-        var year  = $('vfo-year')  ? parseInt($('vfo-year').value,  10) || 0 : 0;
-        var month = $('vfo-month') ? parseInt($('vfo-month').value, 10) || 0 : 0;
-        var statuses = getSelectedStatuses('vfo-status');
-        var allStatusCount = allStatusCheckboxes('vfo-status').length;
-        var region = $('vfo-region').value;
-        var roles = getSelectedRoles('vfo-role');
-        var allRoleCount = allRoleCheckboxes('vfo-role').length;
-        var startDate = $('vfo-start-date').value;
-        var endDate = $('vfo-end-date').value;
-        var closureFrom = $('vfo-closure-from').value;
-        var closureTo = $('vfo-closure-to').value;
-        var term = $('vfo-search').value.toLowerCase().trim();
-        var issuerValEl = $('vfo-issuer-value');
-        var issuer = issuerValEl ? (parseInt(issuerValEl.value, 10) || 0) : 0;
-        var outletValEl = $('vfo-outlet-value');
-        var outletId = outletValEl ? (parseInt(outletValEl.value, 10) || 0) : 0;
-        var outletCode = '';
-        if (outletId) {
-            var match = (CFG.outlets || []).filter(function (o) { return o.id === outletId; })[0];
-            outletCode = match ? match.code : '';
+        } else {
+            f.region = $('vfo-region').value;
+            f.outlet_id = $('vfo-outlet-value') ? (parseInt($('vfo-outlet-value').value, 10) || 0) : 0;
         }
-        var overdueOnly = $('vfo-overdue') && $('vfo-overdue').checked;
-
-        return sourceRows.filter(function (r) {
-            if (r.status === 'Active' || r.status === 'Extended') {
-                // Not closed yet (closure_date is always null for these two),
-                // so match by start_date..final_due_date span rather than a
-                // single date - final_due_date already resolves to the
-                // extended due date once extended (same field isRowOverdue()
-                // uses), so an extension is accounted for.
-                if ((year || month) && !spanOverlapsPeriod(r.start_date, r.final_due_date || r.end_date, year, month)) { return false; }
-            } else {
-                var pDate = periodDateOf(r);
-                // Only exclude on period when the row actually has a period date.
-                // A dateless row (e.g. Failed with no closure_date yet) is kept,
-                // mirroring api.php's dashboard-stats "if ($periodDate && ...)" rule
-                // so the filtered list and the dashboard counts agree.
-                if (year  && pDate && parseInt(pDate.substring(0, 4), 10) !== year)  { return false; }
-                if (month && pDate && parseInt(pDate.substring(5, 7), 10) !== month) { return false; }
-            }
-            if (issuer && r.issuer_staff_id !== issuer && (!r.arci_staff_ids || r.arci_staff_ids.indexOf(issuer) === -1)) { return false; }
-            if (statuses.length === 0) { return false; }
-            if (statuses.length < allStatusCount && statuses.indexOf(r.status) === -1) { return false; }
-            if (region && (!r.region_names || r.region_names.indexOf(region) < 0)) { return false; }
-            if (outletCode && (!r.outlet_codes || r.outlet_codes.indexOf(outletCode) < 0)) { return false; }
-            if (roles.length === 0) { return false; }
-            if (roles.length < allRoleCount && !rowMatchesRoles(r, roles, CFG.staffId)) { return false; }
-            if (presetClosed) {
-                if (r.status !== 'Completed' && r.status !== 'Completed with Excellence') { return false; }
-            }
-            if (overdueOnly && !isRowOverdue(r)) { return false; }
-            if (startDate && (!r.start_date || String(r.start_date).substring(0, 10) !== startDate)) { return false; }
-            if (endDate && (!r.end_date || String(r.end_date).substring(0, 10) !== endDate)) { return false; }
-            if (closureFrom && (!r.closure_date || String(r.closure_date).substring(0, 10) < closureFrom)) { return false; }
-            if (closureTo && (!r.closure_date || String(r.closure_date).substring(0, 10) > closureTo)) { return false; }
-            if (term) {
-                var atemIdStr = 'at' + r.id;
-                var matchesTitle = String(r.title).toLowerCase().indexOf(term) >= 0;
-                var matchesId    = atemIdStr.indexOf(term.replace(/^#/, '')) >= 0;
-                if (!matchesTitle && !matchesId) { return false; }
-            }
-            return true;
-        });
-    }
-
-    var STATUS_SORT_GROUP = {
-        'Suspended': 0,
-        'Draft': 1,
-        'Active': 2, 'Extended': 2,
-        'Completed': 3, 'Completed with Excellence': 3, 'Completed with Extension': 3, 'Failed': 3, 'Deleted': 3
-    };
-
-    function statusGroup(s) {
-        var g = STATUS_SORT_GROUP[s];
-        return (g === undefined) ? 2 : g;
-    }
-
-    function sortRows(list, sortCol, sortDir) {
-        if (sortCol === null) {
-            // Default order: Suspended group first (STATUS_SORT_GROUP), then
-            // every other row newest ATEM first (id descending).
-            return list.slice().sort(function (a, b) {
-                var ga = statusGroup(a.status), gb = statusGroup(b.status);
-                if (ga !== gb) { return ga - gb; }
-                return (Number(b.id) || 0) - (Number(a.id) || 0);
-            });
-        }
-        return list.slice().sort(function (a, b) {
-            var av = a[sortCol], bv = b[sortCol];
-            if (sortCol === 'id') { av = Number(av) || 0; bv = Number(bv) || 0; }
-            else { av = String(av == null ? '' : av).toLowerCase(); bv = String(bv == null ? '' : bv).toLowerCase(); }
-            if (av < bv) { return -1 * sortDir; }
-            if (av > bv) { return 1 * sortDir; }
-            return 0;
-        });
+        return f;
     }
 
     function updateSortIndicators(prefix) {
@@ -945,40 +757,86 @@
             + '<td class="atem-view-actions">' + buildActionCell(r) + '</td></tr>';
     }
 
-    function renderTable(prefix, sourceRows) {
+    function tableMessageRow(prefix, html) {
+        var colCount = document.querySelectorAll('#atem-view-tbl-' + prefix + ' thead th').length || 10;
+        return '<tr><td colspan="' + colCount + '" class="atem-empty-state" style="text-align:center;padding:24px;">' + html + '</td></tr>';
+    }
+
+    // Loads and renders one page of a tab from the server (api.php
+    // view-list -> atem-api POST /api/atem/search). withCounts also refreshes
+    // the tab badges (used after a delete).
+    function renderTable(prefix, withCounts) {
         var st = tabState[prefix];
         updateSortIndicators(prefix);
         updateFilterIndicators(prefix);
-        var filtered = (prefix === 'hq') ? applyHqFilters(sourceRows) : applyOutletFilters(sourceRows);
-        var list = sortRows(filtered, st.sortCol, st.sortDir);
-        var total = list.length;
-        var pages = Math.max(1, Math.ceil(total / st.perPage));
-        if (st.page > pages) { st.page = pages; }
-        var startIdx = (st.page - 1) * st.perPage;
-        var pageRows = list.slice(startIdx, startIdx + st.perPage);
 
         var body = $('atem-view-body-' + prefix);
-        if (total === 0) {
-            var colCount = document.querySelectorAll('#atem-view-tbl-' + prefix + ' thead th').length || 9;
-            body.innerHTML = '<tr><td colspan="' + colCount + '" class="atem-empty-state" style="text-align:center;padding:24px;">No ATEM cards match the current filters.</td></tr>';
-        } else {
-            var html = '';
-            var buildRowHtml = (prefix === 'hq') ? buildHqRowHtml : buildOutletRowHtml;
-            for (var i = 0; i < pageRows.length; i++) { html += buildRowHtml(pageRows[i]); }
-            body.innerHTML = html;
-        }
-        renderPagerFor(prefix, total, pages, startIdx, pageRows.length);
+        var seq = ++st.seq;
+        body.style.opacity = '0.5';
+        if (!body.children.length) { body.innerHTML = tableMessageRow(prefix, 'Loading...'); }
+
+        var payload = {
+            action: 'view-list',
+            tab: prefix,
+            page: st.page,
+            per_page: st.perPage,
+            sort: { col: st.sortCol || '', dir: st.sortDir === -1 ? 'desc' : 'asc' },
+            filters: collectFilters(prefix),
+            no_deleted: !!CFG.noDeleted,
+            with_counts: !!withCounts
+        };
+
+        fetch(API_URL + '?action=view-list', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(function (r) { return r.json(); }).then(function (res) {
+            if (seq !== st.seq) { return; } // a newer request for this tab is in flight
+            body.style.opacity = '';
+            if (!res || !res.success) {
+                body.innerHTML = tableMessageRow(prefix, '<span class="text-danger" style="font-size:12px;">'
+                    + escapeHtml((res && res.message) ? res.message : 'Failed to load ATEM cards.') + '</span>');
+                $('atem-pager-' + prefix).innerHTML = '';
+                return;
+            }
+            if (res.counts) { updateTabCounts(res.counts); }
+
+            // The server serves the last page when the requested one is past
+            // the end (e.g. after a filter change), so follow its page number.
+            st.page = res.page || 1;
+            var rows  = res.rows || [];
+            var total = res.total || 0;
+            var pages = Math.max(1, res.last_page || 1);
+            var startIdx = (st.page - 1) * st.perPage;
+
+            if (total === 0) {
+                body.innerHTML = tableMessageRow(prefix, 'No ATEM cards match the current filters.');
+            } else {
+                var html = '';
+                var buildRowHtml = (prefix === 'hq') ? buildHqRowHtml : buildOutletRowHtml;
+                for (var i = 0; i < rows.length; i++) { html += buildRowHtml(rows[i]); }
+                body.innerHTML = html;
+            }
+            renderPagerFor(prefix, total, pages, startIdx, rows.length);
+        }).catch(function () {
+            if (seq !== st.seq) { return; }
+            body.style.opacity = '';
+            body.innerHTML = tableMessageRow(prefix, '<span class="text-danger" style="font-size:12px;">Network error while loading ATEM cards. Please try again.</span>');
+            $('atem-pager-' + prefix).innerHTML = '';
+        });
     }
 
-    function renderAll() {
-        renderTable('hq', hqRows);
-        renderTable('outlet', outletRows);
-    }
-
-    // Filter changes only re-render the currently visible tab - the other
+    // Filter changes only reload the currently visible tab - the other
     // tab lazily catches up (see the tab 'shown.bs.tab' listener in bind()).
-    function renderActiveTab() {
-        renderTable(activeTab, rowsForTab(activeTab));
+    function renderActiveTab(withCounts) {
+        renderTable(activeTab, withCounts);
+    }
+
+    // Search box: wait for a pause in typing instead of one request per key.
+    var searchTimers = { hq: null, outlet: null };
+    function debouncedRender(prefix) {
+        clearTimeout(searchTimers[prefix]);
+        searchTimers[prefix] = setTimeout(function () { renderTable(prefix); }, 350);
     }
 
     function renderPagerFor(prefix, total, pages, startIdx, shown) {
@@ -1015,36 +873,37 @@
     function bind() {
         // HQ filter bar - always renders the HQ table (it's only visible
         // while that tab is active anyway).
-        ['vf-year', 'vf-month', 'vf-level', 'vf-dept', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to'].forEach(function (id) {
+        ['vf-year', 'vf-month', 'vf-level', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to'].forEach(function (id) {
             var el = $(id);
             if (el) {
                 el.addEventListener('change', function () {
                     presetClosed = false; minLevelId = 0; mineFilter = false;
                     tabState.hq.page = 1;
-                    renderTable('hq', hqRows);
+                    renderTable('hq');
                 });
             }
         });
         $('vf-search').addEventListener('keyup', function () {
             tabState.hq.page = 1;
-            renderTable('hq', hqRows);
+            debouncedRender('hq');
         });
         if ($('vf-overdue')) {
             $('vf-overdue').addEventListener('change', function () {
                 tabState.hq.page = 1;
-                renderTable('hq', hqRows);
+                renderTable('hq');
             });
         }
         $('vf-reset').addEventListener('click', function () {
-            ['vf-year', 'vf-level', 'vf-dept', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
+            ['vf-year', 'vf-level', 'vf-start-date', 'vf-end-date', 'vf-closure-from', 'vf-closure-to', 'vf-search'].forEach(function (id) { var el = $(id); if (el) { el.value = ''; } });
             var monthEl = $('vf-month'); if (monthEl) { monthEl.value = '0'; }
             if ($('vf-overdue')) { $('vf-overdue').checked = false; }
             resetS2Dropdown('vf-issuer', 'All staff');
+            resetS2Dropdown('vf-dept', 'All departments');
             resetStatusDropdown('vf-status');
             resetRoleDropdown('vf-role');
             presetClosed = false; minLevelId = 0; mineFilter = false;
             tabState.hq.page = 1;
-            renderTable('hq', hqRows);
+            renderTable('hq');
         });
 
         // Outlet filter bar - always renders the Outlet table.
@@ -1054,18 +913,18 @@
                 el.addEventListener('change', function () {
                     presetClosed = false; mineFilter = false;
                     tabState.outlet.page = 1;
-                    renderTable('outlet', outletRows);
+                    renderTable('outlet');
                 });
             }
         });
         $('vfo-search').addEventListener('keyup', function () {
             tabState.outlet.page = 1;
-            renderTable('outlet', outletRows);
+            debouncedRender('outlet');
         });
         if ($('vfo-overdue')) {
             $('vfo-overdue').addEventListener('change', function () {
                 tabState.outlet.page = 1;
-                renderTable('outlet', outletRows);
+                renderTable('outlet');
             });
         }
         $('vfo-reset').addEventListener('click', function () {
@@ -1078,7 +937,7 @@
             resetRoleDropdown('vfo-role');
             presetClosed = false; mineFilter = false;
             tabState.outlet.page = 1;
-            renderTable('outlet', outletRows);
+            renderTable('outlet');
         });
 
         var pendingDeleteId = null;
@@ -1129,11 +988,10 @@
                     body: JSON.stringify({ action: 'delete-atem', id: atemId, remarks: remark })
                 }).then(function (r) { return r.json(); }).then(function (res) {
                     if (res && res.success) {
-                        hqRows = hqRows.filter(function (r) { return r.id !== atemId; });
-                        outletRows = outletRows.filter(function (r) { return r.id !== atemId; });
-                        tabState.hq.page = 1; tabState.outlet.page = 1;
-                        updateTabCounts();
-                        renderActiveTab();
+                        // Reload the current page (the server serves the
+                        // previous one if this was its last row) and the
+                        // tab badges.
+                        renderActiveTab(true);
                     } else {
                         var msg = res && res.message ? res.message : 'Failed to delete ATEM.';
                         var msgEl2 = document.getElementById('atem-delete-modal-msg');
@@ -1161,7 +1019,7 @@
                     var col = this.getAttribute('data-col');
                     var st = tabState[prefix];
                     if (st.sortCol === col) { st.sortDir = -st.sortDir; } else { st.sortCol = col; st.sortDir = 1; }
-                    renderTable(prefix, rowsForTab(prefix));
+                    renderTable(prefix);
                 });
             }
 
@@ -1171,14 +1029,14 @@
                     var btn = e.target.closest ? e.target.closest('.atem-pager-btn') : null;
                     if (!btn || btn.disabled) { return; }
                     var p = parseInt(btn.getAttribute('data-page'), 10);
-                    if (p >= 1) { tabState[prefix].page = p; renderTable(prefix, rowsForTab(prefix)); }
+                    if (p >= 1) { tabState[prefix].page = p; renderTable(prefix); }
                 });
 
                 pagerEl.addEventListener('change', function (e) {
                     if (e.target.classList.contains('atem-perpage-select')) {
                         tabState[prefix].perPage = parseInt(e.target.value, 10);
                         tabState[prefix].page = 1;
-                        renderTable(prefix, rowsForTab(prefix));
+                        renderTable(prefix);
                     }
                 });
             }
@@ -1205,20 +1063,18 @@
         }
     }
 
-    // Tab badge counts exclude soft-deleted cards (status 'Deleted') - grade
-    // 4+/SA fetch those rows for the "Deleted" badge/filter inside the table,
-    // but the tab badge itself should only reflect live cards.
-    function updateTabCounts() {
-        if ($('atem-tab-hq-count')) {
-            $('atem-tab-hq-count').textContent = hqRows.filter(function (r) { return r.status !== 'Deleted'; }).length;
-        }
-        if ($('atem-tab-outlet-count')) {
-            $('atem-tab-outlet-count').textContent = outletRows.filter(function (r) { return r.status !== 'Deleted'; }).length;
-        }
+    // Tab badge counts: every card the viewer can see on that tab, excluding
+    // status 'Deleted' (grade 4+/SA still see those rows inside the table,
+    // but the badge only reflects live cards). Counted server-side, filters
+    // do not apply - see AtemSearchController::visibleCount().
+    function updateTabCounts(counts) {
+        if (!counts) { return; }
+        if ($('atem-tab-hq-count'))     { $('atem-tab-hq-count').textContent = counts.hq || 0; }
+        if ($('atem-tab-outlet-count')) { $('atem-tab-outlet-count').textContent = counts.outlet || 0; }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        updateTabCounts();
+        updateTabCounts(CFG.counts);
         rememberActiveTabForCreate();
         buildFilters();
         var params = new URLSearchParams(window.location.search);
@@ -1261,7 +1117,18 @@
                 }
             }
         }
-        if (params.get('dept'))   { var de = $('vf-dept');    if (de) { de.value = params.get('dept'); } }
+        if (params.get('dept')) {
+            // Dashboard deep links pass the department NAME.
+            var wantedDept = params.get('dept');
+            var deptList = CFG.departments || [];
+            for (var dli = 0; dli < deptList.length; dli++) {
+                if (deptList[dli].name === wantedDept) {
+                    if ($('vf-dept-value')) { $('vf-dept-value').value = deptList[dli].id; }
+                    if ($('vf-dept-btn'))   { $('vf-dept-btn').textContent = deptList[dli].name; }
+                    break;
+                }
+            }
+        }
         if (params.get('region')) { var rg = $('vfo-region'); if (rg) { rg.value = params.get('region'); } }
         if (params.get('outlet_id')) {
             // Deep link from the dashboard's Outlet Breakdown table.
@@ -1325,9 +1192,13 @@
         if (isOutletDeepLink) {
             var outletTabBtnEl = $('atem-tab-outlet-btn');
             if (outletTabBtnEl && typeof bootstrap !== 'undefined') {
+                // Its 'shown.bs.tab' handler loads the Outlet table.
                 bootstrap.Tab.getOrCreateInstance(outletTabBtnEl).show();
+                return;
             }
+            activeTab = 'outlet';
         }
-        renderAll();
+        // Only the visible tab is loaded; the other loads when it is opened.
+        renderActiveTab();
     });
 })();

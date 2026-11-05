@@ -86,6 +86,85 @@ if ($_navbar_isLocal && $_navbar_isRealSuperAdmin) {
 <?php } ?>
 
 <?php
+// LOAD TIME row: shown on every environment (production included), but only
+// to one specific staff account (staff.id 5609). $id_user is the logged-in
+// user's real staff.id set by lock_adv.php - not affected by the dev role or
+// "act as issuer" overrides. Separate from the localhost-only dev toolbar
+// above. Read-only: it only reads the browser's own timing data.
+$_navbar_showLoadTime = isset($id_user) && (int)$id_user === 5609;
+if ($_navbar_showLoadTime) {
+?>
+<div id="atem-dev-loadtime"
+    style="background:#0d0d20;color:#d0d0f0;padding:3px 14px;font-size:11px;font-family:monospace;display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-bottom:1px solid #333;">
+    <span style="color:#888;letter-spacing:.05em;">LOAD TIME</span>
+    <span>Server <strong id="atem-dev-lt-server" style="color:#f0c040;">-</strong></span>
+    <span>Page <strong id="atem-dev-lt-page" style="color:#f0c040;">-</strong></span>
+    <span>Data (AJAX) <strong id="atem-dev-lt-data" style="color:#f0c040;">-</strong></span>
+    <span>Slowest request <strong id="atem-dev-lt-slow" style="color:#f0c040;">-</strong></span>
+</div>
+<script>
+// Load timing for staff.id 5609 only (see $_navbar_showLoadTime above).
+// Read-only: uses the browser's Navigation/Resource Timing APIs, no requests.
+//   Server = time to first byte of this page (PHP + any atem-api calls made
+//            server-side before output starts)
+//   Page   = until the window load event (HTML, CSS, JS, images)
+//   Data   = until the last fetch/XHR response finished (e.g. dashboard-stats),
+//            measured from navigation start; updates on later filter changes.
+//            Notification polls (?action=notif-*, every 8 s) are excluded -
+//            they would otherwise keep pushing this number up forever.
+//   Slowest request = longest single fetch/XHR so far, labelled by its
+//            ?action= when present (e.g. "dashboard-stats")
+(function () {
+    if (!window.performance || !performance.getEntriesByType) { return; }
+    function sec(ms) { return (ms / 1000).toFixed(2) + ' s'; }
+    function setText(id, text) {
+        var el = document.getElementById(id);
+        if (el) { el.textContent = text; }
+    }
+
+    function showNavigation() {
+        var nav = performance.getEntriesByType('navigation')[0];
+        if (!nav) { return; }
+        setText('atem-dev-lt-server', sec(nav.responseStart - nav.requestStart));
+        if (nav.loadEventEnd > 0) { setText('atem-dev-lt-page', sec(nav.loadEventEnd)); }
+    }
+
+    var lastDataEnd = 0, slowest = 0, slowestName = '', count = 0;
+    function trackResources(entries) {
+        for (var i = 0; i < entries.length; i++) {
+            var e = entries[i];
+            if (e.initiatorType !== 'fetch' && e.initiatorType !== 'xmlhttprequest') { continue; }
+            var actionMatch = /[?&]action=([^&#]+)/.exec(e.name);
+            var action = actionMatch ? decodeURIComponent(actionMatch[1]) : '';
+            if (action.indexOf('notif-') === 0) { continue; }
+            count++;
+            if (e.responseEnd > lastDataEnd) { lastDataEnd = e.responseEnd; }
+            if (e.duration > slowest) {
+                slowest = e.duration;
+                slowestName = action || e.name.replace(/^.*\//, '').split('?')[0];
+            }
+        }
+        if (count > 0) {
+            setText('atem-dev-lt-data', sec(lastDataEnd) + ' (' + count + ' req)');
+            setText('atem-dev-lt-slow', sec(slowest) + ' ' + slowestName);
+        }
+    }
+
+    if (window.PerformanceObserver) {
+        try {
+            new PerformanceObserver(function (list) { trackResources(list.getEntries()); })
+                .observe({ type: 'resource', buffered: true });
+        } catch (err) {
+            trackResources(performance.getEntriesByType('resource'));
+        }
+    }
+    window.addEventListener('load', function () { setTimeout(showNavigation, 0); });
+    showNavigation();
+})();
+</script>
+<?php } ?>
+
+<?php
 // Get current page to highlight active nav item
 $current_page   = basename(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : '');
 $current_dir    = basename(dirname(isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : ''));
@@ -173,7 +252,7 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
     function apiCall(action, payload) {
         var body = { action: action };
         if (payload) { for (var k in payload) { if (payload.hasOwnProperty(k)) { body[k] = payload[k]; } } }
-        return fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        return fetch(API_URL + '?action=' + encodeURIComponent(action), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
             .then(function (r) { return r.json(); });
     }
 
@@ -272,8 +351,18 @@ $performance_active = ($current_dir == 'staff_performance') ? 'active' : '';
         }
     });
 
-    refresh();
-    setInterval(refresh, POLL_MS);
+    // First check runs shortly after the page finishes loading instead of
+    // immediately: it would otherwise queue ahead of the page's own data
+    // requests (e.g. dashboard-stats) on a single-threaded atem-api.
+    function startPolling() {
+        setTimeout(refresh, 1500);
+        setInterval(refresh, POLL_MS);
+    }
+    if (document.readyState === 'complete') {
+        startPolling();
+    } else {
+        window.addEventListener('load', startPolling);
+    }
 })();
 </script>
 <?php endif; ?>

@@ -73,7 +73,7 @@ The "own cards" clause for grades 2–3 is checked by `staff_id` against `issuer
 
 A non-Outlet-dept grade 3 (e.g. an HQ staff picked into the Area Manager tag-group on one Outlet-type card — stored as an ARCI-shaped member with no `staff_dept_id`/`outlet_id`, see the Area Manager Picker section) gets **no** company-wide Outlet carve-out: they only see their own tagged card(s) via the "own cards" clause above, same as any other ARCI membership. `view.php`'s Outlet tab, which normally collapses away entirely for a non-Outlet-dept grade ≤3 viewer (`$grade1_single_view`), un-collapses whenever the viewer's filtered rows include at least one Outlet-type card, so the tab still surfaces (showing only their own tagged card, not every outlet). `index.php` (dashboard) does the same un-collapse server-side via a one-off `getAtemList()` + `_atem_viewer_is_own()` check (it has no pre-fetched row list of its own — dashboard-stats data is fetched client-side by AJAX). `api.php`'s `list-atems-scoped` and `dashboard-stats` cases already gated the blanket grant on `in_array(1, $userDeptIds, true)` before `view.php`/`index.php`'s tab logic caught up to match.
 
-This scoping is enforced server-side in `view.php` (card list), the `dashboard-stats` handler in `api.php` (dashboard), and `list-atems-scoped` in `api.php` (OKR Link-ATEM picker), and reflected in the department filter dropdowns (`view.php`, `index.php`). It is independent of the Access Control page, where grades 3–5 manage staff across all departments.
+This scoping is enforced server-side for the card list by atem-api's `AtemSearchController` (`POST /api/atem/search`, called by `api.php`'s `view-list` action with the viewer block built by `atemViewViewerParams()` - an EXACT port of the former `view.php` visibility block, since the list is paginated by Laravel and nothing can be filtered out afterwards; `js/view.js` no longer filters, sorts or pages anything itself), the `dashboard-stats` handler (which now only resolves the viewer/filters and formats names: the visibility rule and every count run in atem-api's `DashboardStatsService` via `POST /api/atem/dashboard-stats`, a line-for-line port of the old odb loop) in `api.php` (dashboard), and `list-atems-scoped` in `api.php` (OKR Link-ATEM picker), and reflected in the department filter dropdowns (`view.php`, `index.php`). It is independent of the Access Control page, where grades 3–5 manage staff across all departments.
 
 The browse/statistics scope above is the **list** layer. Two finer layers gate an individual card (both enforced in `edit.php`, dev-override aware via `$atem_permission` / `$_is_superadmin`):
 
@@ -200,7 +200,7 @@ Soft delete only — `atems.deleted_at` is set, the row remains in the DB.
 **Visibility of deleted cards:**
 - Grades 1–3: never see deleted cards (`getAtemList` does not pass `include_deleted`)
 - Grades 4, 5, SuperAdmin: see deleted cards with a red "Deleted" badge on the title and dimmed row opacity; no action buttons except View
-- `view.php` passes `include_deleted=true` to `getAtemList` for grade 4+/SA; backend uses `Atem::withTrashed()` when `?include_deleted=1`
+- `view.php` / `view-list` send scope `all` with `include_deleted` (false with `?no_deleted=1`) for grade 4+/SA; `AtemSearchController` always queries `Atem::withTrashed()` and its visibility rule decides which soft-deleted rows appear
 - Status filter in `view.js` includes "Deleted" naturally since it is a real status from the lookups
 
 **Viewing a deleted card (`edit.php`):**

@@ -457,8 +457,10 @@ function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id =
     // ATEM list cache (getAtemListCached()) is dropped before it is sent.
     // Export audit logging (atem/export-logs) never touches card data, so it
     // keeps the cache - otherwise every export would force the next Staff
-    // Performance load to re-download the full list.
-    if (strtoupper((string)$method) !== 'GET' && $endpoint !== 'atem/export-logs') {
+    // Performance load to re-download the full list. atem/search and
+    // atem/dashboard-stats are POSTs only because their bodies are large
+    // (issuer sort order / outlet-region map); both are read-only.
+    if (strtoupper((string)$method) !== 'GET' && !in_array($endpoint, ['atem/export-logs', 'atem/search', 'atem/dashboard-stats'], true)) {
         clearAtemListCache();
     }
 
@@ -642,14 +644,35 @@ function getApiDataWithJWT($endpoint, $data = null, $method = 'GET', $staff_id =
  */
 function getAtemLookups($staff_id)
 {
+    // Levels/rules/statuses/pillars are near-static config, yet were fetched
+    // from atem-api on every view.php/edit.php/create.php load and twice per
+    // dashboard load (once per tab). Cached for 5 minutes in the shared ATEM
+    // cache (same file prefix, so clearAtemListCache() - run on every write
+    // through getApiDataWithJWT() - drops it too).
+    $cachePath = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'odb_atem_list_cache_lookups.json';
+    if (is_file($cachePath) && (time() - (int)@filemtime($cachePath)) < 300) {
+        $cached = json_decode((string)@file_get_contents($cachePath), true);
+        if (is_array($cached)) {
+            return array('success' => true, 'data' => $cached);
+        }
+    }
+
     $result = getApiDataWithJWT('atem/lookups', null, 'GET', $staff_id);
     $httpCode = $result['httpCode'];
     $decoded = json_decode($result['response'], true);
 
     if ($httpCode == 200) {
+        $data = isset($decoded['data']) ? $decoded['data'] : $decoded;
+        if (is_array($data)) {
+            // Temp file + rename so a concurrent reader never sees a partial file.
+            $tmp = $cachePath . '.' . getmypid() . '.tmp';
+            if (@file_put_contents($tmp, json_encode($data)) !== false && !@rename($tmp, $cachePath)) {
+                @unlink($tmp);
+            }
+        }
         return array(
             'success' => true,
-            'data' => isset($decoded['data']) ? $decoded['data'] : $decoded
+            'data' => $data
         );
     } else {
         return array(
@@ -786,10 +809,341 @@ function _atem_viewer_is_own($item, $viewerStaffId)
     return false;
 }
 
+/**
+ * Builds the getAtemList() $extra_params that narrow the atem-api fetch to
+ * roughly what one viewer can see (implemented server-side by
+ * AtemController::applyViewerScope() in atem-api).
+ *
+ * Performance pre-filter only: callers must still run their own grade-based
+ * filtering on the result, which stays the authoritative visibility rule.
+ * The scope returned here must therefore always be equal to or wider than
+ * that filtering - never narrower.
+ *
+ * - SuperAdmin, grade 4/5 (and grade 0): [] - unscoped full list.
+ * - Grade 1, 2, non-Area-Manager grade 6: own cards (issuer or ARCI).
+ * - Grade 6 Area Manager: own cards + Outlet-type cards on their outlet(s).
+ * - Grade 3: own cards + issuer/ARCI dept overlap, + every Outlet-type card
+ *   when the viewer is in the Outlet department (dept 1).
+ *
+ * @param int[] $deptIds   viewer's staff.department ids
+ * @param int[] $outletIds viewer's staff.outlet ids
+ */
+function atemListScopeParams(int $perm, bool $isSuperAdmin, bool $isAreaManager, int $staffId, array $deptIds, array $outletIds): array
+{
+    if ($isSuperAdmin || $staffId <= 0) {
+        return [];
+    }
+
+    if (in_array($perm, [1, 2], true) || ($perm === 6 && !$isAreaManager)) {
+        return ['staff_id' => (string)$staffId];
+    }
+
+    if ($perm === 6 && $isAreaManager) {
+        $params = ['staff_id' => (string)$staffId, 'requester_scope' => '6am'];
+        if (!empty($outletIds)) {
+            $params['requester_outlet_ids'] = implode(',', $outletIds);
+        }
+        return $params;
+    }
+
+    if ($perm === 3) {
+        $params = ['staff_id' => (string)$staffId, 'requester_scope' => '3'];
+        if (!empty($deptIds)) {
+            $params['requester_dept_ids'] = implode(',', $deptIds);
+        }
+        if (in_array(1, $deptIds, true)) {
+            $params['requester_outlet_dept_viewer'] = '1';
+        }
+        return $params;
+    }
+
+    return [];
+}
+
+/**
+ * Converts a period (year + optional month list from atem_period_months())
+ * into inclusive Y-m-d bounds for atem-api's period_from/period_to params.
+ * Non-contiguous months (e.g. Q1 + Q3) widen to the envelope (Jan..Sep) -
+ * a superset, which is fine since callers re-apply the exact month check.
+ * Returns null when no year is set: month-only filters match that month in
+ * EVERY year, which a single date range cannot express, so no period
+ * pre-filter is sent at all in that case.
+ *
+ * @param int[]|null $months
+ * @return array{0: string, 1: string}|null
+ */
+function atemPeriodRange(int $year, ?array $months): ?array
+{
+    if ($year <= 0) {
+        return null;
+    }
+    if ($months === null || $months === []) {
+        // [] only happens for a month outside the selected quarter(s), which
+        // matches nothing - the exact check still runs, so the whole year is
+        // a safe (if wider) bound here.
+        return [sprintf('%04d-01-01', $year), sprintf('%04d-12-31', $year)];
+    }
+    $minMonth = min($months);
+    $maxMonth = max($months);
+    $lastDay  = (int)date('t', mktime(0, 0, 0, $maxMonth, 1, $year));
+    return [sprintf('%04d-%02d-01', $year, $minMonth), sprintf('%04d-%02d-%02d', $year, $maxMonth, $lastDay)];
+}
+
+/**
+ * atem-api period pre-filter params. $mode is 'closure' (Staff Performance /
+ * payout: closure_date strictly inside the period) or 'dashboard' (status-
+ * aware superset, see AtemController::applyDashboardPeriod()). 'closure' is
+ * always sent, even with no year, because those callers never count a card
+ * without a closure_date.
+ *
+ * @param int[]|null $months
+ */
+function atemPeriodParams(string $mode, int $year, ?array $months): array
+{
+    $range = atemPeriodRange($year, $months);
+    if ($range === null) {
+        return $mode === 'closure' ? ['period_mode' => 'closure'] : [];
+    }
+    return ['period_mode' => $mode, 'period_from' => $range[0], 'period_to' => $range[1]];
+}
+
+/**
+ * Viewer grade for a direct AJAX request to api.php (header.php has not run,
+ * so $atem_permission / $_is_superadmin are unset). Mirrors dashboard-stats'
+ * resolution: page-provided values first, then the dev role override (never
+ * SuperAdmin), then the viewer's own staff row.
+ *
+ * @return array{0: int, 1: bool} [grade, isSuperAdmin]
+ */
+function atemResolveViewerGrade($conn, int $staffId): array
+{
+    global $atem_permission, $_is_superadmin;
+    if (isset($_is_superadmin) && $_is_superadmin) {
+        return [isset($atem_permission) ? (int)$atem_permission : 0, true];
+    }
+    if (isset($atem_permission)) {
+        return [(int)$atem_permission, false];
+    }
+    if (isset($_SESSION['atem_dev_role_override'])) {
+        return [(int)$_SESSION['atem_dev_role_override'], false];
+    }
+    if ($staffId > 0) {
+        $res = mysqli_query($conn, "SELECT grade, atem FROM staff WHERE id = " . $staffId . " AND recycle != 1");
+        if ($res && ($row = mysqli_fetch_assoc($res))) {
+            return [(int)$row['grade'], (int)$row['atem'] === 1];
+        }
+    }
+    return [0, false];
+}
+
+/**
+ * True when the viewer holds the Area Manager position (status_rym = 134) -
+ * only grade 6 uses it (outlet carve-out), same check as view.php/dashboard.
+ */
+function atemViewerIsAreaManager($conn, int $staffId): bool
+{
+    if ($staffId <= 0) {
+        return false;
+    }
+    $res = mysqli_query($conn, "SELECT status_rym FROM staff WHERE id = " . $staffId . " AND recycle != 1");
+    return $res && ($row = mysqli_fetch_assoc($res)) && (int)$row['status_rym'] === 134;
+}
+
+/** Parses a comma-separated staff.department / staff.outlet value. @return int[] */
+function atemParseIdCsv(?string $csv): array
+{
+    $ids = [];
+    foreach (explode(',', (string)$csv) as $part) {
+        $part = (int)trim($part);
+        if ($part > 0) { $ids[] = $part; }
+    }
+    return array_values(array_unique($ids));
+}
+
+/**
+ * EXACT viewer block for atem-api's POST /api/atem/search (view.php's card
+ * list). Unlike atemListScopeParams() this is not a pre-filter - atem-api
+ * applies view.php's full grade-based visibility rule with it (see
+ * AtemSearchController::applyVisibility()):
+ *   SuperAdmin, grade 4/5        -> 'all' (soft-deleted rows unless $noDeleted)
+ *   grade 1/2, non-AM grade 6    -> 'own'
+ *   grade 6 Area Manager         -> '6am' (+ Outlet cards on own outlets)
+ *   grade 3                      -> '3'   (+ dept overlap, Outlet-dept carve-out)
+ * Any other grade falls back to 'own' (the narrowest scope).
+ */
+function atemViewViewerParams(int $perm, bool $isSuperAdmin, bool $isAreaManager, int $staffId, array $deptIds, array $outletIds, bool $noDeleted): array
+{
+    if ($isSuperAdmin || in_array($perm, [4, 5], true)) {
+        return ['staff_id' => $staffId, 'scope' => 'all', 'include_deleted' => !$noDeleted];
+    }
+    if ($perm === 6 && $isAreaManager) {
+        return ['staff_id' => $staffId, 'scope' => '6am', 'outlet_ids' => array_values($outletIds)];
+    }
+    if ($perm === 3) {
+        return [
+            'staff_id'           => $staffId,
+            'scope'              => '3',
+            'dept_ids'           => array_values($deptIds),
+            'outlet_dept_viewer' => in_array(1, $deptIds, true),
+        ];
+    }
+    return ['staff_id' => $staffId, 'scope' => 'own'];
+}
+
+/**
+ * Turns atem-api card rows (POST /api/atem/search) into view.php's display
+ * rows: resolves issuer/ARCI names, positions, departments, outlet codes and
+ * regions from ODB by id (atem-api stores ids only). Names are looked up only
+ * for the staff on these rows, not the whole staff table.
+ */
+function atemBuildViewRows($conn, array $rows, int $viewerStaffId): array
+{
+    $staffIds = [];
+    foreach ($rows as $a) {
+        if (!empty($a['issuer_staff_id'])) { $staffIds[(int)$a['issuer_staff_id']] = true; }
+        foreach (($a['arci'] ?? []) as $m) {
+            if (!empty($m['staff_id'])) { $staffIds[(int)$m['staff_id']] = true; }
+        }
+    }
+
+    $staffNames = [];
+    $staffPositions = [];
+    if (!empty($staffIds)) {
+        $idList = implode(',', array_map('intval', array_keys($staffIds)));
+        $res = mysqli_query($conn, "SELECT s.id, s.nama_staff, p.position_name
+                                    FROM staff s
+                                    LEFT JOIN position_rymnet p ON p.id = s.status_rym
+                                    WHERE s.recycle != 1 AND s.id IN ($idList)");
+        while ($res && ($r = mysqli_fetch_assoc($res))) {
+            $staffNames[(int)$r['id']]     = $r['nama_staff'];
+            $staffPositions[(int)$r['id']] = $r['position_name'];
+        }
+    }
+
+    $deptNames = [];
+    $res = mysqli_query($conn, "SELECT id, depart_name FROM staff_department");
+    while ($res && ($r = mysqli_fetch_assoc($res))) {
+        $deptNames[(int)$r['id']] = $r['depart_name'];
+    }
+
+    $outletNames = [];
+    $outletRegionIds = [];
+    $res = mysqli_query($conn, "SELECT id, code, regional_id FROM outlet");
+    while ($res && ($r = mysqli_fetch_assoc($res))) {
+        $outletNames[(int)$r['id']]     = $r['code'];
+        $outletRegionIds[(int)$r['id']] = (int)$r['regional_id'];
+    }
+    $regionNames = [];
+    $res = mysqli_query($conn, "SELECT id, regional FROM outlet_regional");
+    while ($res && ($r = mysqli_fetch_assoc($res))) {
+        $regionNames[(int)$r['id']] = $r['regional'];
+    }
+
+    $out = [];
+    foreach ($rows as $a) {
+        $issuerId     = (int)($a['issuer_staff_id'] ?? 0);
+        $deptId       = (int)($a['staff_dept_id'] ?? 0);
+        // Outlet-type ATEMs show Position for Issuer/Accountable instead of Department.
+        $isOutletType = ((int)($a['atem_type'] ?? 1) === 2);
+        $level        = !empty($a['level_structure']) ? $a['level_structure'] : null;
+        $pillar       = !empty($a['pillar']) ? $a['pillar'] : null;
+        $status       = !empty($a['status']) ? $a['status'] : null;
+
+        $outletCodes = [];
+        $outletIds   = [];
+        $rowRegions  = [];
+        foreach (($a['outlets'] ?? []) as $o) {
+            $oId = (int)($o['outlet_id'] ?? 0);
+            if ($oId) {
+                $outletCodes[] = $outletNames[$oId] ?? ('Outlet #' . $oId);
+                $outletIds[]   = $oId;
+                $rId = $outletRegionIds[$oId] ?? 0;
+                if ($rId && isset($regionNames[$rId])) { $rowRegions[] = $regionNames[$rId]; }
+            }
+        }
+
+        $arciIds       = [];
+        $arciDeptNames = [];
+        $userRoles     = [];
+        $accountable   = [];
+        foreach (($a['arci'] ?? []) as $m) {
+            if (empty($m['staff_id'])) { continue; }
+            $mId = (int)$m['staff_id'];
+            $arciIds[] = $mId;
+            $mDeptId = (int)($m['staff_dept_id'] ?? 0);
+            if ($mDeptId && isset($deptNames[$mDeptId])) { $arciDeptNames[] = $deptNames[$mDeptId]; }
+            if ($mId === $viewerStaffId && !empty($m['role'])) { $userRoles[] = $m['role']; }
+            if (($m['role'] ?? '') === 'A') {
+                $accountable[] = [
+                    'name' => $staffNames[$mId] ?? ('Staff #' . $mId),
+                    // Outlet-type ATEM -> show position; HQ-type ATEM -> show department.
+                    'dept' => $isOutletType
+                        ? (!empty($staffPositions[$mId]) ? $staffPositions[$mId] : '-')
+                        : (($mDeptId && isset($deptNames[$mDeptId])) ? $deptNames[$mDeptId] : '-'),
+                ];
+            }
+        }
+
+        $statusValue = ($status && isset($status['value']) && $status['value'] !== '') ? $status['value'] : 'Draft';
+        $out[] = [
+            'id'              => (int)($a['id'] ?? 0),
+            'title'           => $a['title'] ?? '',
+            'atem_type'       => (int)($a['atem_type'] ?? 1),
+            'outlet_codes'    => $outletCodes,
+            'outlet_ids'      => $outletIds,
+            'region_names'    => array_values(array_unique($rowRegions)),
+            'issuer_name'     => $staffNames[$issuerId] ?? ($issuerId ? ('Staff #' . $issuerId) : '-'),
+            // Outlet-type ATEM -> Issuer's position; HQ-type ATEM -> Issuer's department.
+            'department_name' => $isOutletType
+                ? (!empty($staffPositions[$issuerId]) ? $staffPositions[$issuerId] : '-')
+                : ($deptNames[$deptId] ?? '-'),
+            'department_id'   => $deptId,
+            'level_label'     => $level['level'] ?? '',
+            'system_name'     => $level['system_name'] ?? '',
+            'pillar_name'     => $pillar['name'] ?? '',
+            // A NULL atem_status_id is surfaced as Draft (same as atem-api's
+            // AtemSearchController::STATUS_EXPR used for filtering/sorting).
+            'status'          => $statusValue,
+            'start_date'      => $a['start_date'] ?? '',
+            'end_date'        => $a['end_date'] ?? '',
+            'final_due_date'  => $a['final_due_date'] ?? '',
+            'closure_date'    => $a['closure_date'] ?? '',
+            'extended_date_1' => $a['extended_date_1'] ?? '',
+            'issuer_staff_id' => $issuerId,
+            'arci_staff_ids'  => $arciIds,
+            'arci_dept_names' => array_values(array_unique($arciDeptNames)),
+            'user_arci_roles' => $userRoles,
+            'accountable'     => $accountable,
+            'is_extended'     => !empty($a['is_extended']),
+            // Suspended is keyed off status alone (not just deleted_at) so a
+            // suspended card is always locked down even if deleted_at drifted.
+            'is_deleted'      => (!empty($a['deleted_at']) || $statusValue === 'Suspended'),
+            'deleted_at'      => $a['deleted_at'] ?? null,
+            'payout_status'   => $a['payout_status'] ?? null,
+        ];
+    }
+    return $out;
+}
+
+/** POST /api/atem/search wrapper. @return array decoded response (success/data/total/...) */
+function atemSearch(array $body, $staff_id): array
+{
+    $api = getApiDataWithJWT('atem/search', $body, 'POST', $staff_id);
+    $decoded = json_decode((string)$api['response'], true);
+    if ((int)$api['httpCode'] !== 200 || !is_array($decoded) || empty($decoded['success'])) {
+        return [
+            'success' => false,
+            'message' => is_array($decoded) && isset($decoded['message']) ? $decoded['message'] : 'Failed to retrieve ATEM list',
+        ];
+    }
+    return $decoded;
+}
+
 // $extra_params (optional) lets a caller narrow the atem-api query itself -
-// e.g. view.php passes a staff_id/requester_scope combo so grade 1/2/6/3
-// viewers only fetch the subset of cards they can actually see, instead of
-// the full company-wide dataset (see view.php's $_atem_list_scope_params).
+// see atemListScopeParams() / atemPeriodParams() and atem-api's
+// AtemController::applyViewerScope() / applyListFilters(). Used by view.php and dashboard-stats so
+// grade 1/2/3/6 viewers only fetch the subset of cards they can actually see,
+// instead of the full company-wide dataset.
 // Defaults to empty so every pre-existing caller keeps its current
 // unscoped/full-fetch behavior unchanged.
 function getAtemList($staff_id, $include_deleted = false, $extra_params = array())
@@ -816,35 +1170,42 @@ function getAtemList($staff_id, $include_deleted = false, $extra_params = array(
 }
 
 /**
- * Full ATEM list cache file. Kept outside the web root (system temp dir) since
- * it holds every card's data.
+ * Slim ATEM list cache files. Kept outside the web root (system temp dir)
+ * since they hold card data. One file per distinct parameter set (e.g. per
+ * period pre-filter), all sharing the same prefix so clearAtemListCache()
+ * can drop every variant at once.
  */
-function atemListCachePath(): string
+function atemListCachePath(array $params = []): string
 {
-    return rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'odb_atem_list_cache.json';
+    $suffix = empty($params) ? '' : '_' . md5(http_build_query($params));
+    return rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'odb_atem_list_cache' . $suffix . '.json';
 }
 
 function clearAtemListCache(): void
 {
-    $path = atemListCachePath();
-    if (is_file($path)) {
-        @unlink($path);
+    $files = glob(rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'odb_atem_list_cache*.json');
+    foreach ($files ?: [] as $path) {
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 }
 
 /**
  * Slim ATEM list (atem?slim=1) with a short file cache - for
- * getStaffPerformanceLive() only, since slim rows omit most card fields. The unfiltered list is the same for
- * every caller (the API is reached through one shared service account), is
- * several MB of JSON, and takes seconds to build - Staff Performance used to
- * re-download it on every filter change even though only the PHP-side
- * period/status/dept filtering differed. Any non-GET call through
- * getApiDataWithJWT() clears the cache, so writes made from this app show up
- * immediately; changes made elsewhere appear within $ttl seconds.
+ * getStaffPerformanceLive() only, since slim rows omit most card fields.
+ * $params are extra atem-api pre-filters (e.g. atemPeriodParams('closure',
+ * ...)); each distinct set is cached separately. The list is the same for
+ * every caller with the same params (the API is reached through one shared
+ * service account), so one Staff Performance request (HQ + Outlet passes)
+ * and quick repeat filter changes share one download. Any non-GET call
+ * through getApiDataWithJWT() clears every cached variant, so writes made
+ * from this app show up immediately; changes made elsewhere appear within
+ * $ttl seconds.
  */
-function getAtemListCached($staff_id, int $ttl = 60): array
+function getAtemListCached($staff_id, int $ttl = 60, array $params = []): array
 {
-    $path = atemListCachePath();
+    $path = atemListCachePath($params);
     if (is_file($path) && (time() - (int)@filemtime($path)) < $ttl) {
         $cached = json_decode((string)@file_get_contents($path), true);
         if (is_array($cached)) {
@@ -853,9 +1214,9 @@ function getAtemListCached($staff_id, int $ttl = 60): array
     }
 
     // ?slim=1 trims the payload to what getStaffPerformanceLive() reads (the
-    // only consumer of this cache). An atem-api without slim support simply
-    // ignores the param and returns the full list, which is a superset.
-    $api = getApiDataWithJWT('atem?slim=1', null, 'GET', $staff_id);
+    // only consumer of this cache). An atem-api without slim/filter support
+    // simply ignores the params and returns the full list, which is a superset.
+    $api = getApiDataWithJWT('atem?' . http_build_query(['slim' => 1] + $params), null, 'GET', $staff_id);
     $decoded = json_decode((string)$api['response'], true);
     $result = ((int)$api['httpCode'] === 200)
         ? ['success' => true, 'data' => $decoded['data'] ?? []]
@@ -1933,6 +2294,12 @@ function downloadAtemAttachment($id, $att_id, $staff_id)
 // (whole year). $quarter is either a single quarter number (legacy callers)
 // or an array of quarter numbers (Quarter is now a multi-select checkbox
 // filter, like Status) - an array unions the months of every quarter given.
+// When BOTH a month and quarter(s) are given (the default on the dashboard and
+// Staff Performance: current month + current quarter), the result is their
+// intersection - the month only if it falls inside a selected quarter,
+// otherwise an empty array (matches nothing). This keeps the counts in line
+// with the visible Month filter and with view.php drill-down links, which
+// filter by month alone when a month is set.
 function atem_period_months($month, $quarter)
 {
     $qmap = array(1 => array(1, 2, 3), 2 => array(4, 5, 6), 3 => array(7, 8, 9), 4 => array(10, 11, 12));
@@ -1943,7 +2310,11 @@ function atem_period_months($month, $quarter)
             if (isset($qmap[$q])) { $months = array_merge($months, $qmap[$q]); }
         }
         if (!empty($months)) {
-            return array_values(array_unique($months));
+            $months = array_values(array_unique($months));
+            if ($month > 0) {
+                return in_array((int)$month, $months, true) ? [(int)$month] : [];
+            }
+            return $months;
         }
     }
     if ($month > 0) {
@@ -2231,8 +2602,16 @@ function getStaffPerformanceLive($month, $year, $quarter, $selectedStatuses, $st
 {
     // $prefetchedList lets a caller that needs several atem_type passes (HQ +
     // Outlet) reuse one getAtemList() result instead of re-fetching the full,
-    // unpaged ATEM list from atem-api on every pass.
-    $listResult = $prefetchedList ?? getAtemList($staff_id);
+    // unpaged ATEM list from atem-api on every pass. Without one, atem-api
+    // pre-filters to this pass's type/outlet and to cards closed inside the
+    // period - every count below requires a closure_date in the period.
+    if ($prefetchedList === null) {
+        $_spl_params = atemPeriodParams('closure', (int)$year, atem_period_months($month, $quarter));
+        if ((int)$filterAtemType > 0) { $_spl_params['atem_type'] = (int)$filterAtemType; }
+        if ((int)$filterOutletId > 0) { $_spl_params['outlet_ids'] = (string)(int)$filterOutletId; }
+        $prefetchedList = getAtemList($staff_id, false, $_spl_params);
+    }
+    $listResult = $prefetchedList;
     if (!$listResult['success']) {
         return array('success' => false, 'message' => 'Failed to load ATEM data', 'data' => array());
     }
@@ -2506,7 +2885,13 @@ function getOkrPerformanceLive($conn, $month, $year, $quarter, $selectedStatuses
  */
 function resolvePayoutAtemIds($month, $year, $quarter, $selectedStatuses, $staff_id, $filterAtemType, $filterOutletId, $targetStaffIds)
 {
-    $listResult = getAtemList($staff_id);
+    // atem-api pre-filters to this type/outlet and to cards closed inside the
+    // period (the loop below requires all three); slim rows carry every field
+    // read here (status, closure_date, issuer, area managers, ARCI, outlets).
+    $_rpa_params = ['slim' => 1] + atemPeriodParams('closure', (int)$year, atem_period_months($month, $quarter));
+    if ((int)$filterAtemType > 0) { $_rpa_params['atem_type'] = (int)$filterAtemType; }
+    if ((int)$filterOutletId > 0) { $_rpa_params['outlet_ids'] = (string)(int)$filterOutletId; }
+    $listResult = getAtemList($staff_id, false, $_rpa_params);
     if (!$listResult['success']) {
         return array('success' => false, 'message' => 'Failed to load ATEM data', 'ids' => array());
     }
@@ -2802,6 +3187,25 @@ if (!defined('API_JWT_INCLUDED')) {
         exit;
     }
 
+    // Read-only actions release the PHP session lock before their (slow)
+    // atem-api round trips. PHP file sessions are exclusive: while one request
+    // holds the lock, every other request from the same browser waits - so the
+    // dashboard's HQ + Outlet dashboard-stats calls and the navbar's
+    // notification poll used to run one after another instead of in parallel.
+    // The JWT is resolved first because getAuthToken() may write it to the
+    // session. $_SESSION stays readable after session_write_close() (e.g. the
+    // dev role override); writes after this point are not persisted, and none
+    // of these actions make any.
+    $_readOnlyActions = [
+        'lookups', 'list-atems', 'list-atems-scoped', 'dashboard-stats', 'view-list',
+        'get-atem', 'reflink-list', 'attachment-list', 'progress-list',
+        'chat-list', 'notif-list', 'get-staff-atem-list', 'get-performance-list',
+    ];
+    if (in_array($action, $_readOnlyActions, true)) {
+        getAuthToken($staff_id);
+        session_write_close();
+    }
+
     if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action) {
             switch ($action) {
@@ -2824,6 +3228,123 @@ if (!defined('API_JWT_INCLUDED')) {
                     $response = getAtemList($staff_id);
                     break;
 
+                case 'view-list':
+                    // One page of view.php's card list, filtered/sorted/paginated
+                    // by atem-api (POST /api/atem/search). The viewer's grade
+                    // scope is resolved here from the session - never taken from
+                    // the request - and every name-based filter control is mapped
+                    // to ids before it is sent.
+                    $vlStaffId = (int)$staff_id;
+                    [$vlPerm, $vlIsSA] = atemResolveViewerGrade($conn, $vlStaffId);
+                    $vlDeptIds   = atemParseIdCsv($department);
+                    $vlOutletIds = atemParseIdCsv($outlet);
+                    $vlIsAM      = ($vlPerm === 6 && !$vlIsSA) ? atemViewerIsAreaManager($conn, $vlStaffId) : false;
+                    $vlViewer    = atemViewViewerParams($vlPerm, $vlIsSA, $vlIsAM, $vlStaffId, $vlDeptIds, $vlOutletIds, !empty($jsonData['no_deleted']));
+                    $vlType      = (($jsonData['tab'] ?? 'hq') === 'outlet') ? 2 : 1;
+
+                    $vlIn = (isset($jsonData['filters']) && is_array($jsonData['filters'])) ? $jsonData['filters'] : [];
+                    $vlFilters = [
+                        'year'         => (int)($vlIn['year'] ?? 0),
+                        'month'        => (int)($vlIn['month'] ?? 0),
+                        'issuer_id'    => (int)($vlIn['issuer_id'] ?? 0),
+                        'start_date'   => (string)($vlIn['start_date'] ?? ''),
+                        'end_date'     => (string)($vlIn['end_date'] ?? ''),
+                        'closure_from' => (string)($vlIn['closure_from'] ?? ''),
+                        'closure_to'   => (string)($vlIn['closure_to'] ?? ''),
+                        'term'         => mb_substr((string)($vlIn['term'] ?? ''), 0, 200),
+                        'overdue'      => !empty($vlIn['overdue']),
+                        'today'        => (new DateTime('now', new DateTimeZone('Asia/Kuala_Lumpur')))->format('Y-m-d'),
+                        'preset_closed' => !empty($vlIn['preset_closed']),
+                        'mine'         => !empty($vlIn['mine']),
+                    ];
+                    // Status: none ticked = nothing; some = only those; all = no filter.
+                    if (isset($vlIn['statuses']) && is_array($vlIn['statuses'])) {
+                        $vlStatuses = array_values(array_map('strval', $vlIn['statuses']));
+                        $vlStatusTotal = (int)($vlIn['statuses_total'] ?? 0);
+                        if (empty($vlStatuses) || count($vlStatuses) < $vlStatusTotal) {
+                            $vlFilters['statuses'] = $vlStatuses;
+                        }
+                    }
+                    if (isset($vlIn['roles']) && is_array($vlIn['roles'])) {
+                        $vlFilters['roles'] = array_values(array_map('strval', $vlIn['roles']));
+                    }
+                    // Level / min level: view.js sends the matching level labels.
+                    if (isset($vlIn['level_labels']) && is_array($vlIn['level_labels'])) {
+                        $vlFilters['level_labels'] = array_values(array_map('strval', $vlIn['level_labels']));
+                    }
+                    // Department filter is by name (view.php's dropdown lists names):
+                    // every department id carrying that name matches.
+                    $vlDeptName = trim((string)($vlIn['dept'] ?? ''));
+                    if ($vlDeptName !== '') {
+                        $vlFilters['dept_ids'] = [];
+                        $vlDeptRes = mysqli_query($conn, "SELECT id FROM staff_department WHERE depart_name = '" . mysqli_real_escape_string($conn, $vlDeptName) . "'");
+                        while ($vlDeptRes && ($vlRow = mysqli_fetch_assoc($vlDeptRes))) {
+                            $vlFilters['dept_ids'][] = (int)$vlRow['id'];
+                        }
+                    }
+                    // Outlet filter only applies to an outlet the viewer's own
+                    // dropdown offers (grade 1/2/6 see only their own outlets) -
+                    // view.js used to drop an unknown outlet id the same way.
+                    $vlOutletId = (int)($vlIn['outlet_id'] ?? 0);
+                    if ($vlOutletId > 0) {
+                        $vlOutletScoped = in_array($vlPerm, [1, 2, 6], true) && !$vlIsSA;
+                        $vlOutletExists = false;
+                        $vlOutRes = mysqli_query($conn, "SELECT id FROM outlet WHERE id = " . $vlOutletId);
+                        if ($vlOutRes && mysqli_fetch_assoc($vlOutRes)) { $vlOutletExists = true; }
+                        if ($vlOutletExists && (!$vlOutletScoped || in_array($vlOutletId, $vlOutletIds, true))) {
+                            $vlFilters['outlet_id'] = $vlOutletId;
+                        }
+                    }
+                    // Region filter is by name -> outlets in every region of that name.
+                    $vlRegionName = trim((string)($vlIn['region'] ?? ''));
+                    if ($vlRegionName !== '') {
+                        $vlFilters['region_outlet_ids'] = [];
+                        $vlRegRes = mysqli_query($conn, "SELECT o.id FROM outlet o JOIN outlet_regional r ON r.id = o.regional_id WHERE r.regional = '" . mysqli_real_escape_string($conn, $vlRegionName) . "'");
+                        while ($vlRegRes && ($vlRow = mysqli_fetch_assoc($vlRegRes))) {
+                            $vlFilters['region_outlet_ids'][] = (int)$vlRow['id'];
+                        }
+                    }
+
+                    $vlSortCols = ['id', 'title', 'issuer_name', 'level_label', 'pillar_name', 'start_date', 'end_date', 'closure_date', 'status'];
+                    $vlSortCol  = (string)($jsonData['sort']['col'] ?? '');
+                    $vlSort = [
+                        'col' => in_array($vlSortCol, $vlSortCols, true) ? $vlSortCol : '',
+                        'dir' => (($jsonData['sort']['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc',
+                    ];
+                    // Issuer names live in ODB, so atem-api sorts by this id order.
+                    if ($vlSort['col'] === 'issuer_name') {
+                        $vlSort['issuer_order'] = [];
+                        $vlOrdRes = mysqli_query($conn, "SELECT id FROM staff WHERE recycle != 1 ORDER BY nama_staff ASC, id ASC");
+                        while ($vlOrdRes && ($vlRow = mysqli_fetch_assoc($vlOrdRes))) {
+                            $vlSort['issuer_order'][] = (int)$vlRow['id'];
+                        }
+                    }
+
+                    $vlResult = atemSearch([
+                        'viewer'      => $vlViewer,
+                        'atem_type'   => $vlType,
+                        'filters'     => $vlFilters,
+                        'sort'        => $vlSort,
+                        'page'        => max(1, (int)($jsonData['page'] ?? 1)),
+                        'per_page'    => (int)($jsonData['per_page'] ?? 30),
+                        'with_counts' => !empty($jsonData['with_counts']),
+                    ], $staff_id);
+
+                    if (empty($vlResult['success'])) {
+                        $response = ['success' => false, 'message' => $vlResult['message'] ?? 'Failed to load ATEM cards.'];
+                        break;
+                    }
+                    $response = [
+                        'success'   => true,
+                        'rows'      => atemBuildViewRows($conn, $vlResult['data'] ?? [], $vlStaffId),
+                        'total'     => (int)($vlResult['total'] ?? 0),
+                        'page'      => (int)($vlResult['page'] ?? 1),
+                        'per_page'  => (int)($vlResult['per_page'] ?? 30),
+                        'last_page' => (int)($vlResult['last_page'] ?? 1),
+                        'counts'    => $vlResult['counts'] ?? null,
+                    ];
+                    break;
+
                 case 'list-atems-scoped':
                     // Same raw fetch as 'list-atems', but filtered to what the
                     // current viewer could actually open in ATEM itself -
@@ -2833,12 +3354,6 @@ if (!defined('API_JWT_INCLUDED')) {
                     // search/pick an ATEM card (e.g. OKR's Link ATEM picker) so
                     // a grade-1/2/3 user can't browse cards outside what
                     // they're actually allowed to see.
-                    $scopedListResult = getAtemList($staff_id);
-                    if (!$scopedListResult['success']) {
-                        $response = array('success' => false, 'message' => 'Failed to load ATEM data', 'data' => array());
-                        break;
-                    }
-                    $scopedItems = $scopedListResult['data'];
 
                     // $_scopedIsSA is tracked separately from $_scopedPerm - a real
                     // SuperAdmin (staff.atem = 1) used to get folded into the same
@@ -2889,6 +3404,21 @@ if (!defined('API_JWT_INCLUDED')) {
                             $_scopedIsAreaManager = ((int)$_scopedAmRow['status_rym'] === 134);
                         }
                     }
+
+                    // Fetched only after the viewer's grade/depts/outlets are
+                    // resolved, so atem-api returns just their visible subset
+                    // (pre-filter only - the role filtering below stays
+                    // authoritative). Grade 4/5/SuperAdmin stay unscoped.
+                    $scopedListResult = getAtemList(
+                        $staff_id,
+                        false,
+                        atemListScopeParams($_scopedPerm, $_scopedIsSA, $_scopedIsAreaManager, $_scopedUserStaff, $_scopedUserDeptIds, $_scopedUserOutletIds)
+                    );
+                    if (!$scopedListResult['success']) {
+                        $response = array('success' => false, 'message' => 'Failed to load ATEM data', 'data' => array());
+                        break;
+                    }
+                    $scopedItems = $scopedListResult['data'];
 
                     if ($_scopedIsSA) {
                         // SuperAdmin: no role-based filtering.
@@ -2982,13 +3512,6 @@ if (!defined('API_JWT_INCLUDED')) {
                     break;
 
                 case 'dashboard-stats':
-                    $listResult = getAtemList($staff_id, true);
-                    if (!$listResult['success']) {
-                        $response = array('success' => false, 'message' => 'Failed to load ATEM data');
-                        break;
-                    }
-                    $items = $listResult['data'];
-
                     // Role-based visibility — mirrors view.php server-side filtering.
                     // $atem_permission is set when api.php is included from a page,
                     // but NOT in direct-access mode (how the dashboard calls it), so
@@ -3052,71 +3575,6 @@ if (!defined('API_JWT_INCLUDED')) {
                         }
                     }
 
-                    if ($_isSA) {
-                        // SuperAdmin: no role-based filtering.
-                    } elseif ($_perm === 1 || $_perm === 2 || $_perm === 6) {
-                        // Grade 1, Grade 2, and a real (non-SA) grade-6 (Flexi KPI)
-                        // staff record: own cards only - no department overlap scope.
-                        // Mirrors view.php's own-only treatment of grade 2. Exception:
-                        // grade 6 Area Managers (status_rym = 134) additionally get
-                        // every Outlet-type card whose outlet(s) overlap their own
-                        // outlet(s) - a non-Area-Manager grade 6 stays own-only.
-                        $roleFiltered = array();
-                        foreach ($items as $_item) {
-                            if (_atem_viewer_is_own($_item, $_userStaff)) {
-                                $roleFiltered[] = $_item;
-                                continue;
-                            }
-                            if ($_perm === 6 && $_isAreaManager) {
-                                $_itemAtemType = isset($_item['atem_type']) ? (int)$_item['atem_type'] : 1;
-                                if ($_itemAtemType === 2) {
-                                    $_itemOutletIds = array();
-                                    if (isset($_item['outlets']) && is_array($_item['outlets'])) {
-                                        foreach ($_item['outlets'] as $_o) {
-                                            if (!empty($_o['outlet_id'])) { $_itemOutletIds[] = (int)$_o['outlet_id']; }
-                                        }
-                                    }
-                                    if (array_intersect($_userOutletIds, $_itemOutletIds)) {
-                                        $roleFiltered[] = $_item;
-                                    }
-                                }
-                            }
-                        }
-                        $items = $roleFiltered;
-                    } elseif ($_perm === 3) {
-                        // Grade 3 (senior): Outlet-type cards are visible company-wide
-                        // only when the viewer is themself in the Outlet department
-                        // (dept 1) - a non-Outlet-dept grade 3 gets no such carve-out
-                        // (matches the Outlet ATEM tab being hidden for them on
-                        // index.php/view.php). HQ-type cards stay scoped to own
-                        // department(s) either way.
-                        $_isOutletDept = in_array(1, $_userDeptIds, true);
-                        $roleFiltered = array();
-                        foreach ($items as $_item) {
-                            if (_atem_viewer_is_own($_item, $_userStaff)) {
-                                $roleFiltered[] = $_item;
-                                continue;
-                            }
-                            $_itemAtemType = isset($_item['atem_type']) ? (int)$_item['atem_type'] : 1;
-                            if ($_itemAtemType === 2 && $_isOutletDept) {
-                                $roleFiltered[] = $_item;
-                                continue;
-                            }
-                            $_itemDept  = isset($_item['staff_dept_id']) ? (int)$_item['staff_dept_id'] : 0;
-                            $_arciDepts = array();
-                            if (isset($_item['arci']) && is_array($_item['arci'])) {
-                                foreach ($_item['arci'] as $_m) {
-                                    if (!empty($_m['staff_dept_id'])) { $_arciDepts[] = (int)$_m['staff_dept_id']; }
-                                }
-                            }
-                            if (in_array($_itemDept, $_userDeptIds) || array_intersect($_userDeptIds, $_arciDepts)) {
-                                $roleFiltered[] = $_item;
-                            }
-                        }
-                        $items = $roleFiltered;
-                    }
-                    // Grade 4-5, or SuperAdmin: no role-based filtering
-
                     $filterYear      = isset($jsonData['filter_year'])       ? (int)$jsonData['filter_year']       : 0;
                     $filterMonth     = isset($jsonData['filter_month'])      ? (int)$jsonData['filter_month']      : 0;
                     $filterQuarter   = isset($jsonData['filter_quarter'])    ? atem_parse_quarters($jsonData['filter_quarter']) : array();
@@ -3156,16 +3614,96 @@ if (!defined('API_JWT_INCLUDED')) {
                     $byRegion = array();
                     $periodMonths = atem_period_months($filterMonth, $filterQuarter);
 
+                    // SQL pre-filter for atem-api: the viewer's visible subset
+                    // (atemListScopeParams()) narrowed to the selected type/dept/
+                    // staff/outlet(s)/period. Superset only - the exact grade
+                    // visibility and per-card filters still run (in atem-api's
+                    // DashboardStatsService) on what it selects.
+                    $_dashParams = atemListScopeParams($_perm, $_isSA, $_isAreaManager, $_userStaff, $_userDeptIds, $_userOutletIds);
+                    if ($filterAtemType > 0) { $_dashParams['atem_type'] = $filterAtemType; }
+                    if ($filterDeptId > 0)   { $_dashParams['filter_dept_id'] = $filterDeptId; }
+                    if ($filterStaffId > 0)  { $_dashParams['filter_staff_id'] = $filterStaffId; }
+                    // Outlet AND region both narrow by outlet: the single outlet is
+                    // the tighter bound. A region with no outlets sends nothing
+                    // (the loop below then matches nothing, as before).
+                    if ($filterOutletId > 0) {
+                        $_dashParams['outlet_ids'] = (string)$filterOutletId;
+                    } elseif (!empty($regionOutletIds)) {
+                        $_dashParams['outlet_ids'] = implode(',', $regionOutletIds);
+                    }
+                    $_dashParams += atemPeriodParams('dashboard', $filterYear, $periodMonths);
+
+                    // Involvement breakdown scope: a Staff filter shows that
+                    // staff member's involvement; a Department filter (no staff)
+                    // aggregates everyone in that department; otherwise the
+                    // logged-in user's own involvement.
+                    $myScopeMode = 'me';
+                    $myScopeStaffId = (int)$staff_id;
+                    if ($filterStaffId > 0) {
+                        $myScopeMode = 'staff';
+                        $myScopeStaffId = $filterStaffId;
+                    } elseif ($filterDeptId > 0) {
+                        $myScopeMode = 'dept';
+                    }
+
+                    // atem-api counts everything (AtemController::dashboardStats()
+                    // -> DashboardStatsService, a line-for-line port of the loop
+                    // that used to run here) and returns only the totals, instead
+                    // of this request downloading every matching card. Regions
+                    // live in ODB, so the outlet -> region map is sent along.
+                    $_outletRegionPairs = array();
+                    foreach ($outletMeta as $_oid => $_om) {
+                        $_outletRegionPairs[] = array((int)$_oid, (int)$_om['region_id']);
+                    }
+                    $_statsApi = getApiDataWithJWT('atem/dashboard-stats', array(
+                        'prefilter' => $_dashParams,
+                        'viewer'    => array(
+                            'perm'            => $_perm,
+                            'is_sa'           => $_isSA,
+                            'is_area_manager' => $_isAreaManager,
+                            'staff_id'        => $_userStaff,
+                            'dept_ids'        => $_userDeptIds,
+                            'outlet_ids'      => $_userOutletIds,
+                        ),
+                        'filters'   => array(
+                            'year'              => $filterYear,
+                            'months'            => $periodMonths,
+                            'has_period'        => ($filterYear > 0 || $filterMonth > 0 || !empty($filterQuarter)),
+                            'dept_id'           => $filterDeptId,
+                            'staff_id'          => $filterStaffId,
+                            'atem_type'         => $filterAtemType,
+                            'outlet_id'         => $filterOutletId,
+                            'region_id'         => $filterRegionId,
+                            'region_outlet_ids' => $regionOutletIds,
+                            'today'             => date('Y-m-d'),
+                            'scope_mode'        => $myScopeMode,
+                            'scope_staff_id'    => $myScopeStaffId,
+                        ),
+                        'outlet_regions' => $_outletRegionPairs,
+                    ), 'POST', $staff_id);
+                    $_statsDecoded = json_decode((string)$_statsApi['response'], true);
+                    if ((int)$_statsApi['httpCode'] !== 200 || empty($_statsDecoded['success']) || !isset($_statsDecoded['data'])) {
+                        $response = array('success' => false, 'message' => 'Failed to load ATEM data');
+                        break;
+                    }
+                    $_agg = $_statsDecoded['data'];
+
                     $levelMap = array(
                         1 => array('label' => 'L1 Operational',     'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
                         2 => array('label' => 'L2 Improvement',     'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
                         3 => array('label' => 'L3 Cross/Strategic',  'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
                         4 => array('label' => 'L4 Company-Level',    'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0),
                     );
-                    // Pillars (Outlet-type equivalent of levels) come from a DB table,
-                    // not fixed ids - pre-seed every known pillar (even ones with 0
-                    // matching cards) so the table always lists all of them, mirroring
-                    // how $levelMap above always shows all 4 levels.
+                    foreach (($_agg['level_counts'] ?? array()) as $_lvl => $_lc) {
+                        $_lvl = (int)$_lvl;
+                        if (!isset($levelMap[$_lvl])) { continue; }
+                        foreach (array('cards', 'complete', 'excellence', 'fail') as $_k) { $levelMap[$_lvl][$_k] = (int)($_lc[$_k] ?? 0); }
+                        $levelMap[$_lvl]['forecast'] = (float)($_lc['forecast'] ?? 0);
+                    }
+
+                    // Pillars (Outlet-type equivalent of levels): pre-seed every
+                    // known pillar (even ones with 0 matching cards) so the table
+                    // always lists all of them, then fill in the counts.
                     $pillarMap = array();
                     $_pillarLookup = getAtemLookups($staff_id);
                     if (!empty($_pillarLookup['success']) && isset($_pillarLookup['data']['pillars'])) {
@@ -3175,360 +3713,56 @@ if (!defined('API_JWT_INCLUDED')) {
                             }
                         }
                     }
+                    foreach (($_agg['pillar_counts'] ?? array()) as $_pc) {
+                        $_pid = (int)$_pc['id'];
+                        if (!isset($pillarMap[$_pid])) {
+                            $pillarMap[$_pid] = array('label' => $_pc['label'] ?? '', 'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0);
+                        }
+                        foreach (array('cards', 'complete', 'excellence', 'fail') as $_k) { $pillarMap[$_pid][$_k] = (int)($_pc[$_k] ?? 0); }
+                        $pillarMap[$_pid]['forecast'] = (float)($_pc['forecast'] ?? 0);
+                    }
+
+                    // id-keyed breakdown rows (dept / outlet / region), in the
+                    // order atem-api first saw them - the stable sorts below
+                    // keep that order for ties.
+                    $_toIdMap = function ($list) {
+                        $map = array();
+                        foreach ((array)$list as $_row) {
+                            $map[(int)$_row['id']] = array(
+                                'cards'      => (int)($_row['cards'] ?? 0),
+                                'complete'   => (int)($_row['complete'] ?? 0),
+                                'excellence' => (int)($_row['excellence'] ?? 0),
+                                'fail'       => (int)($_row['fail'] ?? 0),
+                                'forecast'   => (float)($_row['forecast'] ?? 0),
+                            );
+                        }
+                        return $map;
+                    };
+                    $byDept   = $_toIdMap($_agg['by_dept'] ?? array());
+                    $byOutlet = $_toIdMap($_agg['by_outlet'] ?? array());
+                    $byRegion = $_toIdMap($_agg['by_region'] ?? array());
 
                     $byStatus = array('active' => 0, 'complete' => 0, 'excellence' => 0, 'extended' => 0, 'extended_status' => 0, 'failed' => 0, 'draft' => 0);
-                    $total = 0;
-                    $incentiveTotal = 0.0;
-                    $overdueCount = 0;
-                    $todayStr = date('Y-m-d');
-                    $byDept = array();
+                    foreach ($byStatus as $_k => $_unused) { $byStatus[$_k] = (int)($_agg['by_status'][$_k] ?? 0); }
+                    $total                = (int)($_agg['total'] ?? 0);
+                    $incentiveTotal       = (float)($_agg['incentive_total'] ?? 0);
+                    $overdueCount         = (int)($_agg['overdue_count'] ?? 0);
+                    $suspendedCount       = (int)($_agg['suspended_count'] ?? 0);
+                    $forceTerminatedCount = (int)($_agg['force_terminated_count'] ?? 0);
 
-                    // Suspended/Force Terminated live outside every other aggregate
-                    // above (they are soft-deleted, like genuinely-Deleted cards) but
-                    // still need their own dashboard visibility - tallied separately
-                    // below rather than folded into $byStatus/$total.
-                    $suspendedCount = 0;
-                    $forceTerminatedCount = 0;
                     $byIssuerSft = array();
-
-                    // Involvement breakdown — how many (filtered, non-deleted) cards
-                    // someone is tagged on as Issuer vs. each ARCI role. A single card
-                    // can count toward multiple roles (e.g. Issuer AND 'C'), but each
-                    // role is counted at most once per card.
-                    //
-                    // Scope depends on the active filters so grade 2+ users (who see
-                    // beyond their own cards) can drill in: selecting a Staff filter
-                    // shows that staff member's involvement; selecting a Department
-                    // (with no staff) aggregates involvement across everyone in that
-                    // department; with neither, it falls back to the logged-in user's
-                    // own involvement.
-                    $myScopeMode = 'me';
-                    $myScopeStaffId = (int)$staff_id;
-                    if ($filterStaffId > 0) {
-                        $myScopeMode = 'staff';
-                        $myScopeStaffId = $filterStaffId;
-                    } elseif ($filterDeptId > 0) {
-                        $myScopeMode = 'dept';
+                    foreach (($_agg['sft_by_issuer'] ?? array()) as $_sr) {
+                        $byIssuerSft[(int)$_sr['issuer_staff_id']] = array(
+                            'issuer_staff_id'  => (int)$_sr['issuer_staff_id'],
+                            'dept_id'          => (int)($_sr['dept_id'] ?? 0),
+                            'suspended'        => (int)($_sr['suspended'] ?? 0),
+                            'force_terminated' => (int)($_sr['force_terminated'] ?? 0),
+                        );
                     }
+
                     $myRoleBreakdown = array('issuer' => 0, 'A' => 0, 'R' => 0, 'C' => 0, 'I' => 0);
-                    $myInvolvedTotal = 0;
-
-                    foreach ($items as $item) {
-                        $statusVal = isset($item['status']['value']) ? $item['status']['value'] : '';
-
-                        // Generic scope filters apply regardless of status, so the
-                        // Suspended/Force Terminated tally below stays consistent with
-                        // every other aggregate (same dept/staff/atem-type/outlet/pillar
-                        // scope) instead of only inheriting the earlier role-based filter.
-                        if ($filterDeptId > 0) {
-                            $itemDeptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
-                            $itemArciDepts = array();
-                            if (isset($item['arci']) && is_array($item['arci'])) {
-                                foreach ($item['arci'] as $_m) {
-                                    if (!empty($_m['staff_dept_id'])) { $itemArciDepts[] = (int)$_m['staff_dept_id']; }
-                                }
-                            }
-                            if ($itemDeptId !== $filterDeptId && !in_array($filterDeptId, $itemArciDepts)) { continue; }
-                        }
-                        if ($filterStaffId > 0) {
-                            $itemIssuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
-                            $itemIsArci = false;
-                            if (isset($item['arci']) && is_array($item['arci'])) {
-                                foreach ($item['arci'] as $_m) {
-                                    if (!empty($_m['staff_id']) && (int)$_m['staff_id'] === $filterStaffId) {
-                                        $itemIsArci = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if ($itemIssuerId !== $filterStaffId && !$itemIsArci) { continue; }
-                        }
-                        if ($filterAtemType > 0) {
-                            $itemAtemType = isset($item['atem_type']) ? (int)$item['atem_type'] : 1;
-                            if ($itemAtemType !== $filterAtemType) { continue; }
-                        }
-                        if ($filterOutletId > 0) {
-                            $itemHasOutlet = false;
-                            if (isset($item['outlets']) && is_array($item['outlets'])) {
-                                foreach ($item['outlets'] as $_o) {
-                                    if (!empty($_o['outlet_id']) && (int)$_o['outlet_id'] === $filterOutletId) {
-                                        $itemHasOutlet = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!$itemHasOutlet) { continue; }
-                        }
-                        if ($filterRegionId > 0) {
-                            $itemInRegion = false;
-                            if (isset($item['outlets']) && is_array($item['outlets'])) {
-                                foreach ($item['outlets'] as $_o) {
-                                    if (!empty($_o['outlet_id']) && in_array((int)$_o['outlet_id'], $regionOutletIds, true)) {
-                                        $itemInRegion = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!$itemInRegion) { continue; }
-                        }
-
-                        if ($statusVal === 'Suspended' || $statusVal === 'Force Terminated') {
-                            // closure_date is always null for these statuses (they never
-                            // actually closed), so period filtering falls back to
-                            // start_date instead of the closure_date used below.
-                            if ($filterYear > 0 || $filterMonth > 0 || !empty($filterQuarter)) {
-                                $sftPeriodDate = isset($item['start_date']) ? $item['start_date'] : '';
-                                if ($sftPeriodDate && !atem_date_in_period($sftPeriodDate, $periodMonths, $filterYear)) {
-                                    continue;
-                                }
-                            }
-                            if ($statusVal === 'Suspended') {
-                                $suspendedCount++;
-                            } else {
-                                $forceTerminatedCount++;
-                            }
-                            $sftIssuerId = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
-                            if ($sftIssuerId > 0) {
-                                if (!isset($byIssuerSft[$sftIssuerId])) {
-                                    $byIssuerSft[$sftIssuerId] = array(
-                                        'issuer_staff_id'  => $sftIssuerId,
-                                        'dept_id'          => isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0,
-                                        'suspended'        => 0,
-                                        'force_terminated' => 0,
-                                    );
-                                }
-                                if ($statusVal === 'Suspended') {
-                                    $byIssuerSft[$sftIssuerId]['suspended']++;
-                                } else {
-                                    $byIssuerSft[$sftIssuerId]['force_terminated']++;
-                                }
-                            }
-                            continue;
-                        }
-                        if ($statusVal === 'Deleted' || !empty($item['deleted_at'])) { continue; }
-
-                        if ($filterYear > 0 || $filterMonth > 0 || !empty($filterQuarter)) {
-                            // Active is matched by whether its start_date..end_date
-                            // span overlaps the period; Draft (not started closing
-                            // yet) by start_date alone; every other status
-                            // (Completed family, Extended, Failed) by closure_date.
-                            // Mirrors js/view.js's periodDateOf()/spanOverlapsPeriod().
-                            // A dateless item is kept rather than filtered out
-                            // ($strict = false), same as before.
-                            if (!atem_matches_period($statusVal, $item, $periodMonths, $filterYear, false)) {
-                                continue;
-                            }
-                        }
-
-                        $total++;
-
-                        if ($myScopeMode === 'dept') {
-                            // Department-wide aggregate: count the card toward 'issuer'
-                            // if the issuer belongs to the department, and toward each
-                            // ARCI role held by any member of that department.
-                            $_involved     = false;
-                            $_issuerDeptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
-                            if ($_issuerDeptId === $filterDeptId) {
-                                $myRoleBreakdown['issuer']++;
-                                $_involved = true;
-                            }
-                            if (isset($item['arci']) && is_array($item['arci'])) {
-                                $_seenRoles = array();
-                                foreach ($item['arci'] as $_m) {
-                                    $_mDeptId = !empty($_m['staff_dept_id']) ? (int)$_m['staff_dept_id'] : 0;
-                                    if ($_mDeptId === $filterDeptId
-                                        && !empty($_m['role']) && isset($myRoleBreakdown[$_m['role']])
-                                        && !in_array($_m['role'], $_seenRoles)) {
-                                        $myRoleBreakdown[$_m['role']]++;
-                                        $_seenRoles[] = $_m['role'];
-                                        $_involved = true;
-                                    }
-                                }
-                            }
-                            if ($_involved) { $myInvolvedTotal++; }
-                        } elseif ($myScopeStaffId > 0) {
-                            $_involved  = false;
-                            $_issuerId  = isset($item['issuer_staff_id']) ? (int)$item['issuer_staff_id'] : 0;
-                            if ($_issuerId === $myScopeStaffId) {
-                                $myRoleBreakdown['issuer']++;
-                                $_involved = true;
-                            }
-                            if (isset($item['arci']) && is_array($item['arci'])) {
-                                $_seenRoles = array();
-                                foreach ($item['arci'] as $_m) {
-                                    if (!empty($_m['staff_id']) && (int)$_m['staff_id'] === $myScopeStaffId
-                                        && !empty($_m['role']) && isset($myRoleBreakdown[$_m['role']])
-                                        && !in_array($_m['role'], $_seenRoles)) {
-                                        $myRoleBreakdown[$_m['role']]++;
-                                        $_seenRoles[] = $_m['role'];
-                                        $_involved = true;
-                                    }
-                                }
-                            }
-                            if ($_involved) { $myInvolvedTotal++; }
-                        }
-
-                        $levelStr  = isset($item['level_structure']['level']) ? $item['level_structure']['level'] : '';
-                        preg_match('/\d+/', $levelStr, $lvlMatch);
-                        $levelNum  = $lvlMatch ? (int)$lvlMatch[0] : 0;
-
-                        $pillarId   = isset($item['pillar']['id'])   ? (int)$item['pillar']['id']   : 0;
-                        $pillarName = isset($item['pillar']['name']) ? $item['pillar']['name']      : '';
-
-                        $isExtended = !empty($item['is_extended']);
-                        if ($statusVal === 'Extended') {
-                            $byStatus['extended_status']++;
-                            $byStatus['active']++;
-                        } elseif ($statusVal === 'Active') {
-                            $byStatus['active']++;
-                        } elseif ($statusVal === 'Draft') {
-                            $byStatus['draft']++;
-                        } elseif ($statusVal === 'Completed') {
-                            $byStatus['complete']++;
-                        } elseif ($statusVal === 'Completed with Excellence') {
-                            $byStatus['excellence']++;
-                        } elseif ($statusVal === 'Completed with Extension') {
-                            $byStatus['extended']++;
-                        } elseif ($statusVal === 'Failed') {
-                            $byStatus['failed']++;
-                        }
-
-                        if ($levelNum >= 1 && $levelNum <= 4) {
-                            $levelMap[$levelNum]['cards']++;
-                            if ($statusVal === 'Completed') {
-                                $levelMap[$levelNum]['complete']++;
-                            } elseif ($statusVal === 'Completed with Excellence') {
-                                $levelMap[$levelNum]['excellence']++;
-                            } elseif ($statusVal === 'Failed') {
-                                $levelMap[$levelNum]['fail']++;
-                            }
-                        }
-
-                        if ($pillarId > 0) {
-                            if (!isset($pillarMap[$pillarId])) {
-                                $pillarMap[$pillarId] = array('label' => $pillarName, 'cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0);
-                            }
-                            $pillarMap[$pillarId]['cards']++;
-                            if ($statusVal === 'Completed') {
-                                $pillarMap[$pillarId]['complete']++;
-                            } elseif ($statusVal === 'Completed with Excellence') {
-                                $pillarMap[$pillarId]['excellence']++;
-                            } elseif ($statusVal === 'Failed') {
-                                $pillarMap[$pillarId]['fail']++;
-                            }
-                        }
-
-                        // Active cards have an undecided outcome, so they forecast off
-                        // the potential/raw amount (what they'd earn if they close well).
-                        // Completed/Completed with Excellence/Extended are already
-                        // decided - Extended always forfeits incentive per the
-                        // no-incentive-on-extension rule (AtemController::update()), so
-                        // using the raw potential amount there would overstate the
-                        // forecast; using final_incentive_amount/final_amount instead
-                        // correctly contributes RM0 for Extended and the real payout for
-                        // Completed/Excellence. Suspended/Force Terminated cards are
-                        // soft-deleted and excluded from this loop entirely already.
-                        $forecastStatuses = array('Active', 'Extended', 'Completed', 'Completed with Excellence');
-                        $itemAtemTypeVal  = isset($item['atem_type']) ? (int)$item['atem_type'] : 1;
-                        if ($statusVal === 'Active') {
-                            $forecastAmount = ($itemAtemTypeVal === 2)
-                                ? (float)($item['reward_amount'] ?? 0)
-                                : (float)($item['total_incentive_amount'] ?? 0);
-                        } else {
-                            $forecastAmount = ($itemAtemTypeVal === 2)
-                                ? (float)($item['final_amount'] ?? 0)
-                                : (float)($item['final_incentive_amount'] ?? 0);
-                        }
-                        if (in_array($statusVal, $forecastStatuses)) {
-                            $incentiveTotal += $forecastAmount;
-                            if ($levelNum >= 1 && $levelNum <= 4) {
-                                $levelMap[$levelNum]['forecast'] += $forecastAmount;
-                            }
-                            if ($pillarId > 0) {
-                                $pillarMap[$pillarId]['forecast'] += $forecastAmount;
-                            }
-                        }
-
-                        // Overdue is a derived state, not a status: an Active or
-                        // Extended card whose final_due_date (end_date, or the
-                        // extension date once extended) is already in the past.
-                        // Closed/Draft/Suspended/Force Terminated cards never count.
-                        if ($statusVal === 'Active' || $statusVal === 'Extended') {
-                            $finalDue = isset($item['final_due_date']) ? substr((string)$item['final_due_date'], 0, 10) : '';
-                            if ($finalDue !== '' && $finalDue < $todayStr) {
-                                $overdueCount++;
-                            }
-                        }
-
-                        $deptId = isset($item['staff_dept_id']) ? (int)$item['staff_dept_id'] : 0;
-                        if (!isset($byDept[$deptId])) {
-                            $byDept[$deptId] = array('cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0);
-                        }
-                        $byDept[$deptId]['cards']++;
-                        if ($statusVal === 'Completed') {
-                            $byDept[$deptId]['complete']++;
-                        } elseif ($statusVal === 'Completed with Excellence') {
-                            $byDept[$deptId]['excellence']++;
-                        } elseif ($statusVal === 'Failed') {
-                            $byDept[$deptId]['fail']++;
-                        }
-                        if (in_array($statusVal, $forecastStatuses)) {
-                            $byDept[$deptId]['forecast'] += $forecastAmount;
-                        }
-
-                        // Outlet/Region Breakdown (Outlet dashboard tab): a card can
-                        // span several outlets (and therefore several regions), so it
-                        // is counted once per distinct outlet/region it touches, same
-                        // multi-count convention as $pillarMap is single-count for its
-                        // single-valued field.
-                        $itemOutletIds = array();
-                        if (isset($item['outlets']) && is_array($item['outlets'])) {
-                            foreach ($item['outlets'] as $_io) {
-                                if (!empty($_io['outlet_id'])) { $itemOutletIds[] = (int)$_io['outlet_id']; }
-                            }
-                        }
-                        $itemOutletIds = array_unique($itemOutletIds);
-                        foreach ($itemOutletIds as $_oid) {
-                            if (!isset($byOutlet[$_oid])) {
-                                $byOutlet[$_oid] = array('cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0);
-                            }
-                            $byOutlet[$_oid]['cards']++;
-                            if ($statusVal === 'Completed') {
-                                $byOutlet[$_oid]['complete']++;
-                            } elseif ($statusVal === 'Completed with Excellence') {
-                                $byOutlet[$_oid]['excellence']++;
-                            } elseif ($statusVal === 'Failed') {
-                                $byOutlet[$_oid]['fail']++;
-                            }
-                            if (in_array($statusVal, $forecastStatuses)) {
-                                $byOutlet[$_oid]['forecast'] += $forecastAmount;
-                            }
-                        }
-
-                        $itemRegionIds = array();
-                        foreach ($itemOutletIds as $_oid) {
-                            if (isset($outletMeta[$_oid]) && $outletMeta[$_oid]['region_id'] > 0) {
-                                $itemRegionIds[] = $outletMeta[$_oid]['region_id'];
-                            }
-                        }
-                        $itemRegionIds = array_unique($itemRegionIds);
-                        foreach ($itemRegionIds as $_rid) {
-                            if (!isset($byRegion[$_rid])) {
-                                $byRegion[$_rid] = array('cards' => 0, 'complete' => 0, 'excellence' => 0, 'fail' => 0, 'forecast' => 0.0);
-                            }
-                            $byRegion[$_rid]['cards']++;
-                            if ($statusVal === 'Completed') {
-                                $byRegion[$_rid]['complete']++;
-                            } elseif ($statusVal === 'Completed with Excellence') {
-                                $byRegion[$_rid]['excellence']++;
-                            } elseif ($statusVal === 'Failed') {
-                                $byRegion[$_rid]['fail']++;
-                            }
-                            if (in_array($statusVal, $forecastStatuses)) {
-                                $byRegion[$_rid]['forecast'] += $forecastAmount;
-                            }
-                        }
-                    }
+                    foreach ($myRoleBreakdown as $_k => $_unused) { $myRoleBreakdown[$_k] = (int)($_agg['my_roles'][$_k] ?? 0); }
+                    $myInvolvedTotal = (int)($_agg['my_roles']['involved'] ?? 0);
 
                     $byLevel = array();
                     foreach ($levelMap as $lvlId => $lvlData) {
@@ -4305,8 +4539,14 @@ if (!defined('API_JWT_INCLUDED')) {
                     getAuthToken($staff_id);
                     session_write_close();
 
-                    // One full-list fetch shared by both the HQ and Outlet passes.
-                    $pl_atem_list = getAtemListCached($staff_id);
+                    // One list fetch shared by both the HQ and Outlet passes,
+                    // pre-filtered by atem-api to cards closed inside the period
+                    // (getStaffPerformanceLive() counts nothing else).
+                    $pl_atem_list = getAtemListCached(
+                        $staff_id,
+                        60,
+                        atemPeriodParams('closure', $pl_year, atem_period_months($pl_month, $pl_quarter))
+                    );
                     if (empty($pl_atem_list['success'])) {
                         $response = ['success' => false, 'message' => 'Unable to reach the ATEM API. Please try again later.'];
                         break;
