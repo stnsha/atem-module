@@ -1019,9 +1019,15 @@ function resetStaffDropdown() {
 }
 
 // ------------------------------------------------ active-filter highlight
-// Mirrors consultcall's filter indicators: every control that differs from
-// its Reset default (see the perf-reset-filter handler) gets .filter-active
-// (coloured border), and the Reset button turns amber while any is set.
+// Same rules as view.php (js/view.js updateFilterIndicators()):
+//  - Blue border (.filter-active): every control that is currently NARROWING
+//    the list gets it, including a preselected default (e.g. the current
+//    year, "Active staff only", the default Status ticks) - a plain dropdown
+//    whenever it is not on its "All" option, a checkbox list whenever any
+//    option is unticked (Quarter: some but not all ticked, since none ticked
+//    means all quarters).
+//  - Reset button turns amber only while some control differs from its Reset
+//    default (see the perf-reset-filter handler).
 function perfCheckboxesDiffer(selector, defaults) {
     var boxes = document.querySelectorAll(selector);
     for (var i = 0; i < boxes.length; i++) {
@@ -1032,16 +1038,39 @@ function perfCheckboxesDiffer(selector, defaults) {
     return false;
 }
 
+// True when some (but not every) checkbox matching selector is unticked.
+function perfCheckboxesNarrowing(selector) {
+    var boxes = document.querySelectorAll(selector);
+    for (var i = 0; i < boxes.length; i++) {
+        if (!boxes[i].checked) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Quarter: none ticked = all quarters (no filter), so only a partial
+// selection narrows.
+function perfQuarterNarrowing() {
+    var boxes = document.querySelectorAll('.perf-quarter-cb');
+    var ticked = document.querySelectorAll('.perf-quarter-cb:checked').length;
+    return ticked > 0 && ticked < boxes.length;
+}
+
 function updateFilterIndicators() {
     var anyActive = false;
 
-    function mark(id, isActive) {
+    // Blue border: control is narrowing the list (see header comment).
+    function border(id, isNarrowing) {
         var el = document.getElementById(id);
-        if (!el) {
-            return;
+        if (el) {
+            el.classList.toggle('filter-active', isNarrowing);
         }
-        el.classList.toggle('filter-active', isActive);
-        if (isActive) {
+    }
+
+    // Reset button state: control differs from its Reset default.
+    function differs(isDifferent) {
+        if (isDifferent) {
             anyActive = true;
         }
     }
@@ -1051,20 +1080,39 @@ function updateFilterIndicators() {
         return el ? String(el.value) : fallback;
     }
 
-    mark('perf-filter-year', valueOf('perf-filter-year', '') !== String(PERF_CFG.initYear));
-    mark('perf-filter-month', valueOf('perf-filter-month', '0') !== String(PERF_CFG.initMonth || 0));
+    var year = valueOf('perf-filter-year', '');
+    var month = valueOf('perf-filter-month', '0');
+    var dept = valueOf('perf-filter-dept', '0');
+    var grade = valueOf('perf-filter-grade', '0');
+    var staffStatus = valueOf('perf-filter-active', 'active');
+    var payout = valueOf('perf-filter-payout', 'unlocked');
+    var staffId = parseInt(valueOf('perf-staff-value', '0'), 10) || 0;
+
+    border('perf-filter-year', year !== '' && year !== '0');
+    border('perf-filter-month', month !== '' && month !== '0');
     // Highlight goes on the visible searchable button; the value still lives
     // in the hidden #perf-filter-dept select.
-    mark('perf-dept-btn', valueOf('perf-filter-dept', '0') !== '0');
-    mark('perf-struct-btn', perfCheckboxesDiffer('.perf-struct-cb', PERF_CFG.defaultStructs || []));
-    mark('perf-filter-grade', valueOf('perf-filter-grade', '0') !== '0');
-    mark('perf-filter-active', valueOf('perf-filter-active', 'active') !== 'active');
-    mark('perf-filter-payout', valueOf('perf-filter-payout', 'unlocked') !== 'unlocked');
-    mark('perf-staff-btn', (parseInt(valueOf('perf-staff-value', '0'), 10) || 0) !== 0);
-    mark('perf-quarter-btn', perfCheckboxesDiffer('.perf-quarter-cb',
-        PERF_CFG.initQuarter ? [String(PERF_CFG.initQuarter)] : []));
-    mark('perf-status-btn', perfCheckboxesDiffer('.perf-status-cb', PERF_CFG.defaultStatuses || []));
-    mark('perf-role-btn', perfCheckboxesDiffer('.perf-role-cb', PERF_CFG.defaultRoles || []));
+    border('perf-dept-btn', dept !== '' && dept !== '0');
+    border('perf-filter-grade', grade !== '' && grade !== '0');
+    border('perf-filter-active', staffStatus !== 'all');
+    border('perf-filter-payout', payout !== 'all');
+    border('perf-staff-btn', staffId !== 0);
+    border('perf-quarter-btn', perfQuarterNarrowing());
+    border('perf-status-btn', perfCheckboxesNarrowing('.perf-status-cb'));
+    border('perf-struct-btn', perfCheckboxesNarrowing('.perf-struct-cb'));
+    border('perf-role-btn', perfCheckboxesNarrowing('.perf-role-cb'));
+
+    differs(year !== String(PERF_CFG.initYear));
+    differs(month !== String(PERF_CFG.initMonth || 0));
+    differs(dept !== '0');
+    differs(grade !== '0');
+    differs(staffStatus !== 'active');
+    differs(payout !== 'unlocked');
+    differs(staffId !== 0);
+    differs(perfCheckboxesDiffer('.perf-quarter-cb', PERF_CFG.initQuarter ? [String(PERF_CFG.initQuarter)] : []));
+    differs(perfCheckboxesDiffer('.perf-status-cb', PERF_CFG.defaultStatuses || []));
+    differs(perfCheckboxesDiffer('.perf-struct-cb', PERF_CFG.defaultStructs || []));
+    differs(perfCheckboxesDiffer('.perf-role-cb', PERF_CFG.defaultRoles || []));
 
     var resetBtn = document.getElementById('perf-reset-filter');
     if (resetBtn) {
