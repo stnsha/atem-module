@@ -1073,6 +1073,31 @@
         if ($('atem-tab-outlet-count')) { $('atem-tab-outlet-count').textContent = counts.outlet || 0; }
     }
 
+    // Dashboard deep links (index.php cards/links) pass their filters as URL
+    // params. Once they have been applied to the filter controls above, they
+    // are removed from the address bar (history.replaceState - no reload, no
+    // new history entry), so the URL stays plain view.php. Only the known
+    // deep-link params are removed; anything else and the #hash are kept.
+    // no_deleted is read server-side by view.php (CFG.noDeleted) before this.
+    // A manual refresh therefore shows the default filters, not the deep link.
+    var DEEP_LINK_PARAMS = ['statuses', 'status', 'tab', 'year', 'month', 'level', 'level_id', 'dept',
+        'region', 'outlet_id', 'role', 'from', 'to', 'preset', 'min_level_id', 'mine', 'overdue',
+        'issuer', 'issuer_id', 'no_deleted'];
+    function cleanDeepLinkUrl() {
+        if (!window.history || !window.history.replaceState || !window.URLSearchParams) { return; }
+        var params = new URLSearchParams(window.location.search);
+        var changed = false;
+        for (var i = 0; i < DEEP_LINK_PARAMS.length; i++) {
+            if (params.has(DEEP_LINK_PARAMS[i])) { params.delete(DEEP_LINK_PARAMS[i]); changed = true; }
+        }
+        if (!changed) { return; }
+        var qs = params.toString();
+        try {
+            window.history.replaceState(window.history.state, '',
+                window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
+        } catch (e) { /* replaceState unavailable (e.g. sandboxed frame): keep the URL as is */ }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         updateTabCounts(CFG.counts);
         rememberActiveTabForCreate();
@@ -1188,6 +1213,7 @@
                 ibEl2.textContent = targetName;
             }
         }
+        cleanDeepLinkUrl();
         bind();
         if (isOutletDeepLink) {
             var outletTabBtnEl = $('atem-tab-outlet-btn');
